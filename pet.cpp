@@ -167,8 +167,10 @@ void Pet::tick() {
   if (mistakeCooldown > 0) mistakeCooldown--;
   if (lowestStat() <= 10 && mistakeCooldown == 0) {
     careMistakes++;
-    mistakeCooldown = 30;
-    if (bond > 3) bond -= 3;  // el descuido enfria el vinculo
+    mistakeCooldown = 60;
+    if (bond > 1) bond--;  // el descuido enfria el vinculo, pero sin arrasarlo:
+                           // a -3 cada 30 min se perdia mucho mas de lo que se
+                           // podia ganar en todo un dia y el vinculo se atascaba
   }
 
   checkMedals();  // la evolucion la dispara el usuario (canEvolveNow + tap), no el tick
@@ -287,7 +289,7 @@ void Pet::registerCare() {
 }
 
 void Pet::addBond(uint8_t amt) {
-  if (bondToday >= 8) return;  // tope diario: el vinculo no se farmea
+  if (bondToday >= 20) return;  // tope diario: el vinculo no se farmea
   bond = clamp100(bond + amt);
   bondToday += amt;
 }
