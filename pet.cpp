@@ -56,8 +56,8 @@ void Pet::syncClock(uint32_t nowEpoch) {
   lastSeenEpoch = nowEpoch;
   if (nowEpoch == 0) return;
   uint32_t mins = (seen && nowEpoch > seen) ? (nowEpoch - seen) / 60 : 0;
-  if (mins < 2 || ceremony != CER_NONE) {
-    save();  // primera vez o sin tiempo que aplicar: solo persistir la hora
+  if (mins < 2 || ceremony != CER_NONE || starterPick) {
+    save();  // primera vez, sin tiempo que aplicar o aun eligiendo inicial
     return;
   }
   if (mins > 14UL * 24 * 60) mins = 14UL * 24 * 60;  // tope: 2 semanas
@@ -108,6 +108,10 @@ void Pet::update(uint32_t nowMs) {
 
 void Pet::tick() {
   if (ceremony != CER_NONE) return;  // el tiempo se detiene en la despedida
+  if (starterPick) return;  // la partida no empieza hasta elegir inicial: si el
+                            // tiempo corriera aqui, el huevo eclosionaria solo a
+                            // los 3 min con la especie sorteada y se perderia la
+                            // eleccion del jugador
   ageMinutes++;
 
   if (isEgg()) {
