@@ -37,6 +37,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Sin sprites", "Cargalos en la SD",
     "PS", "IV %u",
     "MENU", "AJUSTES", "CERRAR", "EQUIPO %u/6", "- vacio -", "%s se une al equipo!", "Equipo lleno: elige a quien sustituir", "Dejarlo ir",
+    "STATS", "ENTRENAR", "FUERZA", "VELOCIDAD", "DEFENSA", "Sube sola si esta a gusto",
   },
   // ---------------- EN ----------------
   {
@@ -68,6 +69,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "No sprites", "Load them onto the SD",
     "HP", "IV %u",
     "MENU", "SETTINGS", "CLOSE", "PARTY %u/6", "- empty -", "%s joined the party!", "Party full: pick who to replace", "Let it go",
+    "STATS", "TRAINING", "STRENGTH", "SPEED", "DEFENCE", "Grows on its own when happy",
   },
   // ---------------- FR ----------------
   {
@@ -99,6 +101,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Pas de sprites", "Charge-les sur la SD",
     "PV", "IV %u",
     "MENU", "REGLAGES", "FERMER", "EQUIPE %u/6", "- vide -", "%s rejoint l'equipe!", "Equipe pleine: qui remplacer?", "Le laisser partir",
+    "STATS", "ENTRAINEMENT", "FORCE", "VITESSE", "DEFENSE", "Monte seule s'il est heureux",
   },
   // ---------------- DE ----------------
   {
@@ -130,6 +133,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Keine Sprites", "Auf die SD laden",
     "KP", "IV %u",
     "MENU", "EINSTELLUNGEN", "SCHLIESSEN", "TEAM %u/6", "- leer -", "%s kommt ins Team!", "Team voll: wen ersetzen?", "Ziehen lassen",
+    "WERTE", "TRAINING", "STAERKE", "TEMPO", "ABWEHR", "Steigt von selbst bei guter Laune",
   },
   // ---------------- IT ----------------
   {
@@ -161,6 +165,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Senza sprite", "Caricali sulla SD",
     "PS", "IV %u",
     "MENU", "IMPOSTAZIONI", "CHIUDI", "SQUADRA %u/6", "- vuoto -", "%s entra in squadra!", "Squadra piena: chi sostituire?", "Lasciarlo andare",
+    "STATS", "ALLENAMENTO", "FORZA", "VELOCITA", "DIFESA", "Sale da sola se sta bene",
   },
   // ---------------- PT ----------------
   {
@@ -192,6 +197,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Sem sprites", "Carrega-os no SD",
     "PS", "IV %u",
     "MENU", "AJUSTES", "FECHAR", "EQUIPA %u/6", "- vazio -", "%s junta-se a equipa!", "Equipa cheia: quem substituir?", "Deixa-lo ir",
+    "STATS", "TREINO", "FORCA", "VELOCIDADE", "DEFESA", "Sobe sozinha se estiver bem",
   },
 };
 

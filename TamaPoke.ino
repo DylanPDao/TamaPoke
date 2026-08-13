@@ -26,7 +26,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.7"
+#define FW_VERSION "1.8"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -74,12 +74,15 @@ uint8_t cardPage = 0;         // 0 perfil, 1 stats+medallas
 // and is the only free surface left.
 bool menuOpen = false;
 #define MENU_X 73
-#define MENU_Y 108
+// five rows no longer fit under the old MENU_Y: the panel bottom would land at
+// y=418, where the round bezel is only ~141 px wide and the corners get cut.
+// Recentred vertically instead of shrinking the rows.
+#define MENU_Y 75
 #define MENU_W 320
-#define MENU_H 252
+#define MENU_H 316
 #define MENU_ROW_H 52
 #define MENU_ROW_GAP 6
-#define MENU_ROWS 4
+#define MENU_ROWS 5
 #define MENU_ROW_Y(i) (MENU_Y + 16 + (i) * (MENU_ROW_H + MENU_ROW_GAP))
 
 // Party screen. partyPick != 0 means the newcomer needs a slot: the player
@@ -119,6 +122,18 @@ float sackShake = 0;
 uint8_t sackGain = 0;
 bool sackNewHi = false;
 
+// training submenu (the 5th icon): routes to the trainer for each stat.
+// DEF has no minigame -- it rises on its own from good wellbeing -- so its row
+// is informational and does not respond to a tap.
+bool trainOpen = false;
+#define TRAIN_X 73
+#define TRAIN_Y 96
+#define TRAIN_W 320
+#define TRAIN_H 274
+#define TRAIN_ROW_H 56
+#define TRAIN_ROW_GAP 8
+#define TRAIN_ROW_Y(i) (TRAIN_Y + 54 + (i) * (TRAIN_ROW_H + TRAIN_ROW_GAP))
+
 // las 9 especies con sprite propio en flash (respaldo sin SD): dex -> indice
 int flashIdxForDex(int16_t dex) {
   static const int8_t IDX[10] = { -1, 3, 4, 5, 0, 1, 2, 6, 7, 8 };
@@ -137,11 +152,17 @@ struct Btn {
   int16_t cx, cy;
   const char *const *icon;
 };
-Btn buttons[4] = {
-  { 140, 390, SPR_ICON_FOOD },   // comer
-  { 202, 404, SPR_ICON_PLAY },   // jugar
-  { 264, 404, SPR_ICON_LIGHT },  // luz
-  { 326, 390, SPR_ICON_CLEAN },  // bano
+// Five across the arc: spacing tightened 62 -> 54 so the outer pair stays far
+// enough in to keep its old y. Lifting them instead would have run the row into
+// the ENE/HYG bars, which end at y=361 -- the buttons are 52 tall, so any centre
+// above 387 overlaps them.
+#define BTN_COUNT 5
+Btn buttons[BTN_COUNT] = {
+  { 125, 390, SPR_ICON_FOOD },   // comer
+  { 179, 402, SPR_ICON_PLAY },   // jugar
+  { 233, 406, SPR_ICON_LIGHT },  // luz
+  { 287, 402, SPR_ICON_CLEAN },  // bano
+  { 341, 390, SPR_ICON_TRAIN },  // entrenar
 };
 #define BTN_HALF 26  // boton de 52x52
 #define BTN_HIT 36   // radio tactil (un poco mas generoso)
@@ -603,6 +624,7 @@ void openClock();  // prototipo
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
+  if (trainOpen) { trainOpen = false; return; }
   if (partyOpen) {
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
@@ -655,6 +677,7 @@ void partyTap(int16_t x, int16_t y) {
 void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
+  if (trainOpen) { trainOpen = false; return; }
   if (partyOpen) {
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
@@ -707,6 +730,22 @@ void onTap(int16_t x, int16_t y) {
     }
     return;
   }
+  if (trainOpen) {
+    bool inPanel = (x >= TRAIN_X && x <= TRAIN_X + TRAIN_W &&
+                    y >= TRAIN_Y && y <= TRAIN_Y + TRAIN_H);
+    if (!inPanel) { trainOpen = false; return; }   // tap outside = back to the pet
+    for (int i = 0; i < 2; i++) {   // row 2 is DEF: passive, deliberately inert
+      int ry = TRAIN_ROW_Y(i);
+      if (x < TRAIN_X + 18 || x > TRAIN_X + TRAIN_W - 18) continue;
+      if (y < ry || y > ry + TRAIN_ROW_H) continue;
+      sfxPlay(SFX_TAP);
+      trainOpen = false;
+      if (i == 0) startSack();
+      else startGame();
+      return;
+    }
+    return;
+  }
   // The menu is modal and has three independent ways out: the CLOSE row, a tap
   // anywhere on the dimmed area outside the panel, and any swipe (see onSwipe).
   // Deliberately no timeout: a menu that vanishes while you read it is worse
@@ -721,10 +760,11 @@ void onTap(int16_t x, int16_t y) {
       if (y < ry || y > ry + MENU_ROW_H) continue;
       sfxPlay(SFX_TAP);
       menuOpen = false;
-      if (i == 0) { galleryOpen = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
-      else if (i == 1) { partyOpen = true; }
-      else if (i == 2) { openClock(); }
-      return;                                     // i == 3 is CLOSE: just shut
+      if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
+      else if (i == 1) { galleryOpen = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
+      else if (i == 2) { partyOpen = true; }
+      else if (i == 3) { openClock(); }
+      return;                                     // i == 4 is CLOSE: just shut
     }
     return;
   }
@@ -806,7 +846,7 @@ void onTap(int16_t x, int16_t y) {
     if (pet.canRunawayNow()) { pet.startRunaway(); return; }
     if (pet.wantFarewellButton()) { choiceKind = 2; choiceUntil = millis() + 12000; return; }
   }
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < BTN_COUNT; i++) {
     int dx = x - buttons[i].cx, dy = y - buttons[i].cy;
     if (dx * dx + dy * dy <= BTN_HIT * BTN_HIT) {
       Serial.printf("BTN %d\n", i);
@@ -817,8 +857,10 @@ void onTap(int16_t x, int16_t y) {
         startGame();
       } else if (i == 2) {
         pet.toggleLight();
-      } else {
+      } else if (i == 3) {
         startBath();
+      } else {
+        if (!pet.sleeping) trainOpen = true;
       }
       return;
     }
@@ -998,6 +1040,10 @@ void render() {
   }
   if (sackOpen) {
     renderSack();
+    return;
+  }
+  if (trainOpen) {
+    renderTrain();
     return;
   }
   if (kbOpen) {
@@ -1842,9 +1888,10 @@ void renderCard() {
 // Row labels are built fresh each frame because two of them carry live counts.
 static void menuRowLabel(int i, char *out, size_t n) {
   switch (i) {
-    case 0: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount()); break;
-    case 1: snprintf(out, n, T(S_PARTY_FMT), party.count()); break;
-    case 2: snprintf(out, n, "%s", T(S_SETTINGS)); break;
+    case 0: snprintf(out, n, "%s", T(S_STATS)); break;
+    case 1: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount()); break;
+    case 2: snprintf(out, n, T(S_PARTY_FMT), party.count()); break;
+    case 3: snprintf(out, n, "%s", T(S_SETTINGS)); break;
     default: snprintf(out, n, "%s", T(S_CLOSE)); break;
   }
 }
@@ -1871,6 +1918,56 @@ void drawMenu() {
     gfx->setCursor(CX - (int)strlen(lbl) * 6, y + MENU_ROW_H / 2 - 8);
     gfx->print(lbl);
   }
+}
+
+// ---------- training submenu (5th icon) ----------
+
+// Bars here show progress toward the IV-capped ceiling, not a raw stat: 100%
+// means this individual cannot train the stat any higher, which is the whole
+// point of trMaxFor() gating training by IV.
+static uint8_t trainPct(uint8_t cur, uint8_t cap) {
+  return cap ? (uint8_t)((uint16_t)cur * 100 / cap) : 0;
+}
+
+void renderTrain() {
+  for (int y = 0; y < 466; y += 2)
+    gfx->drawFastHLine(0, y, 466, gNight ? 0x0000 : 0x2104);
+
+  gfx->fillRoundRect(TRAIN_X, TRAIN_Y, TRAIN_W, TRAIN_H, 18, UI_WHITE);
+  gfx->drawRoundRect(TRAIN_X, TRAIN_Y, TRAIN_W, TRAIN_H, 18, UI_INK);
+
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(T(S_TRAIN)) * 6, TRAIN_Y + 20);
+  gfx->print(T(S_TRAIN));
+
+  const char *lbl[3] = { T(S_TR_ATK), T(S_TR_SPE), T(S_TR_DEF) };
+  uint8_t cur[3] = { pet.trAtk, pet.trSpe, pet.trDef };
+  uint8_t cap[3] = { pet.trMaxAtk(), pet.trMaxSpe(), pet.trMaxDef() };
+
+  for (int i = 0; i < 3; i++) {
+    int y = TRAIN_ROW_Y(i);
+    bool passive = (i == 2);   // DEF has no minigame: drawn flat, ignores taps
+    gfx->fillRoundRect(TRAIN_X + 18, y, TRAIN_W - 36, TRAIN_ROW_H, 12,
+                       passive ? UI_TRACK : UI_BG_DAY);
+    gfx->drawRoundRect(TRAIN_X + 18, y, TRAIN_W - 36, TRAIN_ROW_H, 12, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(TRAIN_X + 32, y + 10);
+    gfx->print(lbl[i]);
+
+    uint8_t pct = trainPct(cur[i], cap[i]);
+    int bx = TRAIN_X + 32, bw = TRAIN_W - 64, bh = 12, by = y + 34;
+    gfx->fillRoundRect(bx, by, bw, bh, 4, UI_TRACK);
+    int fw = (bw - 4) * pct / 100;
+    if (fw > 0)
+      gfx->fillRoundRect(bx + 2, by + 2, fw, bh - 4, 3, pct >= 100 ? UI_BAR_OK : UI_BAR_WARN);
+  }
+
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(T(S_TR_DEF_HINT)) * 3, TRAIN_Y + TRAIN_H - 22);
+  gfx->print(T(S_TR_DEF_HINT));
 }
 
 // ---------- party ----------
@@ -2644,7 +2741,7 @@ void drawBar(int x, int y, const char *label, uint8_t val) {
 }
 
 void drawButtons() {
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < BTN_COUNT; i++) {
     bool off = pet.sleeping && i != 2;  // durmiendo solo funciona LUZ
     int bx = buttons[i].cx - BTN_HALF, by = buttons[i].cy - BTN_HALF;
     if (!pet.sleeping) gfx->fillRoundRect(bx, by, 2 * BTN_HALF, 2 * BTN_HALF, 14, UI_WHITE);

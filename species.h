@@ -469,6 +469,25 @@ static const char* const SPR_ICON_CLEAN[16] = {  // 16x16
   "................",
 };
 
+static const char* const SPR_ICON_TRAIN[16] = {  // 16x16 -- dumbbell (training)
+  "................",
+  "................",
+  "................",
+  ".kk..........kk.",
+  ".kNk........kNk.",
+  "kNNk........kNNk",
+  "kNNkkkkkkkkkkNNk",
+  "kNNkMMMMMMMMkNNk",
+  "kNNkMMMMMMMMkNNk",
+  "kNNkkkkkkkkkkNNk",
+  "kNNk........kNNk",
+  ".kNk........kNk.",
+  ".kk..........kk.",
+  "................",
+  "................",
+  "................",
+};
+
 static const char* const SPR_ICON_BERRY_B[16] = {  // 16x16
   "................",
   "................",
