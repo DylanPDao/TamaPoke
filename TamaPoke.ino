@@ -391,6 +391,19 @@ void handleSerial() {
     }
     Serial.println();
     Serial.println("DONE");
+  } else if (line.startsWith("EGG ")) {
+    // EGG <dex> [shiny]: hatch a chosen species right now. The legendary and
+    // shiny IV guarantees only apply at hatch time, so this is the only way to
+    // exercise them on hardware (SHINY below just toggles the flag afterwards).
+    int dex = 0, sh = 0;
+    int n = sscanf(line.c_str() + 4, "%d %d", &dex, &sh);
+    if (n >= 1 && dex >= 1 && dex <= DEX_COUNT) {
+      pet.dbgHatchAs(dex, sh != 0);
+      Serial.printf("%s%s iv=%u/%u/%u/%u\n", DEX_TBL[dex].name,
+                    pet.shiny ? " *SHINY*" : "", pet.ivAtk, pet.ivDef,
+                    pet.ivSpe, pet.ivHp);
+    }
+    Serial.println("DONE");
   } else if (line == "SHINY") {  // alterna shiny del actual (pruebas)
     pet.shiny = !pet.shiny;
     Serial.printf("shiny=%d\n", pet.shiny);

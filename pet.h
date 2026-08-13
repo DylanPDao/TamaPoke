@@ -128,6 +128,18 @@ public:
   void chooseStarter(int16_t dex) { eggTarget = dex; starterPick = false; save(); }
   void factoryReset() { prefs.clear(); }  // borra la NVS (test: comando serie WIPE)
   void dbgRunawayReady() { fullness = joy = energy = hygiene = 0; neglectTicks = RUNAWAY_TICKS; }  // test
+  // test: force what the egg holds and hatch it now (serial command EGG).
+  // The legendary/shiny IV guarantees only fire inside hatch(), so without
+  // this there is no way to exercise them from outside the class.
+  void dbgHatchAs(int16_t dex, bool wantShiny) {
+    if (dex < 1 || dex > 151) return;
+    eggTarget = dex;
+    eggShiny = wantShiny;
+    starterPick = false;
+    speciesId = -1;
+    eggTaps = 0;
+    hatch();
+  }
   uint8_t level() const { return 1 + ageMinutes / MINUTES_PER_LEVEL; }
   bool isRegistered(int16_t dex) const {
     return dex >= 1 && dex <= 151 && (dexReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));

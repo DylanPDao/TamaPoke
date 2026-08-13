@@ -353,6 +353,8 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 
 `STATS` (full state) · `SPEC <dex>` (change species) · `LVL <n>` ·
 `IV <atk> <def> <spd> <vit>` (force individual values) · `HATCH` ·
+`EGG <dex> [shiny]` (hatch a chosen species — the only way to test the
+legendary/shiny IV guarantees, which apply at hatch) ·
 `SHINY` · `NICK <x>` · `BYE` / `RUN` (farewell / runaway) · `ABANDON` (force the
 runaway-ready state) · `WIPE` (factory reset → new game) · `BEEP` (audio test) ·
 `REG` (Pokédex) · `EGGS` (simulate 20 eggs) · `GAL` (gallery) · `CAREDAY` ·
