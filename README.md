@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v1.2-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v1.5-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -23,7 +23,7 @@ and complete them all (shinies included).
 
 Running on hardware. Implemented: the 151 + shinies animated from microSD, full
 life cycle (egg by rarity → evolution → farewell/release/runaway, each gated
-behind a decision dialog), bred-Pokédex with gallery, battle stats (genes +
+behind a decision dialog), bred-Pokédex with gallery, battle stats (IVs +
 training), retention hooks (streak / bond / medals / name), biome + real-time
 backgrounds, ball minigame, training bag, animated bath, RTC with offline
 progression, battery (AXP2101) and PWR button, anti-burn-in dimming,
@@ -55,8 +55,8 @@ While **awake**, per minute:
 | JOY | −1 | **−2 extra** if FOOD < 30, **−2 extra** if HYG < 30 |
 
 - ~**15 %/min** chance to poop (only if FOOD > 40). Poops tank hygiene fast.
-- **Care slip-up** = letting any stat hit **≤ 10** (30-min cooldown so it counts once).
-  Each slip-up **delays evolution by 1 level** and cools the bond.
+- **Care slip-up** = letting any stat hit **≤ 10** (60-min cooldown so it counts once).
+  Each slip-up **delays evolution by 1 level** and cools the bond by 1.
 
 ### Actions
 - 🍎 **Berry** (3 flavors): +25 FOOD. Each species has a **hidden favorite flavor**
@@ -87,7 +87,7 @@ While **awake**, per minute:
   all 151 are completable).
 - **Shiny:** base **1 / 48** (→ **1 / 24** right after a goodbye), improved by
   streak/bond down to a best of **1 / 8**. Tracked separately in the dex.
-- Every hatch rolls unique **genes** (90–110 % per stat) — no two are identical.
+- Every hatch rolls unique **IVs** (see below) — no two are identical.
 
 ### Evolution
 - Triggers when **level ≥ its evolution level** (16 for most base forms; ~30 for
@@ -110,15 +110,43 @@ After any ending, a **new egg** appears.
 ### Bonds, streaks, medals, Pokédex
 - **Streak** (player-wide, survives across pets): first care each real day; milestones
   at **3 / 7 / 30 / 100** days; skipping a day breaks it.
-- **Bond** (per pet, resets on hatch): grows with affection (**cap +8/day**), cools on
-  neglect. Both streak & bond improve egg/shiny odds.
+- **Bond** (per pet, resets on hatch): grows with affection (**cap +20/day**), cools on
+  neglect. Both streak & bond improve egg/shiny odds — **and the IVs of your next pet**.
 - **8 medals** (Lv10/25/50, favorite berry found, 7-day streak, max bond, final form,
   "fit" = weight 0 & no slip-ups), per-pet + a global counter.
 - **Pokédex:** raising a species registers it; **151 + shinies** to complete.
 
-### Battle stats
-ATK / DEF / SPD = real **Gen-1 base** × genes + level + training (STRENGTH ← bag,
-SPEED ← minigame, DEFENSE ← 12 h of unbroken good care). *(Battles: on the roadmap.)*
+### Battle stats & IVs
+Every pet rolls four **IVs** (individual values, 0–31) at hatch — ATK / DEF / SPD /
+VIT — that never change and make each one genuinely unique:
+
+```
+stat = gen-1 base + level + (IV × level)/100 + training
+```
+
+The `(IV × level)/100` term is the **real formula from Gen III onward** — a perfect
+IV is worth +31 at level 100. But IVs do a second job here that they don't do in
+the games: **they cap training.**
+
+| | Effect |
+|---|---|
+| Innate bonus | up to **+22** at level 73 (end of a normal life) |
+| Training ceiling | `70 + (30 × IV)/31` → **77** at IV 8, **100** at IV 31 |
+| Total spread | ~**40 points**, about **15 %** between a great and a poor individual |
+
+- **Rolls are 8–31, never 0.** In the real games a 0 IV is survivable because you can
+  breed hundreds of eggs; here a pet lives 3 days, so a dud would just be a punishment.
+- **Streak + bond bias the roll upward** (up to +7) — using the *previous* pet's care
+  score. Raising one well genuinely improves the next.
+- **Legendaries hatch with 3 of 4 IVs perfect**, exactly as they're guaranteed 3
+  perfect IVs in the games.
+- **Shinies floor every IV at 20** — a nod to Gen 2, where shininess *was* a DV
+  pattern and a shiny was never mediocre.
+- IVs are shown on the Battle page of the stat card; a perfect 31 is highlighted.
+
+Training: **STRENGTH** ← the bag, **SPEED** ← the minigame, **DEFENSE** ← 1 h of
+wellbeing (resting, or awake with every need ≥ 40). **VIT** can't be trained.
+*(Battles: on the roadmap.)*
 
 ## Hardware
 
@@ -256,11 +284,16 @@ background biome), evolution line with gen-1 levels, rarities and starters.
 
 ## Battle stats and training
 
-Each creature has ATK/DEF/SPD = real gen-1 base × **genes** (90–110 %, rolled at
-hatch) + level + **training**:
+Each creature has ATK/DEF/SPD/VIT = real gen-1 base + level + **IV** (0–31, rolled
+at hatch, `IV × level/100` exactly as in the real games) + **training**:
 - SPEED ← the minigame
-- DEFENSE ← sustained good care (12 h with no slip-ups)
+- DEFENSE ← accumulated wellbeing (1 h resting or well-cared = +1)
 - STRENGTH ← the training bag (whacking)
+- VIT (vitality, from the gen-1 base HP) — not trainable
+
+The IV also sets **how far each stat can be trained at all** (77–100), so a
+well-rolled individual has a genuinely higher ceiling, not just a head start.
+See [Battle stats & IVs](#battle-stats--ivs) for the numbers.
 
 Shown on the Battle page of the stat card. The (hidden) weight goes up with candy
 and burns off with training.
@@ -318,7 +351,10 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 
 ## Serial console (115200, debug)
 
-`STATS` (full state) · `SPEC <dex>` (change species) · `LVL <n>` · `HATCH` ·
+`STATS` (full state) · `SPEC <dex>` (change species) · `LVL <n>` ·
+`IV <atk> <def> <spd> <vit>` (force individual values) · `HATCH` ·
+`EGG <dex> [shiny]` (hatch a chosen species — the only way to test the
+legendary/shiny IV guarantees, which apply at hatch) ·
 `SHINY` · `NICK <x>` · `BYE` / `RUN` (farewell / runaway) · `ABANDON` (force the
 runaway-ready state) · `WIPE` (factory reset → new game) · `BEEP` (audio test) ·
 `REG` (Pokédex) · `EGGS` (simulate 20 eggs) · `GAL` (gallery) · `CAREDAY` ·

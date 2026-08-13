@@ -122,7 +122,7 @@ void Pet::tick() {
   // el sueño es descanso: la energia se recupera y las necesidades bajan MUCHO
   // mas lento que despierto y con suelo (amanece pidiendo algo de mimo, no a
   // cero, sin descuidos ni escapadas). despierto: comida -2/min, hig/joy -1/min.
-  // El peso aun se quema; la racha de buen cuidado (goodTicks) queda en pausa.
+  // El peso aun se quema y el descanso cuenta para la DEF (ver defTick).
   if (sleeping) {
     energy = clamp100(energy + 6);
     if (weight > 0 && ageMinutes % 3 == 0) weight--;
@@ -131,6 +131,7 @@ void Pet::tick() {
       joy = dropTo(joy, 1, 35);
     }
     if (ageMinutes % 3 == 0) hygiene = dropTo(hygiene, 1, 45);
+    defTick(true);  // descansar tambien es bienestar: cuenta para la DEF
     checkMedals();  // aun puede cruzar un nivel por edad mientras duerme
     if (++ticksSinceSave >= 5) pendingSave = true;
     return;
@@ -147,15 +148,7 @@ void Pet::tick() {
   if (weight > 50) energy = clamp100(energy - 1);
   if (weight > 0 && ageMinutes % 3 == 0) weight--;
 
-  // la disciplina forja la defensa: 12 h seguidas bien cuidado = +1 DEF
-  if (lowestStat() >= 40) {
-    if (++goodTicks >= 720) {
-      goodTicks = 0;
-      if (trDef < 100) trDef++;
-    }
-  } else {
-    goodTicks = 0;
-  }
+  defTick(false);  // la calma forja la defensa
 
   int dJoy = -1;
   if (fullness < 30) dJoy -= 2;
@@ -195,6 +188,24 @@ void Pet::tick() {
 // animacion para que el paron de la escritura a flash no se vea)
 void Pet::flushSave() {
   if (pendingSave) save();
+}
+
+// La calma forja la defensa: cada hora de bienestar (descansando, o despierto
+// con todo >= 40) da +1 de DEF, hasta el tope que permita el IV.
+//
+// Antes pedia 12 h SEGUIDAS y CUALQUIER desliz ponia el contador a cero, ademas
+// de no contar el sueno. Simulando una vida entera (3 dias) eso daba 1 punto al
+// jugador teoricamente perfecto (uno que actue cada minuto durante 72 h) y 0 a
+// todos los demas, incluido uno que atienda cada 15 min: la comida cae 2/min,
+// asi que quien no pase por el bicho cada media hora esta SIEMPRE por debajo de
+// 40 y el contador no arrancaba nunca. La DEF era, en la practica, inentrenable.
+// Ahora acumula en vez de resetear: un descuido cuesta los minutos malos, no
+// todo el progreso.
+void Pet::defTick(bool resting) {
+  if (!resting && lowestStat() < 40) return;
+  if (++goodTicks < DEF_TRAIN_TICKS) return;
+  goodTicks = 0;
+  if (trDef < trMaxDef()) trDef++;
 }
 
 // quedan miembros sin registrar en la linea evolutiva de esta base?
@@ -321,18 +332,72 @@ void Pet::rename(const char *name) {
   save();
 }
 
-static uint16_t calcStat(uint8_t base, uint8_t gene, uint8_t lvl, uint8_t tr) {
-  return (uint16_t)base * gene / 100 + lvl + tr;
+// La aportacion del IV (IV x nivel / 100) es exactamente la de los juegos de
+// 3a generacion en adelante: un IV perfecto vale +31 a nivel 100. El resto de
+// la formula es la de TamaPoke (base plana + nivel) y no la de los juegos: con
+// el x nivel/100 canonico sobre la base, un bicho recien nacido mostraria
+// stats de un solo digito, que en una pantalla de mascota parece un error.
+static uint16_t calcStat(uint8_t base, uint8_t iv, uint8_t lvl, uint8_t tr) {
+  return (uint16_t)base + lvl + (uint16_t)iv * lvl / 100 + tr;
 }
 
 uint16_t Pet::atkStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bAtk, geneAtk, level(), trAtk);
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bAtk, ivAtk, level(), trAtk);
 }
 uint16_t Pet::defStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bDef, geneDef, level(), trDef);
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bDef, ivDef, level(), trDef);
 }
 uint16_t Pet::speStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpe, geneSpe, level(), trSpe);
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpe, ivSpe, level(), trSpe);
+}
+// la vitalidad no se entrena (no hay nada que la suba), asi que lleva un +10
+// fijo en lugar del entrenamiento, igual que el +Nivel+10 del HP en los juegos
+uint16_t Pet::vitStat() const {
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bHp, ivHp, level(), 10);
+}
+
+// Tirada de un IV: 8-31. El suelo en 8 es deliberado — en los juegos un 0 es
+// posible porque puedes criar cientos de huevos, aqui cada crianza dura 3 dias
+// y un individuo de desecho seria un castigo desproporcionado. La racha y el
+// vinculo del bicho ANTERIOR empujan la tirada: cuidar bien mejora la camada.
+uint8_t Pet::rollIV(int bonus) const {
+  int v = 8 + (int)random(24) + bonus / 2;  // bonus 0..14 -> +0..7
+  return (uint8_t)(v > 31 ? 31 : v);
+}
+
+// Guardados con el sistema viejo de genes (90-110%): se convierten al rango de
+// IV que se sortea hoy (8-31) para que nadie salga perdiendo con la
+// actualizacion. gene 0 = mascota anterior incluso a los genes.
+uint8_t Pet::ivFromGene(uint8_t gene) const {
+  if (gene == 0) return rollIV(0);
+  if (gene < 90) gene = 90;
+  if (gene > 110) gene = 110;
+  return 8 + (uint8_t)(((uint16_t)(gene - 90) * 23) / 20);
+}
+
+void Pet::rollIVs() {
+  int bonus = careBonus();
+  ivAtk = rollIV(bonus);
+  ivDef = rollIV(bonus);
+  ivSpe = rollIV(bonus);
+  ivHp = rollIV(bonus);
+  // los legendarios nacen con 3 de 4 IV perfectos, como en los juegos
+  if (speciesId >= 1 && speciesId <= 151 && DEX_TBL[speciesId].rarity == R_LEGENDARIO) {
+    uint8_t *p[4] = { &ivAtk, &ivDef, &ivSpe, &ivHp };
+    for (int k = 3; k > 0; k--) {  // baraja para elegir cuales 3
+      int j = random(k + 1);
+      uint8_t *t = p[k]; p[k] = p[j]; p[j] = t;
+    }
+    for (int k = 0; k < 3; k++) *p[k] = 31;
+  }
+  // en la 2a generacion el shiny ERA un patron de DV concreto: un shiny nunca
+  // era mediocre. Aqui se traduce como un suelo de 20 en todos los IV.
+  if (shiny) {
+    if (ivAtk < 20) ivAtk = 20;
+    if (ivDef < 20) ivDef = 20;
+    if (ivSpe < 20) ivSpe = 20;
+    if (ivHp < 20) ivHp = 20;
+  }
 }
 
 uint16_t Pet::registeredCount() const {
@@ -387,11 +452,11 @@ void Pet::release() {
 void Pet::hatch() {
   speciesId = eggTarget;
   shiny = eggShiny;
-  // genes del individuo: 90-110% por stat (cada crianza es unica)
-  geneAtk = 90 + random(21);
-  geneDef = 90 + random(21);
-  geneSpe = 90 + random(21);
+  // IV del individuo (cada crianza es unica). Se tiran ANTES de resetear el
+  // vinculo a proposito: el careBonus que los empuja es el del bicho anterior.
+  rollIVs();
   trAtk = trDef = trSpe = 0;
+  goodTicks = 0;
   berryKnown = false;
   bond = 0;          // vinculo, medallas y nombre son del individuo
   bondToday = 0;
@@ -470,7 +535,7 @@ void Pet::feedCandy() {
 void Pet::playResult(uint8_t score) {
   if (ceremony != CER_NONE || isEgg()) return;
   uint8_t v = trSpe + score / 5;  // jugar entrena la velocidad
-  trSpe = v > 100 ? 100 : v;
+  trSpe = v > trMaxSpe() ? trMaxSpe() : v;  // el IV pone el techo
   joy = clamp100(joy + 5 + (score > 15 ? 30 : score * 2));
   energy = dropTo(energy, 10 + score / 2, 5);
   fullness = dropTo(fullness, 5, 5);
@@ -488,8 +553,10 @@ uint8_t Pet::trainStrength(uint16_t hits) {
   if (ceremony != CER_NONE || isEgg()) return 0;
   uint8_t gain = hits / 4;          // ~4 golpes = 1 punto de entrenamiento
   if (gain > 18) gain = 18;         // tope por sesion: la FUE se forja a fuego lento
+  uint8_t before = trAtk;
   uint8_t v = trAtk + gain;
-  trAtk = v > 100 ? 100 : v;
+  trAtk = v > trMaxAtk() ? trMaxAtk() : v;  // el IV pone el techo
+  gain = trAtk - before;            // lo que de verdad subio (puede topar)
   energy = dropTo(energy, 12, 5);   // cansa
   fullness = dropTo(fullness, 5, 5);
   int burn = (int)weight - hits / 3;  // tambien quema peso
@@ -562,9 +629,10 @@ void Pet::save() {
   prefs.putUChar("hyg", hygiene);
   prefs.putUChar("poop", poops);
   prefs.putUChar("wgt", weight);
-  prefs.putUChar("gatk", geneAtk);
-  prefs.putUChar("gdef", geneDef);
-  prefs.putUChar("gspe", geneSpe);
+  prefs.putUChar("ivat", ivAtk);
+  prefs.putUChar("ivdf", ivDef);
+  prefs.putUChar("ivsp", ivSpe);
+  prefs.putUChar("ivhp", ivHp);
   prefs.putUChar("tatk", trAtk);
   prefs.putUChar("tdef", trDef);
   prefs.putUChar("tspe", trSpe);
@@ -601,17 +669,27 @@ void Pet::load() {
   hygiene = prefs.getUChar("hyg", 100);
   poops = prefs.getUChar("poop", 0);
   weight = prefs.getUChar("wgt", 0);
-  geneAtk = prefs.getUChar("gatk", 0);
-  geneDef = prefs.getUChar("gdef", 0);
-  geneSpe = prefs.getUChar("gspe", 0);
-  if (geneAtk == 0) {  // mascota anterior a los genes: tirada unica ahora
-    geneAtk = 90 + random(21);
-    geneDef = 90 + random(21);
-    geneSpe = 90 + random(21);
+  if (prefs.isKey("ivat")) {
+    ivAtk = prefs.getUChar("ivat", 16);
+    ivDef = prefs.getUChar("ivdf", 16);
+    ivSpe = prefs.getUChar("ivsp", 16);
+    ivHp = prefs.getUChar("ivhp", 16);
+  } else {
+    // migracion desde los genes (90-110%) a IV (8-31) conservando la calidad
+    // relativa: quien tenia un gen top mantiene un IV top. El IV de vitalidad
+    // no existia, se tira ahora.
+    ivAtk = ivFromGene(prefs.getUChar("gatk", 0));
+    ivDef = ivFromGene(prefs.getUChar("gdef", 0));
+    ivSpe = ivFromGene(prefs.getUChar("gspe", 0));
+    ivHp = rollIV(0);
   }
   trAtk = prefs.getUChar("tatk", 0);
   trDef = prefs.getUChar("tdef", 0);
   trSpe = prefs.getUChar("tspe", 0);
+  // un guardado antiguo puede traer entrenamiento por encima del nuevo tope
+  if (trAtk > trMaxAtk()) trAtk = trMaxAtk();
+  if (trDef > trMaxDef()) trDef = trMaxDef();
+  if (trSpe > trMaxSpe()) trSpe = trMaxSpe();
   berryKnown = prefs.getBool("bk", false);
   shiny = prefs.getBool("shy", false);
   eggShiny = prefs.getBool("eshy", false);

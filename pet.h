@@ -14,6 +14,7 @@
 #define CEREMONY_MS 10000UL                // duracion de la despedida en pantalla
 #define FAREWELL_AGE_MIN (3UL * 24 * 60)   // se despide a los 3 dias de juego (en forma final)
 #define RUNAWAY_TICKS 60                   // se escapa tras 1 h con TODO a cero
+#define DEF_TRAIN_TICKS 60                 // minutos de bienestar por +1 de DEF
 
 // ceremonias de fin de ciclo
 enum : uint8_t { CER_NONE = 0, CER_FAREWELL, CER_RUNAWAY, CER_RELEASE };
@@ -37,8 +38,11 @@ public:
   uint8_t hygiene = 100;  // limpieza
   uint8_t poops = 0;      // cacas en pantalla (max 3)
   uint8_t weight = 0;     // 0-100: las chuches engordan, el minijuego quema
-  // genes (90-110%, se tiran al eclosionar) y entrenamiento (0-100)
-  uint8_t geneAtk = 100, geneDef = 100, geneSpe = 100;
+  // IV (valores individuales 0-31, como en los juegos de 3a gen en adelante):
+  // se tiran al eclosionar y no cambian nunca. Aportan IV x nivel / 100 al
+  // stat Y ademas fijan el tope de entrenamiento (trMaxFor): un individuo
+  // mediocre no solo empieza peor, es que no puede llegar tan lejos.
+  uint8_t ivAtk = 16, ivDef = 16, ivSpe = 16, ivHp = 16;
   uint8_t trAtk = 0, trDef = 0, trSpe = 0;
   bool berryKnown = false;  // ya descubrio su baya favorita
   bool shiny = false;       // variante de color rara (se sortea en el huevo)
@@ -78,10 +82,16 @@ public:
   void playResult(uint8_t score);  // recompensa del minijuego (entrena VEL)
   uint8_t trainStrength(uint16_t hits);  // saco de entrenamiento (entrena FUE)
 
-  // stats de combate: base real de gen 1 x genes + nivel + entrenamiento
+  // stats de combate: base real de gen 1 + nivel + IV + entrenamiento
   uint16_t atkStat() const;
   uint16_t defStat() const;
   uint16_t speStat() const;
+  uint16_t vitStat() const;  // vitalidad (bHp): no se entrena, solo IV y nivel
+  // tope de entrenamiento que permite un IV: 77 (IV 8) .. 100 (IV 31)
+  static uint8_t trMaxFor(uint8_t iv) { return 70 + (30 * (uint16_t)iv) / 31; }
+  uint8_t trMaxAtk() const { return trMaxFor(ivAtk); }
+  uint8_t trMaxDef() const { return trMaxFor(ivDef); }
+  uint8_t trMaxSpe() const { return trMaxFor(ivSpe); }
   void play();
   void toggleLight();  // dormir / despertar
   void clean();
@@ -118,6 +128,18 @@ public:
   void chooseStarter(int16_t dex) { eggTarget = dex; starterPick = false; save(); }
   void factoryReset() { prefs.clear(); }  // borra la NVS (test: comando serie WIPE)
   void dbgRunawayReady() { fullness = joy = energy = hygiene = 0; neglectTicks = RUNAWAY_TICKS; }  // test
+  // test: force what the egg holds and hatch it now (serial command EGG).
+  // The legendary/shiny IV guarantees only fire inside hatch(), so without
+  // this there is no way to exercise them from outside the class.
+  void dbgHatchAs(int16_t dex, bool wantShiny) {
+    if (dex < 1 || dex > 151) return;
+    eggTarget = dex;
+    eggShiny = wantShiny;
+    starterPick = false;
+    speciesId = -1;
+    eggTaps = 0;
+    hatch();
+  }
   uint8_t level() const { return 1 + ageMinutes / MINUTES_PER_LEVEL; }
   bool isRegistered(int16_t dex) const {
     return dex >= 1 && dex <= 151 && (dexReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
@@ -177,6 +199,10 @@ private:
   uint32_t today() const { return lastSeenEpoch ? lastSeenEpoch / 86400 : 0; }
   void registerCare();   // primer cuidado del dia: racha + vinculo
   void addBond(uint8_t amt);
+  uint8_t rollIV(int bonus) const;  // una tirada 8-31 empujada por el cuidado
+  void rollIVs();                   // los 4, con las garantias de legendario/shiny
+  uint8_t ivFromGene(uint8_t gene) const;  // migracion de guardados con genes
+  void defTick(bool resting);       // la calma forja la defensa (ver pet.cpp)
   void checkMedals();
   void tick();
   void hatch();
