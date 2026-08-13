@@ -29,7 +29,7 @@ g++ -std=c++17 -O1 -w \
   $(sdl2-config --cflags) \
   -o tamapoke-emu \
   sketch.cpp "$ROOT/pet.cpp" "$ROOT/i18n.cpp" "$ROOT/party.cpp" \
-  host_impl.cpp font.cpp main_sdl.cpp \
+  host_impl.cpp font.cpp clock.cpp main_sdl.cpp \
   $(sdl2-config --libs)
 
 echo "built: $HERE/tamapoke-emu"

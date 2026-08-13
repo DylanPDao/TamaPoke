@@ -20,12 +20,7 @@ FakeWire Wire;
 volatile int g_touchX = 0, g_touchY = 0;
 volatile bool g_touchDown = false;
 
-static std::chrono::steady_clock::time_point g_t0 = std::chrono::steady_clock::now();
-static uint32_t g_timeScale = 1;   // >1 makes in-game minutes pass faster
-uint32_t millis() {
-  auto d = std::chrono::steady_clock::now() - g_t0;
-  return (uint32_t)(std::chrono::duration_cast<std::chrono::milliseconds>(d).count() * g_timeScale);
-}
+// millis() lives in clock.cpp so the headless tests share it
 void FakeESP::restart() { Serial.println("emu: ESP.restart() -> exiting"); exit(0); }
 
 // --- stdin-backed serial ---
@@ -164,7 +159,7 @@ int main(int argc, char **argv) {
   int shotLvl = 0, shotIv = -1, shotDex = 6;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
-    else if (!strcmp(argv[i], "--fast") && i + 1 < argc) g_timeScale = atoi(argv[++i]);
+    else if (!strcmp(argv[i], "--fast") && i + 1 < argc) emuSetTimeScale(atoi(argv[++i]));
     else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
     else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
     else if (!strcmp(argv[i], "--out") && i + 1 < argc) shotOut = argv[++i];
@@ -187,7 +182,8 @@ int main(int argc, char **argv) {
 
   printf("TamaPoke emulator — click to touch, drag to swipe, hold 3s to release.\n");
   printf("Type serial commands here (STATS, IV 31 31 31 31, EGG 150 1, LVL 73, WIPE...)\n");
-  printf("Time scale x%u. Ctrl-C or close the window to quit.\n\n", g_timeScale);
+  printf("Time scale x%u (suspended while you touch). Ctrl-C or close the window to quit.\n\n",
+         emuTimeScale());
 
   setup();
 

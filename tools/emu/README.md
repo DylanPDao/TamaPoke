@@ -43,7 +43,7 @@ clipped on real hardware.
 | Flag | Meaning |
 |---|---|
 | `--scale N` | window zoom (default 2) |
-| `--fast N` | run the clock N× faster — `--fast 60` turns an in-game minute into a second, so a full 3-day life takes about an hour |
+| `--fast N` | run the clock N× faster — `--fast 60` turns an in-game minute into a second, so a full 3-day life takes about an hour. The speed-up is **suspended while you are touching the panel**: the firmware times taps and swipes off the same `millis()`, so scaling it during a gesture would shrink the tap window (`dt < 1500`) to `1500/N` real ms and make the screen unclickable |
 | `--save FILE` | where to persist NVS (default `tamapoke.nvs` in the cwd) |
 | `--wipe` | delete the save first |
 | `--sprites DIR` | sprite directory (defaults to `tools/sdcard/mons`) |
@@ -66,7 +66,8 @@ sips -s format png shot.ppm --out shot.png     # macOS; or use ImageMagick
 
 | File | Stands in for |
 |---|---|
-| `Arduino.h` | `millis`, `random`, `String`, and a `Serial` wired to stdin |
+| `Arduino.h` | `random`, `String`, a `Serial` wired to stdin, and `attachInterrupt` (the SDL layer raises the touch INT by hand — the sketch gates `handleTouch` on it) |
+| `clock.cpp` | `millis`, including `--fast` scaling; its own file so the headless tests link the same clock the window runs |
 | `Preferences.h` | NVS, backed by a file so your pet survives restarts |
 | `Arduino_GFX_Library.h` | the canvas — every primitive the sketch uses, into an RGB565 buffer |
 | `TouchDrvCSTXXX.hpp` | the CST9217, fed by the mouse |

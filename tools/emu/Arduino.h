@@ -21,7 +21,9 @@
 
 inline void *ps_malloc(size_t n) { return malloc(n); }
 
-uint32_t millis();
+uint32_t millis();          // clock.cpp
+void emuSetTimeScale(uint32_t s);
+uint32_t emuTimeScale();
 inline void delay(uint32_t ms) {
   // the emulator must keep pumping SDL events, so delay is a no-op; nothing in
   // the sketch relies on it for correctness, only for boot-time settling
