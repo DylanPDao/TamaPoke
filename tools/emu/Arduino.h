@@ -29,7 +29,22 @@ inline void delay(uint32_t ms) {
 }
 inline void pinMode(int, int) {}
 inline int digitalPinToInterrupt(int p) { return p; }
-inline void attachInterrupt(int, void (*)(), int) {}
+
+// There is no interrupt controller here, so the handler is kept in a slot and
+// the SDL layer raises the pin by hand (emuFireInterrupt) on mouse activity.
+// Without this the sketch's INT gate in handleTouch() never opens and touch is
+// dead. One slot is enough: the touch INT is the only interrupt the firmware
+// attaches. Warn rather than overwrite silently, so a second one is not another
+// afternoon of wondering why the panel ignores you.
+inline void (*g_isr)() = nullptr;
+inline void attachInterrupt(int pin, void (*fn)(), int) {
+  if (g_isr && g_isr != fn)
+    fprintf(stderr, "emu: attachInterrupt(pin %d) displaced the previous handler\n", pin);
+  g_isr = fn;
+}
+inline void emuFireInterrupt() {
+  if (g_isr) g_isr();
+}
 
 extern uint32_t g_seed;
 inline long random(long n) {

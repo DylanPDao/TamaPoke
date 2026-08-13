@@ -197,12 +197,17 @@ int main(int argc, char **argv) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       if (e.type == SDL_QUIT) run = false;
+      // Every mouse event pulses the touch INT, the way the CST9217 does on the
+      // board. The sketch ignores the panel entirely until that fires.
       else if (e.type == SDL_MOUSEBUTTONDOWN) {
         g_touchX = e.button.x / scale; g_touchY = e.button.y / scale; g_touchDown = true;
+        emuFireInterrupt();
       } else if (e.type == SDL_MOUSEBUTTONUP) {
         g_touchDown = false;
+        emuFireInterrupt();
       } else if (e.type == SDL_MOUSEMOTION && g_touchDown) {
         g_touchX = e.motion.x / scale; g_touchY = e.motion.y / scale;
+        emuFireInterrupt();
       } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) run = false;
     }
     pumpStdin();
