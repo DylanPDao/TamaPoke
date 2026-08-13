@@ -97,6 +97,7 @@ void Pet::syncClock(uint32_t nowEpoch) {
 void Pet::update(uint32_t nowMs) {
   // fin de ceremonia: la criatura se va y queda un huevo nuevo
   if (ceremony != CER_NONE && millis() > ceremonyUntil) {
+    snapshotForParty();  // hand it over BEFORE newEgg() erases everything
     newEgg();
     return;
   }
@@ -182,6 +183,31 @@ void Pet::tick() {
   // autoguardado periodico: NO escribir a flash aqui (corre dentro del loop,
   // mientras se anima); solo marcar y dejar que el loop lo vuelque al atenuar
   if (++ticksSinceSave >= 5) pendingSave = true;
+}
+
+// Copies the creature into endedMon so it can be offered a party slot, since
+// newEgg() is about to wipe every field. Only the two endings the player CHOSE
+// qualify: a runaway ran off after an hour of total neglect, and letting it
+// come back on the team would remove the cost from the one ending that has any.
+void Pet::snapshotForParty() {
+  endedKind = CER_NONE;
+  if (isEgg()) return;
+  if (ceremony != CER_FAREWELL && ceremony != CER_RELEASE) return;
+  endedMon = PartyMon();
+  endedMon.dex = speciesId;
+  endedMon.level = level();
+  endedMon.medals = medals;
+  endedMon.ivAtk = ivAtk;
+  endedMon.ivDef = ivDef;
+  endedMon.ivSpe = ivSpe;
+  endedMon.ivHp = ivHp;
+  endedMon.trAtk = trAtk;
+  endedMon.trDef = trDef;
+  endedMon.trSpe = trSpe;
+  endedMon.shiny = shiny ? 1 : 0;
+  strncpy(endedMon.nick, nick, sizeof(endedMon.nick) - 1);
+  endedMon.nick[sizeof(endedMon.nick) - 1] = 0;
+  endedKind = ceremony;
 }
 
 // vuelca el guardado periodico pendiente (lo llama el loop en un momento sin
