@@ -24,7 +24,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.4"
+#define FW_VERSION "1.5"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -346,6 +346,24 @@ void handleSerial() {
   } else if (line.startsWith("LVL ")) {
     pet.ageMinutes = (uint32_t)line.substring(4).toInt() * MINUTES_PER_LEVEL;
     Serial.println("DONE");
+  } else if (line.startsWith("IV ")) {
+    // IV <fue> <def> <vel> <vit>: fija los valores individuales (pruebas).
+    // Con "IV 31 31 31 31" se ve el techo; con "IV 8 8 8 8" el suelo.
+    int v[4] = { 16, 16, 16, 16 };
+    int n = sscanf(line.c_str() + 3, "%d %d %d %d", &v[0], &v[1], &v[2], &v[3]);
+    if (n >= 1) {
+      for (int i = 0; i < 4; i++) v[i] = v[i] < 0 ? 0 : (v[i] > 31 ? 31 : v[i]);
+      pet.ivAtk = v[0];
+      pet.ivDef = (n >= 2) ? v[1] : v[0];
+      pet.ivSpe = (n >= 3) ? v[2] : v[0];
+      pet.ivHp = (n >= 4) ? v[3] : v[0];
+      if (pet.trAtk > pet.trMaxAtk()) pet.trAtk = pet.trMaxAtk();
+      if (pet.trDef > pet.trMaxDef()) pet.trDef = pet.trMaxDef();
+      if (pet.trSpe > pet.trMaxSpe()) pet.trSpe = pet.trMaxSpe();
+    }
+    Serial.printf("iv=%u/%u/%u/%u topes=%u/%u/%u\n", pet.ivAtk, pet.ivDef,
+                  pet.ivSpe, pet.ivHp, pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
+    Serial.println("DONE");
   } else if (line.startsWith("TIME ")) {
     uint32_t e = (uint32_t)line.substring(5).toInt();
     rtcSetEpoch(e);
@@ -419,10 +437,13 @@ void handleSerial() {
                   pet.speciesId, pet.level(), pet.fullness, pet.joy, pet.energy,
                   pet.hygiene, pet.careMistakes, sdReady, mon.loaded,
                   batPercent(), usbPresent(), rtcEpoch());
-    Serial.printf("peso=%u fue=%u def=%u vel=%u genes=%u/%u/%u tr=%u/%u/%u baya=%d\n",
+    Serial.printf("peso=%u fue=%u def=%u vel=%u vit=%u baya=%d\n",
                   pet.weight, pet.atkStat(), pet.defStat(), pet.speStat(),
-                  pet.geneAtk, pet.geneDef, pet.geneSpe,
-                  pet.trAtk, pet.trDef, pet.trSpe, pet.berryKnown);
+                  pet.vitStat(), pet.berryKnown);
+    Serial.printf("iv=%u/%u/%u/%u tr=%u/%u/%u topes=%u/%u/%u\n",
+                  pet.ivAtk, pet.ivDef, pet.ivSpe, pet.ivHp,
+                  pet.trAtk, pet.trDef, pet.trSpe,
+                  pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
     Serial.printf("shiny=%d streak=%u/%u bond=%u medals=0x%X(%u) nick=%s\n",
                   pet.shiny, pet.streak, pet.bestStreak, pet.bond, pet.medals,
                   pet.totalMedals, pet.nick);
@@ -1235,20 +1256,34 @@ void renderGame() {
 
 // ---------- ficha del bicho (deslizar vertical) ----------
 
-void drawCardStat(int y, const char *label, uint16_t val, uint16_t maxBar, uint16_t color) {
+// una fila de la ficha: etiqueta, barra, valor y (si iv != IV_NONE) el valor
+// individual que fija el techo de ese stat
+// (sin argumento por defecto: el generador de prototipos de Arduino los
+// descarta y las llamadas que lo omitan no compilarian)
+#define IV_NONE 0xFF
+void drawCardStat(int y, const char *label, uint16_t val, uint16_t maxBar,
+                  uint16_t color, uint8_t iv) {
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(96, y);
+  gfx->setCursor(70, y);
   gfx->print(label);
-  char num[8];
-  snprintf(num, sizeof(num), "%u", val);
-  gfx->setCursor(330, y);
-  gfx->print(num);
-  int bw = 160;
+  int bw = 150;
   int fw = (int)val * bw / maxBar;
   if (fw > bw) fw = bw;
-  gfx->fillRoundRect(150, y + 2, bw, 11, 3, UI_TRACK);
-  if (fw > 2) gfx->fillRoundRect(150, y + 2, fw, 11, 3, color);
+  gfx->fillRoundRect(112, y + 2, bw, 11, 3, UI_TRACK);
+  if (fw > 2) gfx->fillRoundRect(112, y + 2, fw, 11, 3, color);
+  char num[8];
+  snprintf(num, sizeof(num), "%u", val);
+  gfx->setCursor(272, y);
+  gfx->print(num);
+  if (iv != IV_NONE) {
+    char b[10];
+    snprintf(b, sizeof(b), T(S_IV_FMT), iv);
+    // un IV perfecto se resalta: es el golpe de suerte que el jugador busca
+    gfx->setTextColor(iv >= 31 ? UI_BAR_WARN : UI_TRACK);
+    gfx->setCursor(344, y);
+    gfx->print(b);
+  }
 }
 
 // ---------- ajuste de hora en pantalla (deslizar abajo) ----------
@@ -1459,7 +1494,7 @@ void renderCardProfile() {
   gfx->setCursor(sx + 24, sy + 2);
   gfx->print(rl);
 
-  drawCardStat(258, T(S_VIN), pet.bond, 100, C565(0xd4, 0x52, 0x7e));
+  drawCardStat(258, T(S_VIN), pet.bond, 100, C565(0xd4, 0x52, 0x7e), IV_NONE);
 
   const char *berry = !pet.berryKnown ? T(S_BERRY_UNK)
                       : pet.lovesBerry(0) ? T(S_BERRY_RED)
@@ -1485,10 +1520,13 @@ void renderCardStats() {
   gfx->setCursor(CX - strlen(T(S_BATTLE)) * 9, 48);
   gfx->print(T(S_BATTLE));
 
-  drawCardStat(118, T(S_STAT_ATK), pet.atkStat(), 260, UI_BAR_BAD);
-  drawCardStat(160, T(S_STAT_DEF), pet.defStat(), 260, 0x4C98);
-  drawCardStat(202, T(S_STAT_SPE), pet.speStat(), 260, UI_BAR_WARN);
-  drawCardStat(244, T(S_STAT_WGT), pet.weight, 100, 0xB3C8);
+  // 360 de tope de barra: a nivel 73 (fin de ciclo) el stat mas alto de toda
+  // la dex es la vitalidad de CHANSEY (355). El 260 anterior ya se desbordaba.
+  drawCardStat(104, T(S_STAT_ATK), pet.atkStat(), 360, UI_BAR_BAD, pet.ivAtk);
+  drawCardStat(144, T(S_STAT_DEF), pet.defStat(), 360, 0x4C98, pet.ivDef);
+  drawCardStat(184, T(S_STAT_SPE), pet.speStat(), 360, UI_BAR_WARN, pet.ivSpe);
+  drawCardStat(224, T(S_STAT_VIT), pet.vitStat(), 360, UI_BAR_OK, pet.ivHp);
+  drawCardStat(264, T(S_STAT_WGT), pet.weight, 100, 0xB3C8, IV_NONE);
 
   // boton: saco de entrenamiento de fuerza
   gfx->fillRoundRect(96, 300, 274, 40, 12, UI_BAR_BAD);

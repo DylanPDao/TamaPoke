@@ -35,6 +35,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Evolucionar?", "Mantener forma", "Despedirse?", "Despedirse", "Quedaros juntos",
     "Elige tu inicial",
     "Sin sprites", "Cargalos en la SD",
+    "PS", "IV %u",
   },
   // ---------------- EN ----------------
   {
@@ -64,6 +65,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Evolve?", "Keep form", "Say goodbye?", "Goodbye", "Stay together",
     "Choose your starter",
     "No sprites", "Load them onto the SD",
+    "HP", "IV %u",
   },
   // ---------------- FR ----------------
   {
@@ -93,6 +95,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Evoluer?", "Garder forme", "Dire adieu?", "Adieu", "Rester ensemble",
     "Choisis ton starter",
     "Pas de sprites", "Charge-les sur la SD",
+    "PV", "IV %u",
   },
   // ---------------- DE ----------------
   {
@@ -122,6 +125,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Entwickeln?", "Form behalten", "Abschied?", "Lebwohl", "Zusammen bleiben",
     "Waehle dein Starter",
     "Keine Sprites", "Auf die SD laden",
+    "KP", "IV %u",
   },
   // ---------------- IT ----------------
   {
@@ -151,6 +155,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Evolvere?", "Mantieni forma", "Salutare?", "Addio", "Restare insieme",
     "Scegli l'iniziale",
     "Senza sprite", "Caricali sulla SD",
+    "PS", "IV %u",
   },
   // ---------------- PT ----------------
   {
@@ -180,6 +185,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Evoluir?", "Manter forma", "Despedir?", "Adeus", "Ficar juntos",
     "Escolhe o inicial",
     "Sem sprites", "Carrega-os no SD",
+    "PS", "IV %u",
   },
 };
 
