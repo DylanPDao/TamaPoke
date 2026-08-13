@@ -138,6 +138,48 @@ Working state, so it survives a closed session. Tick items off as they land.
 - [ ] Optional: move the emulator touch/i18n test harnesses out of the scratchpad
       into `tools/emu/` as regression tests.
 
+### Battle system — decided, not started
+
+**Turn-based and move-based, like the real games.** This is not a fresh choice:
+`moves.h` (78 moves: name, type, MC_PHYS/SPEC/STATUS, power, acc, effect, target,
+plus stat stages, priority, multi-hit, recoil, drain, heal, charge/recharge) is
+already a turn-based engine's data layer. `types.h` has integer `typeEffPct()`.
+The old roadmap line about "resolution by ATK/DEF/SPD" is superseded — it would
+discard all of it.
+
+Settled:
+
+- **Special split lives on the species, not the individual.** `dex_stats.py`
+  already holds all 6 stats; `gen_dex.py:94` unpacks `spa, spd` and discards
+  them because the struct on line 71 declares only 4. Fix = add `bSpa`/`bSpd`
+  and regenerate. Special attack runs off `ivAtk/trAtk` vs `bSpA`, special
+  defence off `ivDef/trDef` vs `bSpD` — **no new IVs, no NVS migration** (the
+  rationale is already written up in `fetch_pokeapi.py:13-17`).
+- **The party is the battle team.** `PartyMon` already carries full stats and
+  `Party::atkOf/defOf/speOf/vitOf` exist. Retired pets are frozen at banking
+  (level, training — and moves, once they exist), which is the level cap.
+- **Moves are player-chosen.** On level-up the player picks which of the 4 to
+  forget; it is never automatic. Frozen at banking, so the choice is permanent.
+- **Status ailments are IN.** Requires a `MoveEntry` schema change: `effect` is
+  a single slot already used by EF_RECOIL etc., so a damaging move cannot also
+  carry a secondary status. Add `ailment` + `ailChance` fields, then author them
+  onto `dex_moves.py` (hand-written, not fetched — PokeAPI ailment data was
+  never pulled).
+- **No PP.** No field in `MoveEntry`, and it stays that way.
+- **Rewards are badges/rank, not XP.** `level() = 1 + ageMinutes/MINUTES_PER_LEVEL`
+  — level is age. Granting XP would break real-time ageing. Learnsets are
+  level-keyed, so moves unlock as the pet ages.
+
+Open: do ailments **persist after battle** (authentic, gives healing items a
+purpose, but poison ticking against the fullness/joy/energy/hygiene sim could
+leave a pet permanently miserable) or clear at battle end? Decide before writing
+the status code.
+
+Phase order: (1) `bSpa`/`bSpd` regen · (2) move storage on `Pet` + `PartyMon`
+with learnset auto-population for existing saves · (3) learn/forget UI ·
+(4) `MoveEntry` ailment fields · (5) damage + turn resolution, headless-testable
+in the emulator · (6) battle UI · (7) gyms.
+
 ### Training mechanics — deliberately unresolved
 
 Training already exists and is already EV-shaped: `trAtk/trDef/trSpe` (`pet.h:47`)
