@@ -36,6 +36,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Elige tu inicial",
     "Sin sprites", "Cargalos en la SD",
     "PS", "IV %u",
+    "MENU", "AJUSTES", "CERRAR", "EQUIPO %u/6", "- vacio -", "%s se une al equipo!", "Equipo lleno: elige a quien sustituir", "Dejarlo ir",
   },
   // ---------------- EN ----------------
   {
@@ -66,6 +67,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Choose your starter",
     "No sprites", "Load them onto the SD",
     "HP", "IV %u",
+    "MENU", "SETTINGS", "CLOSE", "PARTY %u/6", "- empty -", "%s joined the party!", "Party full: pick who to replace", "Let it go",
   },
   // ---------------- FR ----------------
   {
@@ -96,6 +98,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Choisis ton starter",
     "Pas de sprites", "Charge-les sur la SD",
     "PV", "IV %u",
+    "MENU", "REGLAGES", "FERMER", "EQUIPE %u/6", "- vide -", "%s rejoint l'equipe!", "Equipe pleine: qui remplacer?", "Le laisser partir",
   },
   // ---------------- DE ----------------
   {
@@ -126,6 +129,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Waehle dein Starter",
     "Keine Sprites", "Auf die SD laden",
     "KP", "IV %u",
+    "MENU", "EINSTELLUNGEN", "SCHLIESSEN", "TEAM %u/6", "- leer -", "%s kommt ins Team!", "Team voll: wen ersetzen?", "Ziehen lassen",
   },
   // ---------------- IT ----------------
   {
@@ -156,6 +160,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Scegli l'iniziale",
     "Senza sprite", "Caricali sulla SD",
     "PS", "IV %u",
+    "MENU", "IMPOSTAZIONI", "CHIUDI", "SQUADRA %u/6", "- vuoto -", "%s entra in squadra!", "Squadra piena: chi sostituire?", "Lasciarlo andare",
   },
   // ---------------- PT ----------------
   {
@@ -186,6 +191,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "Escolhe o inicial",
     "Sem sprites", "Carrega-os no SD",
     "PS", "IV %u",
+    "MENU", "AJUSTES", "FECHAR", "EQUIPA %u/6", "- vazio -", "%s junta-se a equipa!", "Equipa cheia: quem substituir?", "Deixa-lo ir",
   },
 };
 

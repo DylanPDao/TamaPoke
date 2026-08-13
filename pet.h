@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include "party.h"
 
 // 1 tick = 1 minuto de juego. Baja este valor para probar mas rapido
 // (p. ej. 5000UL = las estadisticas caen 12x mas rapido).
@@ -54,6 +55,12 @@ public:
   uint32_t lastSeenEpoch = 0;   // ultima hora RTC vista (para progresion offline)
   uint8_t ceremony = CER_NONE;  // despedida/escapada/liberacion en curso
   uint8_t lastEnd = CER_NONE;   // como acabo la anterior (afecta al huevo)
+  // A finished ceremony hands the creature over here before newEgg() wipes the
+  // live state. The UI drains it (endedKind back to CER_NONE) once the pet has
+  // either taken a party slot or been let go. Only farewell and release fill
+  // it; a runaway leaves endedKind at CER_NONE and the pet is simply gone.
+  PartyMon endedMon;
+  uint8_t endedKind = CER_NONE;
   uint8_t dexReg[19] = { 0 };       // pokedex de criados (bitmap 151 bits)
   uint8_t dexShinyReg[19] = { 0 };  // criados en version shiny
   // racha de cuidado diario (del jugador: persiste entre crianzas)
@@ -203,6 +210,7 @@ private:
   void rollIVs();                   // los 4, con las garantias de legendario/shiny
   uint8_t ivFromGene(uint8_t gene) const;  // migracion de guardados con genes
   void defTick(bool resting);       // la calma forja la defensa (ver pet.cpp)
+  void snapshotForParty();          // copy into endedMon before newEgg() wipes it
   void checkMedals();
   void tick();
   void hatch();

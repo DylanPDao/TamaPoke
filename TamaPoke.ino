@@ -17,6 +17,7 @@
 #include "species.h"
 #include "dex.h"
 #include "types.h"
+#include "party.h"
 #include "pet.h"
 #include "sdmon.h"
 #include "rtcbat.h"
@@ -25,7 +26,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.6"
+#define FW_VERSION "1.7"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -67,6 +68,31 @@ bool kbOpen = false;          // teclado para renombrar al bicho
 char nameBuf[12] = "";
 uint8_t nameLen = 0;
 uint8_t cardPage = 0;         // 0 perfil, 1 stats+medallas
+// Menu overlay: opened by tapping the pet's name on the main screen. The
+// horizontal swipe is already taken by the Pokedex (it pages through 10 pages
+// internally), so a hub on that axis would be ambiguous; the header was inert
+// and is the only free surface left.
+bool menuOpen = false;
+#define MENU_X 73
+#define MENU_Y 108
+#define MENU_W 320
+#define MENU_H 252
+#define MENU_ROW_H 52
+#define MENU_ROW_GAP 6
+#define MENU_ROWS 4
+#define MENU_ROW_Y(i) (MENU_Y + 16 + (i) * (MENU_ROW_H + MENU_ROW_GAP))
+
+// Party screen. partyPick != 0 means the newcomer needs a slot: the player
+// either taps someone to replace or lets it go.
+bool partyOpen = false;
+bool partyPick = false;
+uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
+char partyBannerName[14] = "";
+#define PARTY_CELL_W 150
+#define PARTY_CELL_H 74
+#define PARTY_GRID_X 78
+#define PARTY_GRID_Y 92
+
 bool clockOpen = false;       // pantalla de ajuste de hora (deslizar abajo)
 int clockH = 12, clockM = 0;  // hora en edicion
 
@@ -201,6 +227,7 @@ void setup() {
   pinMode(TP_INT, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(TP_INT), touchIsr, FALLING);
 
+  party.begin();
   pet.begin();
   sdBegin();
   thumbs.load();
@@ -258,6 +285,23 @@ void loop() {
   handleTouch();
   handleSerial();
   ensureMon();
+
+  // A farewell or release just finished: the creature is waiting for a slot.
+  // With room it simply joins; with a full party the player is taken straight
+  // to the party screen to choose who it replaces, or to let it go.
+  if (pet.endedKind != CER_NONE && !partyPick) {
+    if (party.add(pet.endedMon)) {
+      snprintf(partyBannerName, sizeof(partyBannerName), "%s",
+               pet.endedMon.nick[0] ? pet.endedMon.nick : DEX_TBL[pet.endedMon.dex].name);
+      partyBannerUntil = now + 3500;
+      pet.endedKind = CER_NONE;
+      sfxPlay(SFX_MEDAL);
+    } else {
+      partyPick = true;
+      partyOpen = true;
+      menuOpen = false;
+    }
+  }
 
   // pulsacion corta del PWR: pantalla on/off
   static uint32_t lastPwr = 0;
@@ -435,6 +479,33 @@ void handleSerial() {
     Serial.println("DONE");
     delay(100);
     ESP.restart();
+  } else if (line.startsWith("PARTY")) {
+    // PARTY          list the party
+    // PARTY <dex>    bank a level-50 specimen (fills slots up for testing)
+    // PARTY CLEAR    empty it
+    String arg = line.substring(5);
+    arg.trim();
+    if (arg == "CLEAR") {
+      for (int i = 0; i < PARTY_SLOTS; i++) party.releaseAt(i);
+    } else if (arg.length()) {
+      int d = arg.toInt();
+      if (d >= 1 && d <= DEX_COUNT) {
+        PartyMon m;
+        m.dex = d;
+        m.level = 50;
+        m.ivAtk = m.ivDef = m.ivSpe = m.ivHp = 20;
+        m.trAtk = m.trDef = m.trSpe = 50;
+        Serial.println(party.add(m) ? "added" : "party full");
+      }
+    }
+    Serial.printf("party %u/%u:", party.count(), PARTY_SLOTS);
+    for (int i = 0; i < PARTY_SLOTS; i++) {
+      const PartyMon &m = party.slots[i];
+      if (m.empty()) Serial.print(" -");
+      else Serial.printf(" %s%s(nv%u)", DEX_TBL[m.dex].name, m.shiny ? "*" : "", m.level);
+    }
+    Serial.println();
+    Serial.println("DONE");
   } else if (line == "REG") {
     Serial.printf("pokedex %u/151:", pet.registeredCount());
     for (int i = 1; i <= 151; i++)
@@ -531,6 +602,12 @@ void openClock();  // prototipo
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
+  if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
+  if (partyOpen) {
+    if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
+    partyOpen = false;
+    return;
+  }
   if (gameOpen || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
@@ -545,9 +622,44 @@ void onSwipeV(int dir) {
   }
 }
 
+// party screen: pick a slot (when a newcomer is waiting) or just leave
+void partyTap(int16_t x, int16_t y) {
+  // exit button, and the top band, both always work
+  if ((y >= 372 && y <= 416 && x >= 133 && x <= 333) || y < 34) {
+    if (partyPick) {                 // declined the swap: the pet is let go
+      partyPick = false;
+      pet.endedKind = CER_NONE;
+    }
+    partyOpen = false;
+    sfxPlay(SFX_TAP);
+    return;
+  }
+  if (!partyPick) return;            // browsing only; nothing else to tap yet
+  for (int i = 0; i < PARTY_SLOTS; i++) {
+    int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
+    int cy0 = PARTY_GRID_Y + (i / 2) * (PARTY_CELL_H + 8);
+    if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
+    party.replaceAt(i, pet.endedMon);
+    snprintf(partyBannerName, sizeof(partyBannerName), "%s",
+             pet.endedMon.nick[0] ? pet.endedMon.nick : DEX_TBL[pet.endedMon.dex].name);
+    partyBannerUntil = millis() + 3500;
+    pet.endedKind = CER_NONE;
+    partyPick = false;
+    partyOpen = false;
+    sfxPlay(SFX_MEDAL);
+    return;
+  }
+}
+
 // deslizar: dir +1 = hacia la derecha
 void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
+  if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
+  if (partyOpen) {
+    if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
+    partyOpen = false;
+    return;
+  }
   if (gameOpen || kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
@@ -593,6 +705,31 @@ void onTap(int16_t x, int16_t y) {
         break;
       }
     }
+    return;
+  }
+  // The menu is modal and has three independent ways out: the CLOSE row, a tap
+  // anywhere on the dimmed area outside the panel, and any swipe (see onSwipe).
+  // Deliberately no timeout: a menu that vanishes while you read it is worse
+  // than one that lingers.
+  if (menuOpen) {
+    bool inPanel = (x >= MENU_X && x <= MENU_X + MENU_W &&
+                    y >= MENU_Y && y <= MENU_Y + MENU_H);
+    if (!inPanel) { menuOpen = false; return; }   // tap outside = back to the pet
+    for (int i = 0; i < MENU_ROWS; i++) {
+      int ry = MENU_ROW_Y(i);
+      if (x < MENU_X + 18 || x > MENU_X + MENU_W - 18) continue;
+      if (y < ry || y > ry + MENU_ROW_H) continue;
+      sfxPlay(SFX_TAP);
+      menuOpen = false;
+      if (i == 0) { galleryOpen = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
+      else if (i == 1) { partyOpen = true; }
+      else if (i == 2) { openClock(); }
+      return;                                     // i == 3 is CLOSE: just shut
+    }
+    return;
+  }
+  if (partyOpen) {
+    partyTap(x, y);
     return;
   }
   if (galleryOpen) {
@@ -685,6 +822,13 @@ void onTap(int16_t x, int16_t y) {
       }
       return;
     }
+  }
+  // tapping the name/status band opens the menu. This band was inert before,
+  // and it sits clear of inPetZone (which starts at y 95).
+  if (y >= 28 && y < 94) {
+    menuOpen = true;
+    sfxPlay(SFX_TAP);
+    return;
   }
   // tocar al bicho = caricia
   if (inPetZone(x, y)) {
@@ -844,6 +988,10 @@ void render() {
     renderGallery();
     return;
   }
+  if (partyOpen) {
+    renderParty();
+    return;
+  }
   if (gameOpen) {
     renderGame();
     return;
@@ -972,6 +1120,24 @@ void render() {
     if (millis() > choiceUntil) choiceKind = 0;
     else drawChoiceDialog();
   }
+
+  // "<name> joined the party!" after a farewell or release
+  if (partyBannerUntil) {
+    if (millis() > partyBannerUntil) {
+      partyBannerUntil = 0;
+    } else {
+      char b[40];
+      snprintf(b, sizeof(b), T(S_PARTY_JOINED), partyBannerName);
+      gfx->fillRoundRect(53, 176, 360, 74, 16, UI_BAR_OK);
+      gfx->drawRoundRect(53, 176, 360, 74, 16, UI_INK);
+      gfx->setTextColor(UI_WHITE);
+      gfx->setTextSize(2);
+      gfx->setCursor(CX - (int)strlen(b) * 6, 206);
+      gfx->print(b);
+    }
+  }
+
+  if (menuOpen) drawMenu();
 
   gfx->flush();
 }
@@ -1668,6 +1834,114 @@ void renderCard() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 398);
   gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
+// ---------- menu overlay ----------
+
+// Row labels are built fresh each frame because two of them carry live counts.
+static void menuRowLabel(int i, char *out, size_t n) {
+  switch (i) {
+    case 0: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount()); break;
+    case 1: snprintf(out, n, T(S_PARTY_FMT), party.count()); break;
+    case 2: snprintf(out, n, "%s", T(S_SETTINGS)); break;
+    default: snprintf(out, n, "%s", T(S_CLOSE)); break;
+  }
+}
+
+void drawMenu() {
+  // dim the game behind the panel so the overlay reads as modal, and so it is
+  // obvious that tapping the darkened area is a way out
+  for (int y = 0; y < 466; y += 2)
+    gfx->drawFastHLine(0, y, 466, gNight ? 0x0000 : 0x2104);
+
+  gfx->fillRoundRect(MENU_X, MENU_Y, MENU_W, MENU_H, 18, UI_WHITE);
+  gfx->drawRoundRect(MENU_X, MENU_Y, MENU_W, MENU_H, 18, UI_INK);
+
+  for (int i = 0; i < MENU_ROWS; i++) {
+    int y = MENU_ROW_Y(i);
+    bool close = (i == MENU_ROWS - 1);
+    gfx->fillRoundRect(MENU_X + 18, y, MENU_W - 36, MENU_ROW_H, 12,
+                       close ? UI_TRACK : UI_BG_DAY);
+    gfx->drawRoundRect(MENU_X + 18, y, MENU_W - 36, MENU_ROW_H, 12, UI_INK);
+    char lbl[28];
+    menuRowLabel(i, lbl, sizeof(lbl));
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - (int)strlen(lbl) * 6, y + MENU_ROW_H / 2 - 8);
+    gfx->print(lbl);
+  }
+}
+
+// ---------- party ----------
+
+void drawPartySlot(int i, int x, int y) {
+  const PartyMon &m = party.slots[i];
+  gfx->fillRoundRect(x, y, PARTY_CELL_W, PARTY_CELL_H, 10,
+                     m.empty() ? UI_TRACK : UI_WHITE);
+  gfx->drawRoundRect(x, y, PARTY_CELL_W, PARTY_CELL_H, 10, UI_INK);
+  if (m.empty()) {
+    gfx->setTextColor(0x8410);
+    gfx->setTextSize(2);
+    gfx->setCursor(x + (PARTY_CELL_W - (int)strlen(T(S_PARTY_EMPTY)) * 12) / 2,
+                   y + PARTY_CELL_H / 2 - 8);
+    gfx->print(T(S_PARTY_EMPTY));
+    return;
+  }
+  const uint8_t *th = thumbs.get(m.dex);
+  if (th) drawThumb(th, x - 6, y - 3, 1, false);
+  const DexEntry &d = DEX_TBL[m.dex];
+  const char *nm = m.nick[0] ? m.nick : d.name;
+  gfx->setTextColor(d.accent);
+  gfx->setTextSize(1);
+  gfx->setCursor(x + 62, y + 18);
+  gfx->print(nm);
+  if (m.shiny) {
+    gfx->setTextColor(UI_BAR_WARN);
+    gfx->setCursor(x + 62 + (int)strlen(nm) * 6 + 3, y + 18);
+    gfx->print("*");
+  }
+  char lv[12];
+  snprintf(lv, sizeof(lv), T(S_LVL_FMT), (unsigned)m.level);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(x + 62, y + 36);
+  gfx->print(lv);
+}
+
+void renderParty() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+
+  char head[24];
+  snprintf(head, sizeof(head), T(S_PARTY_FMT), party.count());
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - (int)strlen(head) * 9, 42);
+  gfx->print(head);
+
+  // when a newcomer is waiting, say so instead of the usual hint
+  if (partyPick) {
+    gfx->setTextColor(UI_BAR_BAD);
+    gfx->setTextSize(1);
+    gfx->setCursor(CX - (int)strlen(T(S_PARTY_FULL)) * 3, 74);
+    gfx->print(T(S_PARTY_FULL));
+  }
+
+  for (int i = 0; i < PARTY_SLOTS; i++) {
+    int x = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
+    int y = PARTY_GRID_Y + (i / 2) * (PARTY_CELL_H + 8);
+    drawPartySlot(i, x, y);
+  }
+
+  // exit: an explicit button, always in the same place
+  const char *ex = partyPick ? T(S_PARTY_LETGO) : T(S_CLOSE);
+  gfx->fillRoundRect(133, 372, 200, 44, 12, partyPick ? UI_BAR_BAD : UI_TRACK);
+  gfx->drawRoundRect(133, 372, 200, 44, 12, UI_INK);
+  gfx->setTextColor(partyPick ? UI_WHITE : UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(ex) * 6, 386);
+  gfx->print(ex);
   gfx->flush();
 }
 

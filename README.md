@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v1.6-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v1.7-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -96,6 +96,16 @@ While **awake**, per minute:
   flicker between the old and new form). Each **slip-up delays it by 1 level**.
 - You can **decline** ("keep form"); it re-offers at the next level.
 - *Eevee* branches toward whichever evolution you're still missing.
+
+### Your party
+- A **farewell** or a **release** doesn't end the relationship any more — the creature
+  **joins your party** (6 slots), keeping its species, nickname, shiny status, IVs,
+  training and the level it reached. Frozen there: it no longer ages or trains.
+- A **runaway does not join.** It's the one ending with a cost, and letting a
+  neglected pet come back on the team would remove it.
+- With a full party you're taken straight to the party screen to pick who the
+  newcomer replaces — or to let it go. Nothing is ever overwritten silently.
+- *(Gym battles, which is what the party is for: on the roadmap.)*
 
 ### The three endings (you choose & witness each — none auto-fire)
 - 💛 **Farewell** — when it's a **final form** that has lived **3 days**. A button
@@ -229,6 +239,8 @@ If one bottoms out it counts as a *slip-up*.
 - 🫧 **Bath** → a foam scene that cleans up the poops.
 
 **Touch gestures:**
+- **Tap the name** at the top = the **menu** (Pokédex / Party / Settings). Close it
+  with the CLOSE row, by tapping anywhere outside the panel, or with any swipe.
 - Tap the creature = pet it (+happiness, bond).
 - Horizontal swipe = open the **Pokédex / gallery**.
 - Vertical swipe up = open the **stat card** (4 pages: Profile / Battle / Medals /
@@ -360,6 +372,7 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 
 - `TamaPoke.ino` — init, game loop, render of every screen, gestures, serial console, audio
 - `pet.h` / `pet.cpp` — pet state and logic (stats, evolution, life cycle, streak/bond/medals, NVS)
+- `party.h` / `party.cpp` — the 6 retired pets kept from farewells and releases
 - `sdmon.h` / `sdmon.cpp` — TPK1 (animated) and TPK2 (PMD) sprites + thumbnails, and file reception over USB (PUT/LS)
 - `rtcbat.h` / `rtcbat.cpp` — PCF85063 RTC + AXP2101 PMU (battery, brightness, PWR button)
 - `audio.h` / `audio.cpp` — ES8311 + I2S + Game-Boy-style tone synth (non-blocking task)
@@ -382,6 +395,7 @@ legendary/shiny IV guarantees, which apply at hatch) ·
 `SHINY` · `NICK <x>` · `BYE` / `RUN` (farewell / runaway) · `ABANDON` (force the
 runaway-ready state) · `WIPE` (factory reset → new game) · `BEEP` (audio test) ·
 `REG` (Pokédex) · `EGGS` (simulate 20 eggs) · `GAL` (gallery) · `CAREDAY` ·
+`PARTY` / `PARTY <dex>` / `PARTY CLEAR` (inspect and fill the party) ·
 `TIME <epoch>` / `RTCSET <epoch>` · `HEALTH` (uptime + heap for the soak test) ·
 `LS` / `PUT` (SD files).
 
