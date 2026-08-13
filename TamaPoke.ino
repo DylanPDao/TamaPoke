@@ -16,6 +16,7 @@
 #include "pin_config.h"
 #include "species.h"
 #include "dex.h"
+#include "types.h"
 #include "pet.h"
 #include "sdmon.h"
 #include "rtcbat.h"
@@ -24,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.5"
+#define FW_VERSION "1.6"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1530,8 +1531,19 @@ void renderCardProfile() {
 void renderCardStats() {
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(3);
-  gfx->setCursor(CX - strlen(T(S_BATTLE)) * 9, 48);
+  gfx->setCursor(CX - strlen(T(S_BATTLE)) * 9, 44);
   gfx->print(T(S_BATTLE));
+
+  // typing, in the accent colour of the species (English in every language,
+  // same as the species names themselves)
+  const DexEntry &de = DEX_TBL[pet.speciesId];
+  char ty[24];
+  if (de.type2 == T_NONE) snprintf(ty, sizeof(ty), "%s", typeName(de.type1));
+  else snprintf(ty, sizeof(ty), "%s/%s", typeName(de.type1), typeName(de.type2));
+  gfx->setTextColor(de.accent);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(ty) * 6, 76);
+  gfx->print(ty);
 
   // 360 de tope de barra: a nivel 73 (fin de ciclo) el stat mas alto de toda
   // la dex es la vitalidad de CHANSEY (355). El 260 anterior ya se desbordaba.
