@@ -69,6 +69,8 @@ def main():
         "  uint8_t rarity;       // sale de huevo si > 0\n"
         "  uint16_t accent;      // color RGB565 del tipo para la UI\n"
         "  uint8_t bHp, bAtk, bDef, bSpe;  // base stats actuales (PokeAPI), no los de gen 1\n"
+        "  uint8_t bSpA, bSpD;   // ataque/defensa especial: el reparto fisico-especial\n"
+        "                        // vive en la especie, el individuo solo tira 4 IV\n"
         "  uint8_t biome;        // 0 pradera 1 playa 2 bosque 3 volcan 4 montana 5 nieve\n"
         "  uint8_t type1, type2;  // current typing; type2 = T_NONE if single-typed\n"
         "};\n\n")
@@ -77,7 +79,7 @@ def main():
     evolved = {d[4] for d in DEX if d[4]} | {135, 136}
     rarities = []
     out.append("static const DexEntry DEX_TBL[DEX_COUNT + 1] = {\n")
-    out.append('  { "?", 0, 0, 0, 0x2946, 50, 50, 50, 50, 0 },  // 0: sin usar\n')
+    out.append('  { "?", 0, 0, 0, 0x2946, 50, 50, 50, 50, 50, 50, 0 },  // 0: sin usar\n')
     for num, slug, display, typ, evo, lvl in DEX:
         acc = rgb565(TYPE_ACCENTS[typ])
         if num in evolved:
@@ -89,14 +91,14 @@ def main():
         else:
             rar = 'R_COMUN'
         rarities.append(rar)
-        hp, atk, df, spe = BASE_STATS[num]
+        hp, atk, df, spe, spa, spd = BASE_STATS[num]
         bio = BIOME_OVERRIDE.get(num, TYPE_BIOME[typ])
         t1, t2 = TYPES[num]
         c1 = "T_" + t1.upper()
         c2 = ("T_" + t2.upper()) if t2 else "T_NONE"
         dual = f"/{t2}" if t2 else ""
         out.append(f'  {{ "{display}", {evo}, {lvl}, {rar}, 0x{acc:04X}, {hp}, {atk}, {df}, {spe},'
-                   f' {bio}, {c1}, {c2} }},  // {num} {t1}{dual}\n')
+                   f' {spa}, {spd}, {bio}, {c1}, {c2} }},  // {num} {t1}{dual}\n')
     out.append("};\n\n")
     out.append("// el primer huevo de la partida: iniciales clasicos\n")
     out.append("static const int16_t CLASSIC_DEX[] = { %s };\n" % ", ".join(map(str, CLASSIC)))
