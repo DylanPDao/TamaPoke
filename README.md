@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v1.5-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v1.6-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -121,7 +121,7 @@ Every pet rolls four **IVs** (individual values, 0–31) at hatch — ATK / DEF 
 VIT — that never change and make each one genuinely unique:
 
 ```
-stat = gen-1 base + level + (IV × level)/100 + training
+stat = base + level + (IV × level)/100 + training
 ```
 
 The `(IV × level)/100` term is the **real formula from Gen III onward** — a perfect
@@ -274,7 +274,9 @@ thumbnails (`SdThumbs`). `SdMon` (TPK1) remains as a dormant legacy fallback onl
 
 `tools/dex_data.py` is the **single source**: name, slug, type (accent colour +
 background biome), evolution line with gen-1 levels, rarities and starters.
-`tools/dex_stats.py` has the real base stats (from PokéAPI). `gen_dex.py` emits
+`tools/dex_stats.py` has the base stats and `tools/dex_types.py` the typings and
+type chart (both from PokéAPI). Note these are **current** values, not Gen 1 ones —
+Pidgeot has 101 Speed here, not the 91 it had in Red/Blue. `gen_dex.py` emits
 `dex.h` (the `DEX_TBL[152]` table). The pet's identity is its Pokédex number
 (persisted in NVS).
 
@@ -282,14 +284,36 @@ background biome), evolution line with gen-1 levels, rarities and starters.
   branches to whichever evolution you're missing). Each slip-up delays it 1
   level; it won't evolve with any stat < 40 or while asleep.
 
+## Types
+
+Every species carries its real **typing** (one or two of the 18 types) and the game
+ships the full **18×18 effectiveness chart** — `dex.h` holds both, generated from
+`tools/dex_types.py`.
+
+The chart is the **current (Gen 6+) one, not Gen 1's**, which is a deliberate call:
+
+- Gen 1's chart shipped real bugs — Ghost moves did literally nothing to Psychic —
+  and Psychic was resisted only by Psychic, so it ran away with every fight.
+- The base stats here were **already** pulled from PokéAPI at current values, so
+  modern stats with an ancient chart was the inconsistent pairing.
+- **Fairy earns its keep:** Dragonite has the highest Attack in the dex, and before
+  Gen 6 Dragon was resisted only by Steel. Dragon → Fairy is **0×**, so Clefable
+  hard-walls the strongest thing you can hatch.
+
+Seven of the 151 differ from their Gen 1 typing: Magnemite and Magneton gained Steel
+(Gen 2), and Clefairy, Clefable, Jigglypuff, Wigglytuff and Mr. Mime gained Fairy
+(Gen 6) — the first two losing Normal entirely.
+
+Typing is shown on the Battle page of the stat card. *(Battles: on the roadmap.)*
+
 ## Battle stats and training
 
-Each creature has ATK/DEF/SPD/VIT = real gen-1 base + level + **IV** (0–31, rolled
+Each creature has ATK/DEF/SPD/VIT = **base stat** + level + **IV** (0–31, rolled
 at hatch, `IV × level/100` exactly as in the real games) + **training**:
 - SPEED ← the minigame
 - DEFENSE ← accumulated wellbeing (1 h resting or well-cared = +1)
 - STRENGTH ← the training bag (whacking)
-- VIT (vitality, from the gen-1 base HP) — not trainable
+- VIT (vitality, from the base HP stat) — not trainable
 
 The IV also sets **how far each stat can be trained at all** (77–100), so a
 well-rolled individual has a genuinely higher ceiling, not just a head start.
@@ -343,7 +367,7 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 - `dex.h` — GENERATED (`gen_dex.py`): the 151 table
 - `species.h` — GENERATED (`sprites.py`): fallback sprites, UI icons, colours
 - `pin_config.h` — the board's official pins
-- `tools/` — pipeline: `dex_data.py` (data), `dex_stats.py`, `gen_dex.py`,
+- `tools/` — pipeline: `dex_data.py` (data), `dex_stats.py`, `dex_types.py`, `gen_dex.py`,
   `sprites.py` (workshop), `pack_pmd.py` / `make_thumbs.py`
   (packers), `pack_bundle.py` (web bundle), `send_sd.py` (SD upload), `touch_log.py`
 - `tools/sdcard/mons/` — the generated .bin files (animated, shiny, PMD, thumbnails)
