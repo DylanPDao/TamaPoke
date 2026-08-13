@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from dex_data import DEX, TYPE_ACCENTS, CLASSIC, RARE, LEGENDARY
 from dex_stats import BASE_STATS
+from dex_types import TYPES, TYPE_ORDER, CHART
 
 
 def rgb565(hexcol):
@@ -35,6 +36,29 @@ def main():
     out.append("// GENERADO por tools/gen_dex.py desde tools/dex_data.py - no editar\n\n")
     out.append("#define DEX_COUNT 151\n")
     out.append("#define DEX_EEVEE 133  // rama al azar: 134/135/136\n\n")
+    out.append("// The 18 current types. See tools/dex_types.py for why this game uses the\n"
+               "// modern chart rather than the Gen 1 one.\n"
+               "enum PkType : uint8_t {\n  ")
+    out.append(", ".join("T_" + t.upper() for t in TYPE_ORDER))
+    out.append(",\n  T_NONE = 255\n};\n#define TYPE_COUNT %d\n\n" % len(TYPE_ORDER))
+
+    # effectiveness matrix, stored as tenths so it stays integer maths on the
+    # MCU: 0 = immune, 5 = half, 10 = neutral, 20 = double
+    out.append("// Type chart in TENTHS (0 immune, 5 not-very, 10 neutral, 20 super).\n"
+               "// Multiplying the two defender columns gives a percentage directly:\n"
+               "// 20*20 = 400 (4x), 10*10 = 100 (1x), 5*10 = 50 (0.5x).\n")
+    out.append("static const uint8_t TYPE_FX[TYPE_COUNT][TYPE_COUNT] = {\n")
+    nonneutral = 0
+    for atk in TYPE_ORDER:
+        row = []
+        for dfn in TYPE_ORDER:
+            m = CHART.get(atk, {}).get(dfn, 1)
+            if m != 1:
+                nonneutral += 1
+            row.append(str(int(m * 10)))
+        out.append("  { %s },  // %s\n" % (", ".join(f"{v:>2}" for v in row), atk))
+    out.append("};\n\n")
+    print(f"tabla de tipos: {len(TYPE_ORDER)}x{len(TYPE_ORDER)}, {nonneutral} celdas no neutras")
     out.append(
         "// rareza: 0 = solo por evolucion, 1 = comun, 2 = raro, 3 = legendario\n"
         "enum : uint8_t { R_EVO = 0, R_COMUN, R_RARO, R_LEGENDARIO };\n\n"
@@ -44,8 +68,9 @@ def main():
         "  uint8_t evolveLevel;\n"
         "  uint8_t rarity;       // sale de huevo si > 0\n"
         "  uint16_t accent;      // color RGB565 del tipo para la UI\n"
-        "  uint8_t bHp, bAtk, bDef, bSpe;  // base stats reales de gen 1\n"
+        "  uint8_t bHp, bAtk, bDef, bSpe;  // base stats actuales (PokeAPI), no los de gen 1\n"
         "  uint8_t biome;        // 0 pradera 1 playa 2 bosque 3 volcan 4 montana 5 nieve\n"
+        "  uint8_t type1, type2;  // current typing; type2 = T_NONE if single-typed\n"
         "};\n\n")
     # formas base = las que no son evolucion de nadie (las ramas de Eevee si lo son)
     evolved = {evo for *_, evo, _lvl in [(d[4], d[5]) for d in DEX] for evo in [_[0] for _ in [(d[4],) for d in DEX]]}
@@ -66,7 +91,12 @@ def main():
         rarities.append(rar)
         hp, atk, df, spe = BASE_STATS[num]
         bio = BIOME_OVERRIDE.get(num, TYPE_BIOME[typ])
-        out.append(f'  {{ "{display}", {evo}, {lvl}, {rar}, 0x{acc:04X}, {hp}, {atk}, {df}, {spe}, {bio} }},  // {num} {typ}\n')
+        t1, t2 = TYPES[num]
+        c1 = "T_" + t1.upper()
+        c2 = ("T_" + t2.upper()) if t2 else "T_NONE"
+        dual = f"/{t2}" if t2 else ""
+        out.append(f'  {{ "{display}", {evo}, {lvl}, {rar}, 0x{acc:04X}, {hp}, {atk}, {df}, {spe},'
+                   f' {bio}, {c1}, {c2} }},  // {num} {t1}{dual}\n')
     out.append("};\n\n")
     out.append("// el primer huevo de la partida: iniciales clasicos\n")
     out.append("static const int16_t CLASSIC_DEX[] = { %s };\n" % ", ".join(map(str, CLASSIC)))
