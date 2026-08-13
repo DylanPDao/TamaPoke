@@ -192,6 +192,23 @@ arduino-cli compile --fqbn "$FQBN" .
 arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn "$FQBN" .
 ```
 
+### Run it on your computer
+
+`tools/emu/` compiles the **real firmware** — `TamaPoke.ino`, `pet.cpp`,
+`i18n.cpp`, `party.cpp`, unmodified — into a clickable desktop app, stubbing only
+the hardware. Click to touch, drag to swipe, type serial commands in the
+terminal, and `--fast 60` runs a whole 3-day life in about an hour.
+
+```bash
+brew install sdl2          # Debian: apt install libsdl2-dev
+bash tools/emu/build.sh
+tools/emu/tamapoke-emu --scale 2 --fast 60
+```
+
+There's a headless `--shot` mode for screenshots too. See
+[`tools/emu/README.md`](tools/emu/README.md). It won't tell you anything about
+timing, DMA tearing, PSRAM or audio — those still need the board.
+
 ### Easiest install: the web installer
 
 `web/index.html` flashes the firmware (ESP Web Tools) and pushes the sprites to
@@ -383,6 +400,7 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 - `tools/` — pipeline: `dex_data.py` (data), `dex_stats.py`, `dex_types.py`, `gen_dex.py`,
   `sprites.py` (workshop), `pack_pmd.py` / `make_thumbs.py`
   (packers), `pack_bundle.py` (web bundle), `send_sd.py` (SD upload), `touch_log.py`
+- `tools/emu/` — desktop emulator (real firmware + stubbed hardware, SDL)
 - `tools/sdcard/mons/` — the generated .bin files (animated, shiny, PMD, thumbnails)
 - `web/` — the browser installer (ESP Web Tools + Web Serial sprite loader)
 

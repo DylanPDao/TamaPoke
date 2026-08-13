@@ -36,5 +36,6 @@ Huge thanks to that whole community for an enormous amount of work.
 | XPowersLib (AXP2101 PMU) | [Lewis He / lewisxhe](https://github.com/lewisxhe/XPowersLib) |
 | Board and pinout | [Waveshare ESP32-S3-Touch-AMOLED-1.75](https://www.waveshare.com/wiki/ESP32-S3-Touch-AMOLED-1.75) |
 | Web installer | [ESP Web Tools](https://esphome.github.io/esp-web-tools/) (Nabu Casa) |
+| 5x7 bitmap font in `tools/emu/font.cpp` | [Adafruit_GFX](https://github.com/adafruit/Adafruit-GFX-Library) © 2012 Adafruit Industries, BSD licence |
 
 TamaPoke's own code (firmware and tools) is original work.
