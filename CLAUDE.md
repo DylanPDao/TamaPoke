@@ -170,10 +170,39 @@ Settled:
   — level is age. Granting XP would break real-time ageing. Learnsets are
   level-keyed, so moves unlock as the pet ages.
 
-Open: do ailments **persist after battle** (authentic, gives healing items a
-purpose, but poison ticking against the fullness/joy/energy/hygiene sim could
-leave a pet permanently miserable) or clear at battle end? Decide before writing
-the status code.
+- **Ailments are battle-only.** They live in the battle state and clear when it
+  ends — never in `Pet`, never saved, never ticked by offline catch-up.
+
+**Endgame: 8 gym leaders + Elite 4, on two difficulties.** Easy is the ladder;
+hard reruns it with better AI decision-making and opponents with strong IVs and
+real movesets. Needs a trainer roster table (~13 trainers x 3-6 mons: species,
+level, moves, IVs) and two AI tiers — easy picks naively, hard reads
+`typeEffPct()`, STAB, stat stages and available KOs.
+
+Level anchor for balancing the ladder: `MINUTES_PER_LEVEL 60` and farewell at
+3 days means a fully-raised pet retires at **level 73**. Pets banked earlier are
+weaker, so team strength reflects how long each one was raised.
+
+Open:
+
+- **Team size.** The party holds 6 *retired* pets and the live pet is separate.
+  Does the live pet fight alongside them (7 total), or take a slot (6)?
+- **Gating.** A 6-mon team costs 6 full lifecycles — 3 days each, so ~2.5 weeks
+  before a full roster exists. Gyms need to be playable well before that, or the
+  endgame is walled off behind weeks of play.
+
+### BUG: level() overflows uint8_t (pre-existing, blocks battle balance)
+
+`level()` is `1 + ageMinutes / MINUTES_PER_LEVEL` returned as `uint8_t`, and
+`ageMinutes` (uint32) is never clamped. Past ~10.6 days it wraps. The RTC
+catches up to 2 weeks offline, which reaches it: 14 days = 20160 min = level
+337, truncated to **81**. Farewell is only *offered* at 3 days and can be
+declined, so long-lived pets reach this without the clock being involved.
+
+Harmless-ish today (level only drives display and `calcStat`), but battle makes
+level drive damage, so a wrapped level yields nonsense stats. Fix before phase 5:
+clamp `ageMinutes` or return `uint16_t` and cap the level. Decide the cap
+alongside the gym ladder.
 
 Phase order: (1) `bSpa`/`bSpd` regen · (2) move storage on `Pet` + `PartyMon`
 with learnset auto-population for existing saves · (3) learn/forget UI ·
