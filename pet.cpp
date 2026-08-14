@@ -1,5 +1,6 @@
 #include "pet.h"
 #include "dex.h"
+#include "moves.h"
 #include "audio.h"
 
 void Pet::begin() {
@@ -205,6 +206,7 @@ void Pet::snapshotForParty() {
   endedMon.trDef = trDef;
   endedMon.trSpe = trSpe;
   endedMon.shiny = shiny ? 1 : 0;
+  for (int i = 0; i < MOVE_SLOTS; i++) endedMon.moves[i] = moves[i];  // frozen too
   strncpy(endedMon.nick, nick, sizeof(endedMon.nick) - 1);
   endedMon.nick[sizeof(endedMon.nick) - 1] = 0;
   endedKind = ceremony;
@@ -391,6 +393,101 @@ uint16_t Pet::spdStat() const {
   return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpD, ivDef, level(), trDef);
 }
 
+// ---------- moves ----------
+
+uint8_t Pet::moveCount() const {
+  uint8_t n = 0;
+  for (int i = 0; i < MOVE_SLOTS; i++)
+    if (moves[i]) n++;
+  return n;
+}
+
+bool Pet::knowsMove(uint8_t mv) const {
+  if (!mv) return false;
+  for (int i = 0; i < MOVE_SLOTS; i++)
+    if (moves[i] == mv) return true;
+  return false;
+}
+
+// Picks a sensible default set, best first.
+//
+// NOT "the newest four": 1907 of the 2281 learnset entries sit at level 0 and
+// another 237 at level 1, so for most species level orders nothing and taking
+// the last four in table order is arbitrary -- it handed a level 100 Charizard
+// GROWL and LEER. So score instead: attacks over status, stronger over weaker,
+// STAB ahead of equal power, and a bonus for the handful of moves that really
+// are gated behind a level, since those are meant to be upgrades.
+void Pet::relearnFromLevel() {
+  for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = 0;
+  if (isEgg()) return;
+  const DexEntry &d = DEX_TBL[speciesId];
+  uint8_t lvl = level(), n = learnCount(speciesId);
+  int16_t score[MOVE_SLOTS] = { 0, 0, 0, 0 };
+  for (uint8_t i = 0; i < n; i++) {
+    uint8_t at = learnLevel(speciesId, i);
+    if (at > lvl) continue;
+    uint8_t mv = learnMove(speciesId, i);
+    if (!mv || mv >= MOVE_COUNT || knowsMove(mv)) continue;
+    const MoveEntry &m = MOVE_TBL[mv];
+    int16_t sc = (m.cat == MC_STATUS) ? 10 : (int16_t)m.power + 20;
+    // STAB outweighs raw power, or every species defaults to the same two
+    // generic sledgehammers and the roster loses its identity.
+    if (m.cat != MC_STATUS && (m.type == d.type1 || m.type == d.type2)) sc += 40;
+    if (m.effect == EF_RECHARGE) sc -= 35;   // a free turn for the opponent
+    if (m.effect == EF_RECOIL) sc -= 20;
+    sc += at;
+    if (sc < 1) sc = 1;
+    int slot = -1;
+    for (int s = 0; s < MOVE_SLOTS; s++)
+      if (sc > score[s]) { slot = s; break; }
+    if (slot < 0) continue;
+    for (int s = MOVE_SLOTS - 1; s > slot; s--) {
+      score[s] = score[s - 1];
+      moves[s] = moves[s - 1];
+    }
+    score[slot] = sc;
+    moves[slot] = mv;
+  }
+  // Guarantee one same-type move. Machamp's only Fighting options are weak or
+  // recoil-laden, so pure scoring left it with four generic attacks and nothing
+  // that reads as a Machamp. If the set came out with no STAB, the weakest slot
+  // gives way to the best same-type attack the species can actually learn.
+  for (int i = 0; i < MOVE_SLOTS; i++) {
+    if (!moves[i]) continue;
+    const MoveEntry &m = MOVE_TBL[moves[i]];
+    if (m.cat != MC_STATUS && (m.type == d.type1 || m.type == d.type2)) return;
+  }
+  uint8_t best = 0;
+  int16_t bestSc = 0;
+  for (uint8_t i = 0; i < n; i++) {
+    if (learnLevel(speciesId, i) > lvl) continue;
+    uint8_t mv = learnMove(speciesId, i);
+    if (!mv || mv >= MOVE_COUNT) continue;
+    const MoveEntry &m = MOVE_TBL[mv];
+    if (m.cat == MC_STATUS || (m.type != d.type1 && m.type != d.type2)) continue;
+    int16_t sc = (int16_t)m.power;
+    if (m.effect == EF_RECHARGE) sc -= 35;
+    if (m.effect == EF_RECOIL) sc -= 20;
+    if (sc > bestSc) { bestSc = sc; best = mv; }
+  }
+  if (best) moves[MOVE_SLOTS - 1] = best;
+}
+
+uint8_t Pet::pendingLearnables(uint8_t *out, uint8_t max) const {
+  if (isEgg() || !out || !max) return 0;
+  uint8_t lvl = level(), n = learnCount(speciesId), w = 0;
+  for (uint8_t i = 0; i < n && w < max; i++) {
+    if (learnLevel(speciesId, i) > lvl) break;
+    uint8_t mv = learnMove(speciesId, i);
+    if (knowsMove(mv)) continue;
+    bool dup = false;                     // do not offer the same move twice
+    for (uint8_t j = 0; j < w; j++)
+      if (out[j] == mv) { dup = true; break; }
+    if (!dup) out[w++] = mv;
+  }
+  return w;
+}
+
 // Tirada de un IV: 8-31. El suelo en 8 es deliberado — en los juegos un 0 es
 // posible porque puedes criar cientos de huevos, aqui cada crianza dura 3 dias
 // y un individuo de desecho seria un castigo desproporcionado. La racha y el
@@ -499,6 +596,7 @@ void Pet::hatch() {
   newMedal = 0;
   nick[0] = 0;
   registerSpecies(speciesId);  // criado = registrado en la pokedex
+  relearnFromLevel();          // starts knowing what its species knows by now
   checkMedals();     // por si nace ya en forma final (legendario)
   sfxPlay(SFX_HATCH);
   save();
@@ -671,6 +769,7 @@ void Pet::save() {
   prefs.putUChar("tatk", trAtk);
   prefs.putUChar("tdef", trDef);
   prefs.putUChar("tspe", trSpe);
+  prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putBool("bk", berryKnown);
   prefs.putBool("shy", shiny);
   prefs.putBool("eshy", eggShiny);
@@ -757,6 +856,14 @@ void Pet::load() {
   gameHi = prefs.getUShort("ghi", 0);
   strHi = prefs.getUShort("shi", 0);
   prefs.getString("nick", nick, sizeof(nick));
+  // Moves load last: relearnFromLevel() needs speciesId and ageMinutes, both of
+  // which are read above. A save from before moves existed has no "mvs" key and
+  // leaves the array zeroed, so an established pet is handed the moveset it
+  // should already have rather than walking into a battle knowing nothing.
+  prefs.getBytes("mvs", moves, sizeof(moves));
+  for (int i = 0; i < MOVE_SLOTS; i++)
+    if (moves[i] >= MOVE_COUNT) moves[i] = 0;   // never index MOVE_TBL with junk
+  if (!isEgg() && moveCount() == 0) relearnFromLevel();
   // siembra: la mascota actual cuenta como criada (guardados antiguos)
   if (speciesId >= 1) registerSpecies(speciesId);
 }

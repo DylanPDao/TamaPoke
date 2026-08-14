@@ -11,7 +11,24 @@ void Party::begin() {
   // old party out of RAM.
   for (auto &s : slots) s = PartyMon();
   prefs.begin("tamapoke", false);
-  prefs.getBytes("party", slots, sizeof(slots));
+  // The blob is raw structs, so growing PartyMon (moves[] was appended in v1.9)
+  // changes its stride. Reading an older, shorter blob straight into the new
+  // array would land slot 1 onward at the wrong offset and quietly invent a
+  // party out of misaligned bytes -- and the dex-range check below would not
+  // reliably catch it, since a stray byte is often a valid Pokedex number.
+  // So migrate by length: copy each old record into the front of the new one
+  // and leave moves[] zeroed for the learnset to fill in.
+  size_t stored = prefs.getBytesLength("party");
+  if (stored == sizeof(slots)) {
+    prefs.getBytes("party", slots, sizeof(slots));
+  } else if (stored && stored % PARTY_SLOTS == 0 && stored < sizeof(slots)) {
+    size_t oldStride = stored / PARTY_SLOTS;
+    uint8_t old[sizeof(slots)];
+    prefs.getBytes("party", old, stored);
+    for (int i = 0; i < PARTY_SLOTS; i++)
+      memcpy(&slots[i], old + i * oldStride, oldStride);
+    save();   // rewrite in the current layout so this only happens once
+  }
   // a blob written by an older/newer build could hold nonsense; drop anything
   // that is not a real Pokedex number rather than indexing DEX_TBL with it
   for (auto &s : slots) {

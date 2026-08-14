@@ -46,6 +46,12 @@ public:
     const uint8_t *b = (const uint8_t *)p;
     kv[k] = std::vector<uint8_t>(b, b + n);
   }
+  // Size of a stored blob, 0 if absent. The firmware uses it to tell an
+  // old, shorter record layout from the current one (see Party::begin).
+  size_t getBytesLength(const char *k) {
+    auto it = kv.find(k);
+    return it == kv.end() ? 0 : it->second.size();
+  }
   size_t getBytes(const char *k, void *p, size_t n) {
     auto it = kv.find(k);
     if (it == kv.end()) return 0;

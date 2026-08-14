@@ -9,6 +9,7 @@
 // A runaway does not: it is the game's one punishing outcome, and letting a
 // neglected pet come back as a team member would take the sting out of it.
 #define PARTY_SLOTS 6
+#define MOVE_SLOTS 4    // the same four every trainer gets in the real games
 
 // A retired pet. Its level is frozen at the moment it joined; it does not keep
 // ageing, and nothing about it can be trained any further.
@@ -20,6 +21,11 @@ struct PartyMon {
   uint8_t trAtk = 0, trDef = 0, trSpe = 0;
   uint8_t shiny = 0;
   char nick[12] = "";
+  // Frozen with everything else: the moves you chose while it was alive are
+  // what it fights with forever. 0 = empty slot (MOVE_TBL[0] is the "-" filler).
+  // Appended at the END of the struct on purpose -- Party::begin() migrates
+  // older, shorter blobs by length, and that only works if nothing moved.
+  uint8_t moves[MOVE_SLOTS] = { 0, 0, 0, 0 };
 
   bool empty() const { return dex < 1; }
 };

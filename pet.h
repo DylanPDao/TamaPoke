@@ -100,6 +100,19 @@ public:
   // ivDef/trDef, so no extra IVs and no save migration. See fetch_pokeapi.py.
   uint16_t spaStat() const;
   uint16_t spdStat() const;
+
+  // The four known moves (indices into MOVE_TBL; 0 = empty slot). Player-chosen
+  // once the learn/forget prompt exists -- until then, and for saves made before
+  // moves were stored at all, relearnFromLevel() fills them in.
+  uint8_t moves[MOVE_SLOTS] = { 0, 0, 0, 0 };
+  uint8_t moveCount() const;
+  bool knowsMove(uint8_t mv) const;
+  // The newest MOVE_SLOTS moves this species has learned by its current level,
+  // newest last. Used on hatch, on a fresh save, and to backfill empty slots.
+  void relearnFromLevel();
+  // Moves reachable at this level that are not already known, for the learn
+  // prompt. Returns how many were written into out (at most max).
+  uint8_t pendingLearnables(uint8_t *out, uint8_t max) const;
   // tope de entrenamiento que permite un IV: 77 (IV 8) .. 100 (IV 31)
   static uint8_t trMaxFor(uint8_t iv) { return 70 + (30 * (uint16_t)iv) / 31; }
   uint8_t trMaxAtk() const { return trMaxFor(ivAtk); }
