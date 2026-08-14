@@ -207,14 +207,14 @@ Phase order: (1) ~~special stat accessors~~ · (2) ~~move storage on `Pet` +
 ~~emulator~~ **done** (`battle.h`/`battle.cpp`) · (6) battle UI ·
 (7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
 
-**Open balance question from (5): fights are too short.** 240 simulated L50
-fights average **3.1 turns** (shortest 1, longest 6). Cause: `calcStat()` treats
-HP like every other stat, so vitality lands near the offensive stats, while the
-real games give HP its own bigger formula. A super-effective hit is a 2HKO. That
-leaves no room for the strategy layer the endgame wants -- SWORDS DANCE cannot
-pay for its turn in a 3-turn fight, and status barely registers. Fix by giving
-`vitStat()` a doubled base contribution (README + FW_VERSION bump, it changes the
-displayed VIT). Decide before tuning the gym ladder.
+**Fight length was checked and is NOT a problem** (an earlier note here claimed
+otherwise; it was wrong). 240 simulated L50 fights average 3.1 turns, and that
+matches the real games: a 1v1 at equal level there is also 3-5 turns. HP already
+lands exactly on the canonical value (Charizard L50 = 153 both ways), and while
+the other stats sit ~40% high -- the deliberate deviation `calcStat()` documents,
+so newborns do not show single digits -- damage depends on the A/D *ratio*, which
+is preserved: 1.02 ours vs 1.03 real. Do not "fix" this; it would make combat
+less faithful, not more. Length in a gym comes from fighting six in a row.
 
 Note on (4): `MoveEntry` gained `ailment` + `ailChance`, and the pair is
 OPTIONAL in `dex_moves.py` -- only the 17 moves that inflict one spell it out,
