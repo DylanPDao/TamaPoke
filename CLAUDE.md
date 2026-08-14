@@ -183,28 +183,25 @@ Level anchor for balancing the ladder: `MINUTES_PER_LEVEL 60` and farewell at
 3 days means a fully-raised pet retires at **level 73**. Pets banked earlier are
 weaker, so team strength reflects how long each one was raised.
 
-Open:
+- **The player picks the battle team.** Pool = the live pet plus the 6 banked;
+  choose up to 6 per battle. The live pet is selectable, never compulsory.
+  Battling costs the *live* pet energy (banked pets are retired, so they cost
+  nothing) — it ties battle to the care sim and rate-limits grinding without a
+  cooldown timer.
+- **No gating on gyms.** Attrition is the gate: leaders always bring their full
+  roster and you bring whoever you have, so one strong pet can sweep an early
+  gym but cannot survive five opponents back-to-back later. Self-balancing, no
+  badge checks or minimum-team rules, and it never walls the endgame off behind
+  weeks of raising.
+- **Level caps at 100** (`MAX_LEVEL`), reached at 4d 3h. `MINUTES_PER_LEVEL`
+  stays 60 — compressing the curve to force 100 into a 3-day life would be a
+  balance change that buys a number you can already reach by playing on.
 
-- **Team size.** The party holds 6 *retired* pets and the live pet is separate.
-  Does the live pet fight alongside them (7 total), or take a slot (6)?
-- **Gating.** A 6-mon team costs 6 full lifecycles — 3 days each, so ~2.5 weeks
-  before a full roster exists. Gyms need to be playable well before that, or the
-  endgame is walled off behind weeks of play.
+Phase 1 turned out to be **already done**: `dex.h` has had `bSpA`/`bSpD` for all
+151 all along. Only the accessors were missing (`Pet::spaStat/spdStat`,
+`Party::spaOf/spdOf`) — added, so damage maths is unblocked.
 
-### BUG: level() overflows uint8_t (pre-existing, blocks battle balance)
-
-`level()` is `1 + ageMinutes / MINUTES_PER_LEVEL` returned as `uint8_t`, and
-`ageMinutes` (uint32) is never clamped. Past ~10.6 days it wraps. The RTC
-catches up to 2 weeks offline, which reaches it: 14 days = 20160 min = level
-337, truncated to **81**. Farewell is only *offered* at 3 days and can be
-declined, so long-lived pets reach this without the clock being involved.
-
-Harmless-ish today (level only drives display and `calcStat`), but battle makes
-level drive damage, so a wrapped level yields nonsense stats. Fix before phase 5:
-clamp `ageMinutes` or return `uint16_t` and cap the level. Decide the cap
-alongside the gym ladder.
-
-Phase order: (1) `bSpa`/`bSpd` regen · (2) move storage on `Pet` + `PartyMon`
+Phase order: (1) ~~special stat accessors~~ **done** · (2) move storage on `Pet` + `PartyMon`
 with learnset auto-population for existing saves · (3) learn/forget UI ·
 (4) `MoveEntry` ailment fields · (5) damage + turn resolution, headless-testable
 in the emulator · (6) battle UI · (7) gyms.

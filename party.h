@@ -42,6 +42,8 @@ public:
   uint16_t defOf(const PartyMon &m) const;
   uint16_t speOf(const PartyMon &m) const;
   uint16_t vitOf(const PartyMon &m) const;
+  uint16_t spaOf(const PartyMon &m) const;
+  uint16_t spdOf(const PartyMon &m) const;
 
 private:
   Preferences prefs;

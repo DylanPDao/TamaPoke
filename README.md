@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v1.8-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v1.9-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -41,6 +41,8 @@ A quick reference to how the game really works (values straight from the code).
 - **1 real minute = 1 in-game minute.** Your Pokémon gains **+1 level every hour**
   of real time. Leveling is purely time-based — caring well doesn't speed it up,
   but neglect *delays evolution*.
+- **Level caps at 100**, reached at 4 days 3 hours. Farewell is only *offered* at
+  3 days (level 73), so declining it to raise a stronger battler is a real choice.
 - It keeps **aging while powered off** (the RTC runs), catching up to **2 weeks** max.
 
 ### The four stats (0–100)
@@ -343,6 +345,12 @@ at hatch, `IV × level/100` exactly as in the real games) + **training**:
 - DEFENSE ← accumulated wellbeing (1 h resting or well-cared = +1)
 - STRENGTH ← the training bag (whacking)
 - VIT (vitality, from the base HP stat) — not trainable
+
+**Special attack and defence** come off the species' own `bSpA`/`bSpD` base stats
+(Alakazam is 50 Attack but 135 Special Attack), reusing the physical IV and
+training rather than rolling their own: special attack runs off the ATK IV and
+training, special defence off the DEF IV and training. So the physical/special
+split lives on the species, not the individual — no extra IVs to roll.
 
 The IV also sets **how far each stat can be trained at all** (77–100), so a
 well-rolled individual has a genuinely higher ceiling, not just a head start.

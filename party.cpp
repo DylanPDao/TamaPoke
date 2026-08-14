@@ -76,3 +76,10 @@ uint16_t Party::speOf(const PartyMon &m) const {
 uint16_t Party::vitOf(const PartyMon &m) const {
   return m.empty() ? 0 : calcStat(DEX_TBL[m.dex].bHp, m.ivHp, m.level, 10);
 }
+// Special reuses the physical IV and training, same rule as Pet::spaStat().
+uint16_t Party::spaOf(const PartyMon &m) const {
+  return m.empty() ? 0 : calcStat(DEX_TBL[m.dex].bSpA, m.ivAtk, m.level, m.trAtk);
+}
+uint16_t Party::spdOf(const PartyMon &m) const {
+  return m.empty() ? 0 : calcStat(DEX_TBL[m.dex].bSpD, m.ivDef, m.level, m.trDef);
+}

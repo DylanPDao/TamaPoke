@@ -9,6 +9,7 @@
 // Minutos de juego por nivel. Con 60, CHARMANDER evoluciona a las ~16 h
 // de juego con cuidado perfecto. Baja a 1 para ver evoluciones al momento.
 #define MINUTES_PER_LEVEL 60
+#define MAX_LEVEL 100              // reached at 4d 3h; see level()
 #define EAT_ANIM_MS 2500UL
 #define HEART_MS 1500UL
 #define EVOLVE_ANIM_MS 5200UL              // animacion de evolucion (mas larga = mas epica)
@@ -94,6 +95,11 @@ public:
   uint16_t defStat() const;
   uint16_t speStat() const;
   uint16_t vitStat() const;  // vitalidad (bHp): no se entrena, solo IV y nivel
+  // The physical/special split lives on the species (bSpA/bSpD), not the
+  // individual: special attack reuses ivAtk/trAtk and special defence reuses
+  // ivDef/trDef, so no extra IVs and no save migration. See fetch_pokeapi.py.
+  uint16_t spaStat() const;
+  uint16_t spdStat() const;
   // tope de entrenamiento que permite un IV: 77 (IV 8) .. 100 (IV 31)
   static uint8_t trMaxFor(uint8_t iv) { return 70 + (30 * (uint16_t)iv) / 31; }
   uint8_t trMaxAtk() const { return trMaxFor(ivAtk); }
@@ -147,7 +153,16 @@ public:
     eggTaps = 0;
     hatch();
   }
-  uint8_t level() const { return 1 + ageMinutes / MINUTES_PER_LEVEL; }
+  // Capped at 100, the series' own ceiling. The cap is not cosmetic: ageMinutes
+  // is never clamped, so without it 1 + ageMinutes/60 overflows this uint8_t
+  // past ~10.6 days -- and the RTC catches up to 2 weeks offline, which lands on
+  // level 337 and wraps to 81. Reached at 4d 3h; farewell is merely *offered* at
+  // 3 days (level 73), so declining it to raise a stronger battler is a real
+  // choice rather than an accident.
+  uint8_t level() const {
+    uint32_t l = 1 + ageMinutes / MINUTES_PER_LEVEL;
+    return l > MAX_LEVEL ? MAX_LEVEL : (uint8_t)l;
+  }
   bool isRegistered(int16_t dex) const {
     return dex >= 1 && dex <= 151 && (dexReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
   }

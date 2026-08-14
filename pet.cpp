@@ -381,6 +381,15 @@ uint16_t Pet::speStat() const {
 uint16_t Pet::vitStat() const {
   return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bHp, ivHp, level(), 10);
 }
+// Special reuses the physical IV and training against the species' special base
+// stat, which is what keeps Alakazam (50 Atk / 135 SpA) a real attacker without
+// adding IVs or migrating saves.
+uint16_t Pet::spaStat() const {
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpA, ivAtk, level(), trAtk);
+}
+uint16_t Pet::spdStat() const {
+  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpD, ivDef, level(), trDef);
+}
 
 // Tirada de un IV: 8-31. El suelo en 8 es deliberado — en los juegos un 0 es
 // posible porque puedes criar cientos de huevos, aqui cada crianza dura 3 dias
