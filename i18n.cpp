@@ -44,6 +44,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s ha fallado!", "Golpe critico!", "%s se debilita!", "Se ha herido!",
     "%s: %s", "PARALISIS", "QUEMADURA", "VENENO", "DORMIDO", "CONGELADO", "CONFUSION",
     "Has ganado!", "Has perdido...",
+    "%s saca a %s", "Adelante, %s!", "GIMNASIOS", "MEDALLAS %u/8",
   },
   // ---------------- EN ----------------
   {
@@ -82,6 +83,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s missed!", "Critical hit!", "%s fainted!", "It hurt itself!",
     "%s: %s", "PARALYSED", "BURNED", "POISONED", "ASLEEP", "FROZEN", "CONFUSED",
     "You win!", "You lost...",
+    "%s sends out %s", "Go, %s!", "GYMS", "BADGES %u/8",
   },
   // ---------------- FR ----------------
   {
@@ -120,6 +122,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s a rate!", "Coup critique!", "%s est K.O.!", "Il se blesse!",
     "%s: %s", "PARALYSIE", "BRULURE", "POISON", "ENDORMI", "GELE", "CONFUSION",
     "Gagne!", "Perdu...",
+    "%s envoie %s", "Vas-y, %s!", "ARENES", "BADGES %u/8",
   },
   // ---------------- DE ----------------
   {
@@ -158,6 +161,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s hat verfehlt!", "Volltreffer!", "%s wurde besiegt!", "Es verletzt sich!",
     "%s: %s", "PARALYSE", "VERBRANNT", "VERGIFTET", "SCHLAEFT", "GEFROREN", "VERWIRRT",
     "Gewonnen!", "Verloren...",
+    "%s schickt %s", "Los, %s!", "ARENEN", "ORDEN %u/8",
   },
   // ---------------- IT ----------------
   {
@@ -196,6 +200,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s ha mancato!", "Brutto colpo!", "%s e\' esausto!", "Si e ferito!",
     "%s: %s", "PARALISI", "SCOTTATURA", "VELENO", "ADDORMENTATO", "CONGELATO", "CONFUSIONE",
     "Hai vinto!", "Hai perso...",
+    "%s manda %s", "Vai, %s!", "PALESTRE", "MEDAGLIE %u/8",
   },
   // ---------------- PT ----------------
   {
@@ -234,6 +239,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s falhou!", "Acerto critico!", "%s desmaiou!", "Feriu-se!",
     "%s: %s", "PARALISIA", "QUEIMADURA", "VENENO", "A DORMIR", "CONGELADO", "CONFUSAO",
     "Ganhaste!", "Perdeste...",
+    "%s envia %s", "Vai, %s!", "GINASIOS", "MEDALHAS %u/8",
   },
 };
 

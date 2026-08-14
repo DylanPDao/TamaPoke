@@ -114,6 +114,24 @@ public:
   // prompt. Returns how many were written into out (at most max).
   uint8_t pendingLearnables(uint8_t *out, uint8_t max) const;
 
+  // Player-wide, like the streak and the Pokedex: badges outlive the creature
+  // that earned them, so newEgg() must never clear this.
+  uint16_t badges = 0;      // bit n = trainer n beaten on easy
+  uint16_t badgesHard = 0;  // ... and on hard
+  bool hasBadge(uint8_t i, bool hard) const {
+    return ((hard ? badgesHard : badges) >> i) & 1;
+  }
+  void winBadge(uint8_t i, bool hard) {
+    if (hard) badgesHard |= (1 << i); else badges |= (1 << i);
+    save();
+  }
+  uint8_t badgeCount(bool hard) const {
+    uint16_t v = hard ? badgesHard : badges;
+    uint8_t n = 0;
+    while (v) { n += v & 1; v >>= 1; }
+    return n;
+  }
+
   // Level-up learning. lastLearnLevel is the highest level whose gates have
   // been handled, so a move declined once is not offered forever, and the
   // offline catch-up -- which can cross a dozen levels in one go -- queues its

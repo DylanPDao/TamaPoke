@@ -19,6 +19,7 @@
 #include "types.h"
 #include "moves.h"
 #include "battle.h"
+#include "trainers.h"
 #include <stdarg.h>
 #include "party.h"
 #include "pet.h"
@@ -78,15 +79,16 @@ uint8_t cardPage = 0;         // 0 perfil, 1 stats+medallas
 // and is the only free surface left.
 bool menuOpen = false;
 #define MENU_X 73
-// five rows no longer fit under the old MENU_Y: the panel bottom would land at
-// y=418, where the round bezel is only ~141 px wide and the corners get cut.
-// Recentred vertically instead of shrinking the rows.
-#define MENU_Y 75
+// Six rows, sized to the bezel rather than to taste: the panel is 320 wide, so
+// it is 160 from the centre, and sqrt(233^2 - 160^2) = 169 -- it can only span
+// y 64..402. That is 338px for 6 rows, hence ROW_H 46. Going any taller clips
+// the bottom corners on the round panel.
+#define MENU_Y 64
 #define MENU_W 320
-#define MENU_H 316
-#define MENU_ROW_H 52
+#define MENU_H 338
+#define MENU_ROW_H 46
 #define MENU_ROW_GAP 6
-#define MENU_ROWS 5
+#define MENU_ROWS 6
 #define MENU_ROW_Y(i) (MENU_Y + 16 + (i) * (MENU_ROW_H + MENU_ROW_GAP))
 
 // Party screen. partyPick != 0 means the newcomer needs a slot: the player
@@ -154,6 +156,21 @@ bool battleOpen = false;
 Combatant btlYou, btlFoe;
 bool btlOver = false;
 bool btlWon = false;
+// A trainer fight is a run of 1v1s: both sides queue their squad and the next
+// one steps up when the current one faints. This is the whole difficulty curve
+// -- no gating, just attrition, so one strong creature sweeps Brock and dies
+// four deep into Lance.
+// Every trainer is always selectable. There is no unlock order: attrition is
+// the gate, so walking into Lance at level 20 is allowed and simply loses.
+bool gymOpen = false;
+uint8_t gymPage = 0;
+#define GYM_ROWS 5
+#define GYM_ROW_Y(i) (92 + (i) * 52)
+int8_t btlTrainer = -1;      // index into TRAINERS, -1 = a one-off fight
+bool btlHard = false;
+Combatant btlSquad[TRAINER_TEAM_MAX + 1];
+uint8_t btlSquadN = 0, btlSquadAt = 0;
+uint8_t btlFoeAt = 0;
 char btlMsg[6][40];
 uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 #define BTL_CELL_W 160
@@ -672,6 +689,7 @@ void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
+  if (gymOpen) { gymOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -727,6 +745,7 @@ void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
+  if (gymOpen) { gymOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -783,6 +802,20 @@ void onTap(int16_t x, int16_t y) {
   }
   if (battleOpen) {
     battleTap(x, y);
+    return;
+  }
+  if (gymOpen) {
+    for (int i = 0; i < GYM_ROWS; i++) {
+      uint8_t idx = gymPage * GYM_ROWS + i;
+      if (idx >= TRAINER_COUNT) break;
+      int ry = GYM_ROW_Y(i);
+      if (x < 70 || x > 396 || y < ry || y > ry + 44) continue;
+      sfxPlay(SFX_TAP);
+      gymOpen = false;
+      startTrainerBattle(idx, false);
+      return;
+    }
+    gymOpen = false;
     return;
   }
   if (pet.hasLearnOffer()) {
@@ -854,8 +887,9 @@ void onTap(int16_t x, int16_t y) {
       if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
       else if (i == 1) { galleryOpen = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
       else if (i == 2) { partyOpen = true; }
-      else if (i == 3) { openClock(); }
-      return;                                     // i == 4 is CLOSE: just shut
+      else if (i == 3) { gymOpen = true; gymPage = 0; }
+      else if (i == 4) { openClock(); }
+      return;                                     // i == 5 is CLOSE: just shut
     }
     return;
   }
@@ -1162,6 +1196,10 @@ void render() {
   }
   if (battleOpen) {
     renderBattle();
+    return;
+  }
+  if (gymOpen) {
+    renderGyms();
     return;
   }
   if (pet.hasLearnOffer()) {
@@ -2013,6 +2051,43 @@ static void btlNarrate(const Combatant &actor, const Combatant &target, const Tu
   if (lg.targetFainted) btlSay(T(S_BTL_FAINT), target.name);
 }
 
+// Builds one opponent through Pet, so it gets the same stat formula and the
+// same learnset-driven moveset the player's creatures do.
+static void foeFromSpecies(Combatant &c, int16_t dex, uint8_t lvl, uint8_t iv) {
+  Pet foe;
+  foe.dbgHatchAs(dex, false);
+  foe.ivAtk = foe.ivDef = foe.ivSpe = foe.ivHp = iv;
+  foe.ageMinutes = (uint32_t)(lvl ? lvl - 1 : 0) * MINUTES_PER_LEVEL;
+  foe.relearnFromLevel();
+  combatantFromPet(c, foe);
+}
+
+// Your side: the live pet first, then the banked party. Up to 6, like the games.
+static void buildSquad() {
+  btlSquadN = 0;
+  btlSquadAt = 0;
+  if (!pet.isEgg()) combatantFromPet(btlSquad[btlSquadN++], pet);
+  for (int i = 0; i < PARTY_SLOTS && btlSquadN < TRAINER_TEAM_MAX; i++)
+    if (!party.slots[i].empty())
+      combatantFromParty(btlSquad[btlSquadN++], party.slots[i]);
+  if (btlSquadN) btlYou = btlSquad[0];
+}
+
+void startTrainerBattle(uint8_t idx, bool hard) {
+  if (idx >= TRAINER_COUNT || pet.isEgg() || pet.ceremony != CER_NONE) return;
+  buildSquad();
+  if (!btlSquadN) return;
+  btlTrainer = (int8_t)idx;
+  btlHard = hard;
+  btlFoeAt = 0;
+  const Trainer &t = TRAINERS[idx];
+  foeFromSpecies(btlFoe, t.team[0].dex, t.team[0].level, hard ? HARD_IV : EASY_IV);
+  btlMsgCount = 0;
+  btlOver = false;
+  btlWon = false;
+  battleOpen = true;
+}
+
 void startBattle(int16_t dex, uint8_t lvl) {
   if (pet.isEgg() || pet.ceremony != CER_NONE) return;
   if (dex < 1 || dex > DEX_COUNT) return;
@@ -2056,9 +2131,30 @@ static void btlResolve(uint8_t yourMove) {
     battleEndTurn(btlFoe, lg);
     if (lg.damage) btlNarrate(btlFoe, btlFoe, lg);
   }
+  // Someone went down: send in the next of that side's squad, and only call the
+  // battle when a side has nobody left.
+  if (btlFoe.fainted() && btlTrainer >= 0) {
+    const Trainer &t = TRAINERS[btlTrainer];
+    if (btlFoeAt + 1 < t.count) {
+      btlFoeAt++;
+      foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
+                     btlHard ? HARD_IV : EASY_IV);
+      btlSay(T(S_BTL_SENDS), t.name, btlFoe.name);
+      return;
+    }
+  }
+  if (btlYou.fainted() && btlSquadAt + 1 < btlSquadN) {
+    btlSquad[btlSquadAt] = btlYou;      // remember how battered it was
+    btlSquadAt++;
+    btlYou = btlSquad[btlSquadAt];
+    btlSay(T(S_BTL_GO), btlYou.name);
+    return;
+  }
   if (btlFoe.fainted() || btlYou.fainted()) {
     btlOver = true;
     btlWon = btlFoe.fainted();
+    if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlTrainer, btlHard))
+      pet.winBadge(btlTrainer, btlHard);
     btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE));
   }
 }
@@ -2148,6 +2244,64 @@ void battleTap(int16_t x, int16_t y) {
     btlResolve(btlYou.moves[i]);
     return;
   }
+}
+
+// ---------- gym list ----------
+void renderGyms() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_GYMS)) * 6, 42);
+  gfx->print(T(S_GYMS));
+  char sub[24];
+  snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCount(false));
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(sub) * 3, 66);
+  gfx->print(sub);
+
+  for (int i = 0; i < GYM_ROWS; i++) {
+    uint8_t idx = gymPage * GYM_ROWS + i;
+    if (idx >= TRAINER_COUNT) break;
+    const Trainer &t = TRAINERS[idx];
+    int y = GYM_ROW_Y(i);
+    bool done = pet.hasBadge(idx, false);
+    gfx->fillRoundRect(70, y, 326, 44, 10, done ? UI_TRACK : UI_BG_DAY);
+    gfx->drawRoundRect(70, y, 326, 44, 10, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(84, y + 8);
+    gfx->print(t.name);
+    gfx->setTextSize(1);
+    gfx->setTextColor(UI_TRACK);
+    gfx->setCursor(84, y + 28);
+    gfx->print(t.place);
+    // the level of the strongest creature: the honest measure of the wall
+    uint8_t top = 0;
+    for (int k = 0; k < t.count; k++)
+      if (t.team[k].level > top) top = t.team[k].level;
+    char lv[16];
+    snprintf(lv, sizeof(lv), "Lv.%u x%u", top, t.count);
+    gfx->setTextColor(done ? UI_BAR_OK : UI_INK);
+    gfx->setCursor(384 - (int)strlen(lv) * 6, y + 28);
+    gfx->print(lv);
+    if (done) {
+      gfx->setTextColor(UI_BAR_OK);
+      gfx->setCursor(370, y + 8);
+      gfx->print("*");
+    }
+  }
+  uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
+  for (uint8_t i = 0; i < pages; i++) {
+    int dx = CX - (pages - 1) * 13 + i * 26;
+    if (i == gymPage) gfx->fillCircle(dx, 366, 5, UI_INK);
+    else gfx->drawCircle(dx, 366, 4, UI_INK);
+  }
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
+  gfx->print(T(S_BACK));
+  gfx->flush();
 }
 
 // ---------- level-up learn prompt ----------
@@ -2298,7 +2452,8 @@ static void menuRowLabel(int i, char *out, size_t n) {
     case 0: snprintf(out, n, "%s", T(S_STATS)); break;
     case 1: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount()); break;
     case 2: snprintf(out, n, T(S_PARTY_FMT), party.count()); break;
-    case 3: snprintf(out, n, "%s", T(S_SETTINGS)); break;
+    case 3: snprintf(out, n, "%s", T(S_GYMS)); break;
+    case 4: snprintf(out, n, "%s", T(S_SETTINGS)); break;
     default: snprintf(out, n, "%s", T(S_CLOSE)); break;
   }
 }

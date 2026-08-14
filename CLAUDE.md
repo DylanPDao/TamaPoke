@@ -206,8 +206,26 @@ Phase order: (1) ~~special stat accessors~~ · (2) ~~move storage on `Pet` +
 `PartyMon`~~ · (3) ~~moveset UI~~ -- all **done**. Next: (4) `MoveEntry` ailment
 ~~fields~~ **done** · (5) damage + turn resolution, headless-testable in the
 ~~emulator~~ **done** (`battle.h`/`battle.cpp`) · (6) battle UI ·
-~~(6) battle UI~~ **done** · (7) trainer roster + gyms + Elite 4 ·
-(8) hard mode AI.
+~~(6) battle UI~~ · ~~(7) trainer roster + gyms + Elite 4~~ -- **done**.
+Next: (8) hard mode AI, and a team-select screen.
+
+The ladder uses the real FireRed/LeafGreen teams and levels, unrescaled, and
+they land almost perfectly on this game's curve. Measured solo win-rate for one
+perfect-IV Charizard, 40 runs each:
+
+| your level | gyms 1-4 | gyms 5-7 | Giovanni | Elite 4 | Champion |
+|---|---|---|---|---|---|
+| 40  | 90-100% | 0%      | 0%     | 0%     | 0%  |
+| 60  | 97-100% | 50-75%  | 0%     | 0-15%  | 0%  |
+| 73 (a full 3-day life) | 100% | 82-97% | 7% | 0-32% | 0% |
+| 100 | 100%    | 100%    | 52%    | 55-92% | 42% |
+
+So one creature clears the eight gyms over a normal life and still cannot take
+the Elite 4 -- exactly what "no gating, attrition is the gate" was meant to do.
+A banked team is the answer, which makes farewells matter.
+
+Team-select is NOT built: the squad is the live pet plus the first five banked
+members in order. It only bites when you hold 7 candidates.
 
 Note on (6): the battle screen is a 2x2 move grid, not four stacked rows --
 the round panel has to fit both creatures, both HP bars and the menu. The only

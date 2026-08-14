@@ -88,6 +88,10 @@ enum StrId : uint8_t {
   S_BTL_STATUS,     // "%s was %s" -- ailment name comes from S_AIL_*
   S_AIL_PARA, S_AIL_BURN, S_AIL_POISON, S_AIL_SLEEP, S_AIL_FREEZE, S_AIL_CONFUSE,
   S_BTL_WIN, S_BTL_LOSE,
+  S_BTL_SENDS,      // "%s sends out %s"
+  S_BTL_GO,         // "Go, %s!"
+  S_GYMS,           // gym list title
+  S_BADGES_FMT,     // "BADGES %u/8"
   STR_COUNT
 };
 
