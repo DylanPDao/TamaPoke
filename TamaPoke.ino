@@ -18,6 +18,8 @@
 #include "dex.h"
 #include "types.h"
 #include "moves.h"
+#include "battle.h"
+#include <stdarg.h>
 #include "party.h"
 #include "pet.h"
 #include "sdmon.h"
@@ -143,6 +145,23 @@ uint8_t movePickPage = 0;
 // the party, forever.
 #define LEARN_ROW_Y(i) (104 + (i) * 56)
 #define LEARN_SKIP_Y 334
+
+// ---------- battle ----------
+// The move menu is a 2x2 grid rather than four stacked rows: the round panel
+// has to fit both creatures, both HP bars and the menu, and four full-width
+// rows do not leave room for the sprites.
+bool battleOpen = false;
+Combatant btlYou, btlFoe;
+bool btlOver = false;
+bool btlWon = false;
+char btlMsg[6][40];
+uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
+#define BTL_CELL_W 160
+#define BTL_CELL_H 44
+#define BTL_GRID_X 69
+#define BTL_GRID_Y 286
+#define BTL_CELL_X(i) (BTL_GRID_X + ((i) % 2) * (BTL_CELL_W + 8))
+#define BTL_CELL_Y(i) (BTL_GRID_Y + ((i) / 2) * (BTL_CELL_H + 8))
 #define TRAIN_X 73
 #define TRAIN_Y 96
 #define TRAIN_W 320
@@ -487,6 +506,17 @@ void handleSerial() {
                     pet.ivSpe, pet.ivHp);
     }
     Serial.println("DONE");
+  } else if (line.startsWith("BATTLE")) {
+    // BATTLE <dex> [level] -- the only way in until the trainer roster exists
+    int dex = 0, lvl = 0;
+    int n = sscanf(line.c_str() + 6, "%d %d", &dex, &lvl);
+    if (n >= 1 && dex >= 1 && dex <= DEX_COUNT) {
+      startBattle(dex, lvl > 0 ? (uint8_t)lvl : pet.level());
+      Serial.printf("battle vs %s Lv.%u\n", DEX_TBL[dex].name, btlFoe.level);
+    } else {
+      Serial.println("uso: BATTLE <dex> [nivel]");
+    }
+    Serial.println("DONE");
   } else if (line == "SHINY") {  // alterna shiny del actual (pruebas)
     pet.shiny = !pet.shiny;
     Serial.printf("shiny=%d\n", pet.shiny);
@@ -641,6 +671,7 @@ void openClock();  // prototipo
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
+  if (battleOpen) return;   // no swiping out of a fight
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -695,6 +726,7 @@ void partyTap(int16_t x, int16_t y) {
 void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
+  if (battleOpen) return;   // no swiping out of a fight
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -747,6 +779,10 @@ void onTap(int16_t x, int16_t y) {
         break;
       }
     }
+    return;
+  }
+  if (battleOpen) {
+    battleTap(x, y);
     return;
   }
   if (pet.hasLearnOffer()) {
@@ -1122,6 +1158,10 @@ void render() {
   }
   if (clockOpen) {
     renderClock();
+    return;
+  }
+  if (battleOpen) {
+    renderBattle();
     return;
   }
   if (pet.hasLearnOffer()) {
@@ -1940,6 +1980,174 @@ void renderMovePick() {
   gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 402);
   gfx->print(T(S_BACK));
   gfx->flush();
+}
+
+// ---------- battle ----------
+
+static void btlSay(const char *fmt, ...) {
+  if (btlMsgCount >= 6) return;
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(btlMsg[btlMsgCount], sizeof(btlMsg[0]), fmt, ap);
+  va_end(ap);
+  btlMsgCount++;
+}
+
+// Turns a TurnLog into narration. Everything here was already decided by the
+// engine -- nothing is recomputed, so the text can never disagree with the maths.
+static void btlNarrate(const Combatant &actor, const Combatant &target, const TurnLog &lg) {
+  if (lg.skipped) return;
+  if (lg.hurtSelf) { btlSay(T(S_BTL_HURTSELF)); return; }
+  if (lg.charged) { btlSay(T(S_BTL_USED), actor.name, MOVE_TBL[lg.move].name); return; }
+  if (lg.move) btlSay(T(S_BTL_USED), actor.name, MOVE_TBL[lg.move].name);
+  if (lg.missed) { btlSay(T(S_BTL_MISS), actor.name); return; }
+  if (lg.immune) { btlSay(T(S_BTL_IMMUNE)); return; }
+  if (lg.crit) btlSay(T(S_BTL_CRIT));
+  if (lg.damage && lg.effPct > 100) btlSay(T(S_BTL_SUPER));
+  else if (lg.damage && lg.effPct < 100) btlSay(T(S_BTL_WEAK));
+  if (lg.inflicted) {
+    static const StrId AIL_STR[] = { S_AIL_PARA, S_AIL_PARA, S_AIL_BURN, S_AIL_POISON,
+                                     S_AIL_SLEEP, S_AIL_FREEZE, S_AIL_CONFUSE };
+    if (lg.inflicted < 7) btlSay(T(S_BTL_STATUS), target.name, T(AIL_STR[lg.inflicted]));
+  }
+  if (lg.targetFainted) btlSay(T(S_BTL_FAINT), target.name);
+}
+
+void startBattle(int16_t dex, uint8_t lvl) {
+  if (pet.isEgg() || pet.ceremony != CER_NONE) return;
+  if (dex < 1 || dex > DEX_COUNT) return;
+  combatantFromPet(btlYou, pet);
+  // The opponent is built through Pet so it gets the same stat formula and the
+  // same learnset-driven moveset the player's creature does -- no special-cased
+  // "enemy" maths that could quietly diverge.
+  Pet foe;
+  foe.dbgHatchAs(dex, false);
+  foe.ivAtk = foe.ivDef = foe.ivSpe = foe.ivHp = 20;
+  foe.ageMinutes = (uint32_t)(lvl ? lvl - 1 : 0) * MINUTES_PER_LEVEL;
+  foe.relearnFromLevel();
+  combatantFromPet(btlFoe, foe);
+  btlMsgCount = 0;
+  btlOver = false;
+  btlWon = false;
+  battleOpen = true;
+}
+
+// One exchange: both sides act in speed order, then burn/poison chip.
+static void btlResolve(uint8_t yourMove) {
+  TurnLog lg;
+  uint8_t foeMove = btlFoe.moves[random(MOVE_SLOTS)];
+  for (int i = 0; i < MOVE_SLOTS && !foeMove; i++) foeMove = btlFoe.moves[i];
+
+  bool youFirst = battleMovesFirst(btlYou, yourMove, btlFoe, foeMove);
+  Combatant *a = youFirst ? &btlYou : &btlFoe;
+  Combatant *b = youFirst ? &btlFoe : &btlYou;
+  uint8_t ma = youFirst ? yourMove : foeMove;
+  uint8_t mb = youFirst ? foeMove : yourMove;
+
+  battleAct(*a, *b, ma, lg);
+  btlNarrate(*a, *b, lg);
+  if (!b->fainted()) {
+    battleAct(*b, *a, mb, lg);
+    btlNarrate(*b, *a, lg);
+  }
+  if (!btlYou.fainted() && !btlFoe.fainted()) {
+    battleEndTurn(btlYou, lg);
+    if (lg.damage) btlNarrate(btlYou, btlYou, lg);
+    battleEndTurn(btlFoe, lg);
+    if (lg.damage) btlNarrate(btlFoe, btlFoe, lg);
+  }
+  if (btlFoe.fainted() || btlYou.fainted()) {
+    btlOver = true;
+    btlWon = btlFoe.fainted();
+    btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE));
+  }
+}
+
+static void btlHpBar(int x, int y, int w, const Combatant &c) {
+  int fw = c.maxHp ? (w - 4) * c.hp / c.maxHp : 0;
+  uint16_t col = (c.hp * 2 > c.maxHp) ? UI_BAR_OK
+                 : (c.hp * 4 > c.maxHp) ? UI_BAR_WARN : UI_BAR_BAD;
+  gfx->fillRoundRect(x, y, w, 14, 4, UI_TRACK);
+  if (fw > 0) gfx->fillRoundRect(x + 2, y + 2, fw, 10, 3, col);
+  gfx->drawRoundRect(x, y, w, 14, 4, UI_INK);
+}
+
+static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c) {
+  char l[28];
+  snprintf(l, sizeof(l), "%s Lv.%u", c.name, c.level);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(1);
+  gfx->setCursor(tx, ty);
+  gfx->print(l);
+  btlHpBar(tx, ty + 12, 140, c);
+  if (c.ailment != AIL_NONE) {   // a status is the thing you most need to see
+    static const StrId AIL_STR[] = { S_AIL_PARA, S_AIL_PARA, S_AIL_BURN, S_AIL_POISON,
+                                     S_AIL_SLEEP, S_AIL_FREEZE, S_AIL_CONFUSE };
+    gfx->setTextColor(UI_BAR_BAD);
+    gfx->setCursor(tx, ty + 30);
+    gfx->print(T(AIL_STR[c.ailment]));
+  }
+  const uint8_t *th = thumbs.get(c.dex);
+  if (th) drawThumb(th, sx, sy, 3, false);
+}
+
+void renderBattle() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+
+  // x=82 not 58: at y=60 the round bezel starts around x=77, and a longer
+  // name like BLASTOISE was losing its first characters off the edge
+  btlSide(82, 60, 300, 40, btlFoe);    // foe reads top-left, sprite top-right
+  btlSide(250, 190, 76, 168, btlYou);  // you read bottom-right, sprite bottom-left
+
+  if (btlMsgCount) {                   // narration takes over the menu area
+    gfx->fillRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_WHITE);
+    gfx->drawRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(1);
+    for (uint8_t i = 0; i < btlMsgCount && i < 4; i++) {
+      gfx->setCursor(CX - (int)strlen(btlMsg[i]) * 3, BTL_GRID_Y + 14 + i * 18);
+      gfx->print(btlMsg[i]);
+    }
+    gfx->setTextColor(UI_TRACK);
+    gfx->setCursor(CX - 30, BTL_GRID_Y + 84);
+    gfx->print("tap...");
+  } else {
+    for (int i = 0; i < MOVE_SLOTS; i++) {
+      int x = BTL_CELL_X(i), y = BTL_CELL_Y(i);
+      uint8_t mv = btlYou.moves[i];
+      gfx->fillRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, mv ? UI_BG_DAY : UI_TRACK);
+      gfx->drawRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, UI_INK);
+      if (!mv) continue;
+      gfx->setTextColor(UI_INK);
+      gfx->setTextSize(1);
+      gfx->setCursor(x + 10, y + 12);
+      gfx->print(MOVE_TBL[mv].name);
+      gfx->setTextColor(hasStab(btlYou.dex, MOVE_TBL[mv].type) &&
+                                MOVE_TBL[mv].cat != MC_STATUS
+                            ? DEX_TBL[btlYou.dex].accent
+                            : UI_TRACK);
+      gfx->setCursor(x + 10, y + 28);
+      gfx->print(typeName(MOVE_TBL[mv].type));
+    }
+  }
+  gfx->flush();
+}
+
+void battleTap(int16_t x, int16_t y) {
+  if (btlMsgCount) {          // a tap clears the narration and returns the menu
+    btlMsgCount = 0;
+    if (btlOver) battleOpen = false;
+    return;
+  }
+  for (int i = 0; i < MOVE_SLOTS; i++) {
+    if (!btlYou.moves[i]) continue;
+    int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
+    if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
+    sfxPlay(SFX_TAP);
+    btlResolve(btlYou.moves[i]);
+    return;
+  }
 }
 
 // ---------- level-up learn prompt ----------

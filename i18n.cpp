@@ -40,6 +40,10 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "STATS", "ENTRENAR", "FUERZA", "VELOCIDAD", "DEFENSA", "Sube sola si esta a gusto",
     "MOVIMIENTOS", "- vacio -", "Elige movimiento", "Toca para cambiar", "POT %u", "ESTADO",
     "%s quiere aprender", "No aprender",
+    "%s usa %s", "Es muy eficaz!", "No es muy eficaz...", "No le afecta...",
+    "%s ha fallado!", "Golpe critico!", "%s se debilita!", "Se ha herido!",
+    "%s: %s", "PARALISIS", "QUEMADURA", "VENENO", "DORMIDO", "CONGELADO", "CONFUSION",
+    "Has ganado!", "Has perdido...",
   },
   // ---------------- EN ----------------
   {
@@ -74,6 +78,10 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "STATS", "TRAINING", "STRENGTH", "SPEED", "DEFENCE", "Grows on its own when happy",
     "MOVES", "- empty -", "Choose a move", "Tap a slot to change", "PWR %u", "STATUS",
     "%s wants to learn", "Do not learn",
+    "%s used %s", "Super effective!", "Not very effective...", "It had no effect...",
+    "%s missed!", "Critical hit!", "%s fainted!", "It hurt itself!",
+    "%s: %s", "PARALYSED", "BURNED", "POISONED", "ASLEEP", "FROZEN", "CONFUSED",
+    "You win!", "You lost...",
   },
   // ---------------- FR ----------------
   {
@@ -108,6 +116,10 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "STATS", "ENTRAINEMENT", "FORCE", "VITESSE", "DEFENSE", "Monte seule s'il est heureux",
     "CAPACITES", "- vide -", "Choisis une capacite", "Touche pour changer", "PUI %u", "STATUT",
     "%s veut apprendre", "Ne pas apprendre",
+    "%s utilise %s", "Tres efficace!", "Peu efficace...", "Aucun effet...",
+    "%s a rate!", "Coup critique!", "%s est K.O.!", "Il se blesse!",
+    "%s: %s", "PARALYSIE", "BRULURE", "POISON", "ENDORMI", "GELE", "CONFUSION",
+    "Gagne!", "Perdu...",
   },
   // ---------------- DE ----------------
   {
@@ -142,6 +154,10 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "WERTE", "TRAINING", "STAERKE", "TEMPO", "ABWEHR", "Steigt von selbst bei guter Laune",
     "ATTACKEN", "- leer -", "Attacke waehlen", "Tippen zum Aendern", "STK %u", "STATUS",
     "%s will lernen", "Nicht lernen",
+    "%s setzt %s ein", "Sehr effektiv!", "Nicht sehr effektiv...", "Keine Wirkung...",
+    "%s hat verfehlt!", "Volltreffer!", "%s wurde besiegt!", "Es verletzt sich!",
+    "%s: %s", "PARALYSE", "VERBRANNT", "VERGIFTET", "SCHLAEFT", "GEFROREN", "VERWIRRT",
+    "Gewonnen!", "Verloren...",
   },
   // ---------------- IT ----------------
   {
@@ -176,6 +192,10 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "STATS", "ALLENAMENTO", "FORZA", "VELOCITA", "DIFESA", "Sale da sola se sta bene",
     "MOSSE", "- vuoto -", "Scegli una mossa", "Tocca per cambiare", "POT %u", "STATO",
     "%s vuole imparare", "Non imparare",
+    "%s usa %s", "Superefficace!", "Non molto efficace...", "Nessun effetto...",
+    "%s ha mancato!", "Brutto colpo!", "%s e\' esausto!", "Si e ferito!",
+    "%s: %s", "PARALISI", "SCOTTATURA", "VELENO", "ADDORMENTATO", "CONGELATO", "CONFUSIONE",
+    "Hai vinto!", "Hai perso...",
   },
   // ---------------- PT ----------------
   {
@@ -210,6 +230,10 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "STATS", "TREINO", "FORCA", "VELOCIDADE", "DEFESA", "Sobe sozinha se estiver bem",
     "GOLPES", "- vazio -", "Escolhe um golpe", "Toca para mudar", "POT %u", "ESTADO",
     "%s quer aprender", "Nao aprender",
+    "%s usa %s", "Super eficaz!", "Pouco eficaz...", "Nao teve efeito...",
+    "%s falhou!", "Acerto critico!", "%s desmaiou!", "Feriu-se!",
+    "%s: %s", "PARALISIA", "QUEIMADURA", "VENENO", "A DORMIR", "CONGELADO", "CONFUSAO",
+    "Ganhaste!", "Perdeste...",
   },
 };
 

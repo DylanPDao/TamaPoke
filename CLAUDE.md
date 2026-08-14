@@ -89,6 +89,7 @@ On hardware, verify over the serial console (115200):
 - `STATS` full state · `HEALTH` uptime + heap (soak test) · `WIPE` factory reset
 - `SPEC <dex>` `LVL <n>` `IV <a> <d> <s> <h>` `HATCH` `SHINY` `EGGS` (20 eggs) `GAL`
 - `PARTY` / `PARTY <dex>` / `PARTY CLEAR` inspect, fill and empty the party
+- `BATTLE <dex> [lvl]` start a fight (debug entry until gyms exist)
 - `EGG <dex> [shiny]` hatch a chosen species: the legendary (3 perfect IVs) and
   shiny (IV floor 20) guarantees fire only inside `hatch()`, so this is the only
   way to reach them — `SHINY` just flips the flag on an already-hatched pet
@@ -205,7 +206,16 @@ Phase order: (1) ~~special stat accessors~~ · (2) ~~move storage on `Pet` +
 `PartyMon`~~ · (3) ~~moveset UI~~ -- all **done**. Next: (4) `MoveEntry` ailment
 ~~fields~~ **done** · (5) damage + turn resolution, headless-testable in the
 ~~emulator~~ **done** (`battle.h`/`battle.cpp`) · (6) battle UI ·
-(7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
+~~(6) battle UI~~ **done** · (7) trainer roster + gyms + Elite 4 ·
+(8) hard mode AI.
+
+Note on (6): the battle screen is a 2x2 move grid, not four stacked rows --
+the round panel has to fit both creatures, both HP bars and the menu. The only
+way into a battle right now is the serial command `BATTLE <dex> [level]`; it
+gets a real home in (7). The foe is built through `Pet` so it uses the same stat
+formula and the same learnset-driven moveset as the player, rather than
+special-cased enemy maths that could quietly diverge. Foe move choice is
+`random()` for now -- that IS phase 8.
 
 **Fight length was checked and is NOT a problem** (an earlier note here claimed
 otherwise; it was wrong). 240 simulated L50 fights average 3.1 turns, and that

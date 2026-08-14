@@ -83,6 +83,7 @@ void nvsSave(const char *path) {
 
 // the sketch
 void emuSetSpriteDir(const char *);
+void startBattle(int16_t dex, uint8_t lvl);
 void setup();
 void loop();
 void render();
@@ -136,6 +137,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "train"))   trainOpen = true;
   else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 4; }
   else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
+  else if (!strcmp(screen, "battle2")) { startBattle(9, 50); }
   else if (!strcmp(screen, "learn")) {
     // fill the four slots, then cross a gate so the offer has to be answered
     pet.relearnFromLevel();

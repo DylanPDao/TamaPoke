@@ -80,6 +80,14 @@ enum StrId : uint8_t {
   // level-up learn prompt
   S_LEARN_Q,        // "%s wants to learn" (name of the creature)
   S_LEARN_SKIP,     // decline the new move
+  // battle
+  S_BTL_USED,       // "%s used %s"
+  S_BTL_SUPER, S_BTL_WEAK, S_BTL_IMMUNE,
+  S_BTL_MISS, S_BTL_CRIT, S_BTL_FAINT,
+  S_BTL_HURTSELF,   // confusion
+  S_BTL_STATUS,     // "%s was %s" -- ailment name comes from S_AIL_*
+  S_AIL_PARA, S_AIL_BURN, S_AIL_POISON, S_AIL_SLEEP, S_AIL_FREEZE, S_AIL_CONFUSE,
+  S_BTL_WIN, S_BTL_LOSE,
   STR_COUNT
 };
 
