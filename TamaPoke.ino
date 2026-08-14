@@ -138,6 +138,11 @@ uint8_t movePickPage = 0;
 #define MOVE_ROW_Y(i) (96 + (i) * 58)
 #define MOVE_PICK_PER_PAGE 5
 #define MOVE_PICK_Y(i) (76 + (i) * 58)
+// level-up learn prompt: modal, and deliberately without a timeout -- it
+// decides what the creature is for the rest of its life, and once banked into
+// the party, forever.
+#define LEARN_ROW_Y(i) (104 + (i) * 56)
+#define LEARN_SKIP_Y 334
 #define TRAIN_X 73
 #define TRAIN_Y 96
 #define TRAIN_W 320
@@ -744,6 +749,20 @@ void onTap(int16_t x, int16_t y) {
     }
     return;
   }
+  if (pet.hasLearnOffer()) {
+    for (int i = 0; i < MOVE_SLOTS; i++) {
+      int ry = LEARN_ROW_Y(i);
+      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+      sfxPlay(SFX_TAP);
+      pet.acceptLearn(i);
+      return;
+    }
+    if (x >= 70 && x <= 396 && y >= LEARN_SKIP_Y && y <= LEARN_SKIP_Y + 44) {
+      sfxPlay(SFX_TAP);
+      pet.declineLearn();
+    }
+    return;   // modal: nothing else on screen responds until it is answered
+  }
   if (movePickOpen) {
     uint8_t all[64];
     uint8_t n = learnableList(all, sizeof(all));
@@ -1103,6 +1122,10 @@ void render() {
   }
   if (clockOpen) {
     renderClock();
+    return;
+  }
+  if (pet.hasLearnOffer()) {
+    renderLearn();
     return;
   }
   if (cardOpen) {
@@ -1916,6 +1939,34 @@ void renderMovePick() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 402);
   gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
+// ---------- level-up learn prompt ----------
+void renderLearn() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  uint8_t mv = pet.learnOffer();
+  char head[40];
+  const char *nm = pet.nick[0] ? pet.nick : DEX_TBL[pet.speciesId].name;
+  snprintf(head, sizeof(head), T(S_LEARN_Q), nm);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(head) * 3, 48);
+  gfx->print(head);
+  gfx->setTextColor(DEX_TBL[pet.speciesId].accent);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - (int)strlen(MOVE_TBL[mv].name) * 9, 66);
+  gfx->print(MOVE_TBL[mv].name);
+
+  for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(LEARN_ROW_Y(i), pet.moves[i], false);
+
+  gfx->fillRoundRect(70, LEARN_SKIP_Y, 326, 44, 12, UI_TRACK);
+  gfx->drawRoundRect(70, LEARN_SKIP_Y, 326, 44, 12, UI_INK);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_LEARN_SKIP)) * 6, LEARN_SKIP_Y + 14);
+  gfx->print(T(S_LEARN_SKIP));
   gfx->flush();
 }
 

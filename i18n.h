@@ -77,6 +77,9 @@ enum StrId : uint8_t {
   S_MOVE_TAP,       // hint on the moves page: tap a slot to change it
   S_MOVE_PWR,       // "PWR %u" next to an attacking move
   S_MOVE_STATUS,    // shown instead of power for a status move
+  // level-up learn prompt
+  S_LEARN_Q,        // "%s wants to learn" (name of the creature)
+  S_LEARN_SKIP,     // decline the new move
   STR_COUNT
 };
 

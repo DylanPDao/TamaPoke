@@ -113,6 +113,19 @@ public:
   // Moves reachable at this level that are not already known, for the learn
   // prompt. Returns how many were written into out (at most max).
   uint8_t pendingLearnables(uint8_t *out, uint8_t max) const;
+
+  // Level-up learning. lastLearnLevel is the highest level whose gates have
+  // been handled, so a move declined once is not offered forever, and the
+  // offline catch-up -- which can cross a dozen levels in one go -- queues its
+  // offers instead of firing a dozen dialogs at boot.
+  uint8_t lastLearnLevel = 0;
+  uint8_t learnQueue[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  uint8_t learnQCount = 0;
+  void checkLearnGates();
+  bool hasLearnOffer() const { return learnQCount > 0; }
+  uint8_t learnOffer() const { return learnQCount ? learnQueue[0] : 0; }
+  void acceptLearn(uint8_t slot);   // put the pending move into slot 0..3
+  void declineLearn();
   // tope de entrenamiento que permite un IV: 77 (IV 8) .. 100 (IV 31)
   static uint8_t trMaxFor(uint8_t iv) { return 70 + (30 * (uint16_t)iv) / 31; }
   uint8_t trMaxAtk() const { return trMaxFor(ivAtk); }

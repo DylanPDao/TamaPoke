@@ -136,6 +136,12 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "train"))   trainOpen = true;
   else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 4; }
   else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
+  else if (!strcmp(screen, "learn")) {
+    // fill the four slots, then cross a gate so the offer has to be answered
+    pet.relearnFromLevel();
+    pet.lastLearnLevel = 0;
+    pet.checkLearnGates();
+  }
   else if (!strcmp(screen, "party") || !strcmp(screen, "partyfull")) {
     partyOpen = true;
     static const int fill[] = { 6, 25, 149, 94, 143, 131 };

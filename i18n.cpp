@@ -39,6 +39,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "MENU", "AJUSTES", "CERRAR", "EQUIPO %u/6", "- vacio -", "%s se une al equipo!", "Equipo lleno: elige a quien sustituir", "Dejarlo ir",
     "STATS", "ENTRENAR", "FUERZA", "VELOCIDAD", "DEFENSA", "Sube sola si esta a gusto",
     "MOVIMIENTOS", "- vacio -", "Elige movimiento", "Toca para cambiar", "POT %u", "ESTADO",
+    "%s quiere aprender", "No aprender",
   },
   // ---------------- EN ----------------
   {
@@ -72,6 +73,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "MENU", "SETTINGS", "CLOSE", "PARTY %u/6", "- empty -", "%s joined the party!", "Party full: pick who to replace", "Let it go",
     "STATS", "TRAINING", "STRENGTH", "SPEED", "DEFENCE", "Grows on its own when happy",
     "MOVES", "- empty -", "Choose a move", "Tap a slot to change", "PWR %u", "STATUS",
+    "%s wants to learn", "Do not learn",
   },
   // ---------------- FR ----------------
   {
@@ -105,6 +107,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "MENU", "REGLAGES", "FERMER", "EQUIPE %u/6", "- vide -", "%s rejoint l'equipe!", "Equipe pleine: qui remplacer?", "Le laisser partir",
     "STATS", "ENTRAINEMENT", "FORCE", "VITESSE", "DEFENSE", "Monte seule s'il est heureux",
     "CAPACITES", "- vide -", "Choisis une capacite", "Touche pour changer", "PUI %u", "STATUT",
+    "%s veut apprendre", "Ne pas apprendre",
   },
   // ---------------- DE ----------------
   {
@@ -138,6 +141,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "MENU", "EINSTELLUNGEN", "SCHLIESSEN", "TEAM %u/6", "- leer -", "%s kommt ins Team!", "Team voll: wen ersetzen?", "Ziehen lassen",
     "WERTE", "TRAINING", "STAERKE", "TEMPO", "ABWEHR", "Steigt von selbst bei guter Laune",
     "ATTACKEN", "- leer -", "Attacke waehlen", "Tippen zum Aendern", "STK %u", "STATUS",
+    "%s will lernen", "Nicht lernen",
   },
   // ---------------- IT ----------------
   {
@@ -171,6 +175,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "MENU", "IMPOSTAZIONI", "CHIUDI", "SQUADRA %u/6", "- vuoto -", "%s entra in squadra!", "Squadra piena: chi sostituire?", "Lasciarlo andare",
     "STATS", "ALLENAMENTO", "FORZA", "VELOCITA", "DIFESA", "Sale da sola se sta bene",
     "MOSSE", "- vuoto -", "Scegli una mossa", "Tocca per cambiare", "POT %u", "STATO",
+    "%s vuole imparare", "Non imparare",
   },
   // ---------------- PT ----------------
   {
@@ -204,6 +209,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "MENU", "AJUSTES", "FECHAR", "EQUIPA %u/6", "- vazio -", "%s junta-se a equipa!", "Equipa cheia: quem substituir?", "Deixa-lo ir",
     "STATS", "TREINO", "FORCA", "VELOCIDADE", "DEFESA", "Sobe sozinha se estiver bem",
     "GOLPES", "- vazio -", "Escolhe um golpe", "Toca para mudar", "POT %u", "ESTADO",
+    "%s quer aprender", "Nao aprender",
   },
 };
 

@@ -351,8 +351,14 @@ at hatch, `IV × level/100` exactly as in the real games) + **training**:
 Each creature knows up to **4 moves**, from a pool of 77. Two kinds:
 
 - **Level-up moves** are gated: Charizard learns FLAMETHROWER at 34, WING ATTACK
-  at 36, DRAGON RAGE at 54. These fill the starting set, so a fresh hatchling
-  opens with what its species actually knows at level 1.
+  at 36, DRAGON RAGE at 54. A hatchling starts with **only** what its species
+  knows at level 1 — a Charmander opens with GROWL alone, and the other three
+  slots stay empty. Crossing a gate fills an empty slot silently; with all four
+  full you get a **prompt** asking which to forget (or to skip it). Offers queue,
+  so coming back to a pet that aged two weeks offline asks one at a time.
+  Evolving keeps the moves it already has, and the new form's gates take over —
+  moves it would have learned *below* your current level are not backfilled,
+  same as the real games.
 - **TMs** have no level gate and are chosen on demand, from the **MOVES** page of
   the stats card (swipe across, then tap a slot).
 

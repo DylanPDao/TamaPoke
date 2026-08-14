@@ -169,6 +169,7 @@ void Pet::tick() {
   }
 
   checkMedals();  // la evolucion la dispara el usuario (canEvolveNow + tap), no el tick
+  checkLearnGates();
 
   // abandono total: con TODO a cero durante una hora queda lista para escaparse;
   // NO se va sola, la dispara el usuario con el boton (final triste, lo presencia)
@@ -482,6 +483,51 @@ void Pet::relearnFromLevel() {
   if (best) moves[MOVE_SLOTS - 1] = best;
 }
 
+// Queues every level-up move unlocked since the last check. A free slot is
+// filled silently -- the games do not ask when there is room either -- and only
+// a full moveset produces an offer the player has to answer.
+void Pet::checkLearnGates() {
+  if (isEgg() || ceremony != CER_NONE) return;
+  uint8_t lvl = level();
+  if (lvl <= lastLearnLevel) return;
+  uint8_t n = learnCount(speciesId);
+  for (uint8_t i = 0; i < n; i++) {
+    uint8_t at = learnLevel(speciesId, i);
+    if (at == 0 || at <= lastLearnLevel || at > lvl) continue;  // 0 = TM, no gate
+    uint8_t mv = learnMove(speciesId, i);
+    if (!mv || mv >= MOVE_COUNT || knowsMove(mv)) continue;
+    int freeSlot = -1;
+    for (int s = 0; s < MOVE_SLOTS; s++)
+      if (!moves[s]) { freeSlot = s; break; }
+    if (freeSlot >= 0) { moves[freeSlot] = mv; continue; }
+    if (learnQCount >= sizeof(learnQueue)) continue;
+    bool dup = false;
+    for (uint8_t q = 0; q < learnQCount; q++)
+      if (learnQueue[q] == mv) dup = true;
+    if (!dup) learnQueue[learnQCount++] = mv;
+  }
+  lastLearnLevel = lvl;
+  pendingSave = true;
+}
+
+static void popLearn(uint8_t *q, uint8_t &n) {
+  if (!n) return;
+  for (uint8_t i = 0; i + 1 < n; i++) q[i] = q[i + 1];
+  q[--n] = 0;
+}
+
+void Pet::acceptLearn(uint8_t slot) {
+  if (!learnQCount || slot >= MOVE_SLOTS) return;
+  moves[slot] = learnQueue[0];
+  popLearn(learnQueue, learnQCount);
+  save();
+}
+
+void Pet::declineLearn() {
+  popLearn(learnQueue, learnQCount);
+  save();
+}
+
 uint8_t Pet::pendingLearnables(uint8_t *out, uint8_t max) const {
   if (isEgg() || !out || !max) return 0;
   uint8_t lvl = level(), n = learnCount(speciesId), w = 0;
@@ -605,7 +651,12 @@ void Pet::hatch() {
   newMedal = 0;
   nick[0] = 0;
   registerSpecies(speciesId);  // criado = registrado en la pokedex
-  relearnFromLevel();          // starts knowing what its species knows by now
+  // Start empty: checkLearnGates() fills the level-1 moves. Seeding from TMs
+  // instead would hand a newborn FIRE BLAST, which no level 1 creature knows.
+  for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = 0;
+  learnQCount = 0;
+  lastLearnLevel = 0;
+  checkLearnGates();
   checkMedals();     // por si nace ya en forma final (legendario)
   sfxPlay(SFX_HATCH);
   save();
@@ -637,6 +688,7 @@ void Pet::evolve() {
   }
   speciesId = next;
   registerSpecies(speciesId);
+  checkLearnGates();   // the new form may gate a move at this very level
   sfxPlay(SFX_EVOLVE);
   evolveUntil = millis() + EVOLVE_ANIM_MS;
   save();
@@ -779,6 +831,7 @@ void Pet::save() {
   prefs.putUChar("tdef", trDef);
   prefs.putUChar("tspe", trSpe);
   prefs.putBytes("mvs", moves, sizeof(moves));
+  prefs.putUChar("mvlv", lastLearnLevel);
   prefs.putBool("bk", berryKnown);
   prefs.putBool("shy", shiny);
   prefs.putBool("eshy", eggShiny);
@@ -872,7 +925,15 @@ void Pet::load() {
   prefs.getBytes("mvs", moves, sizeof(moves));
   for (int i = 0; i < MOVE_SLOTS; i++)
     if (moves[i] >= MOVE_COUNT) moves[i] = 0;   // never index MOVE_TBL with junk
-  if (!isEgg() && moveCount() == 0) relearnFromLevel();
+  lastLearnLevel = prefs.getUChar("mvlv", 0);
+  if (!isEgg() && moveCount() == 0 && lastLearnLevel == 0) {
+    // save from before moves existed: hand it the set it should already have
+    // rather than a queue of every gate it ever passed
+    relearnFromLevel();
+    lastLearnLevel = level();
+  }
+  learnQCount = 0;      // rebuilt from lastLearnLevel by the next tick
+  checkLearnGates();
   // siembra: la mascota actual cuenta como criada (guardados antiguos)
   if (speciesId >= 1) registerSpecies(speciesId);
 }
