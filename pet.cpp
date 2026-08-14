@@ -423,9 +423,16 @@ void Pet::relearnFromLevel() {
   const DexEntry &d = DEX_TBL[speciesId];
   uint8_t lvl = level(), n = learnCount(speciesId);
   int16_t score[MOVE_SLOTS] = { 0, 0, 0, 0 };
+  // Two passes. Level-up moves (level >= 1) are what a creature grows into, so
+  // they fill the set first; TMs (level 0, no gate) only top up the slots left
+  // over. Without this a just-hatched pet opens with FIRE BLAST and SOLAR BEAM,
+  // because every TM is legal at level 1.
+  for (int pass = 0; pass < 2; pass++) {
+  bool tmPass = (pass == 1);
   for (uint8_t i = 0; i < n; i++) {
     uint8_t at = learnLevel(speciesId, i);
     if (at > lvl) continue;
+    if (tmPass != (at == 0)) continue;
     uint8_t mv = learnMove(speciesId, i);
     if (!mv || mv >= MOVE_COUNT || knowsMove(mv)) continue;
     const MoveEntry &m = MOVE_TBL[mv];
@@ -447,6 +454,8 @@ void Pet::relearnFromLevel() {
     }
     score[slot] = sc;
     moves[slot] = mv;
+  }
+  if (moveCount() >= MOVE_SLOTS) break;   // level-up moves already filled it
   }
   // Guarantee one same-type move. Machamp's only Fighting options are weak or
   // recoil-laden, so pure scoring left it with four generic attacks and nothing

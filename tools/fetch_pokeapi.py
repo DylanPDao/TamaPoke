@@ -45,6 +45,10 @@ DEX_COUNT = 151
 # leaves several species without even a same-type attack.
 METHODS = ('level-up', 'machine')
 
+# Version group the level-up levels are read from. Kanto, all 151, and level
+# gates that were not yet flattened by later generations' rebalancing.
+LEVEL_VG = 'firered-leafgreen'
+
 
 def fetch(num):
     path = os.path.join(CACHE, '%03d.json' % num)
@@ -65,7 +69,8 @@ def fetch(num):
             {
                 'name': m['move']['name'],
                 'details': [
-                    (d['move_learn_method']['name'], d['level_learned_at'])
+                    (d['move_learn_method']['name'], d['level_learned_at'],
+                     d['version_group']['name'])
                     for d in m['version_group_details']
                 ],
             }
@@ -94,13 +99,31 @@ def main():
             if m['name'] not in wanted:
                 continue
             missing.discard(m['name'])
-            # lowest level any game teaches it at; a TM is level 0 (no gate)
-            lv = None
-            for method, level in m['details']:
-                if method not in METHODS:
-                    continue
-                got = 0 if method == 'machine' else level
-                lv = got if lv is None else min(lv, got)
+            # A move's LEVEL GATE wins over its TM entry. The old rule took the
+            # lowest of the two and scored a TM as 0, so anything ever sold as a
+            # TM lost its gate -- Charizard's Flamethrower is TM38 in gen 1, so
+            # it came out ungated, and 1907 of 2281 rows collapsed to level 0.
+            #
+            # Levels are read from ONE version group, not min()'d across all of
+            # them: evolved forms relearn their basics at level 1 on evolving in
+            # some games, and the minimum flattened Charizard's whole set to 1.
+            # FireRed/LeafGreen is the pick -- Kanto, all 151, properly gated.
+            lvlup = [lvl for meth, lvl, vg in m['details']
+                     if meth == 'level-up' and vg == LEVEL_VG and lvl > 0]
+            if not lvlup:   # not in FRLG (or only at level 1 there): any game
+                lvlup = [lvl for meth, lvl, _vg in m['details']
+                         if meth == 'level-up' and lvl > 1]
+            is_tm = any(meth == 'machine' for meth, _lvl, _vg in m['details'])
+            has_lvl1 = any(meth == 'level-up' and lvl <= 1
+                           for meth, lvl, _vg in m['details'])
+            if lvlup:
+                lv = min(lvlup)
+            elif has_lvl1:
+                lv = 1      # a starting move
+            elif is_tm:
+                lv = 0      # TM only: no gate, taught on demand
+            else:
+                lv = None
             if lv is not None:
                 rows.append((m['name'], lv))
         rows.sort(key=lambda r: (r[1], r[0]))

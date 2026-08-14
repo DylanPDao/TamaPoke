@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v1.9-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.0-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -345,6 +345,23 @@ at hatch, `IV × level/100` exactly as in the real games) + **training**:
 - DEFENSE ← accumulated wellbeing (1 h resting or well-cared = +1)
 - STRENGTH ← the training bag (whacking)
 - VIT (vitality, from the base HP stat) — not trainable
+
+### Moves
+
+Each creature knows up to **4 moves**, from a pool of 77. Two kinds:
+
+- **Level-up moves** are gated: Charizard learns FLAMETHROWER at 34, WING ATTACK
+  at 36, DRAGON RAGE at 54. These fill the starting set, so a fresh hatchling
+  opens with what its species actually knows at level 1.
+- **TMs** have no level gate and are chosen on demand, from the **MOVES** page of
+  the stats card (swipe across, then tap a slot).
+
+Levels come from FireRed/LeafGreen, the Kanto games that still gate properly.
+A move that is *also* a TM keeps its level gate — otherwise every gated move
+would come free, since most of them were sold as TMs at some point.
+
+Moves **freeze when a pet is banked** into the party, alongside its level and
+training: the set you chose while it was alive is what it fights with forever.
 
 **Special attack and defence** come off the species' own `bSpA`/`bSpD` base stats
 (Alakazam is 50 Attack but 135 Special Attack), reusing the physical IV and
