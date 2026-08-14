@@ -201,10 +201,15 @@ Phase 1 turned out to be **already done**: `dex.h` has had `bSpA`/`bSpD` for all
 151 all along. Only the accessors were missing (`Pet::spaStat/spdStat`,
 `Party::spaOf/spdOf`) — added, so damage maths is unblocked.
 
-Phase order: (1) ~~special stat accessors~~ **done** · (2) move storage on `Pet` + `PartyMon`
-with learnset auto-population for existing saves · (3) learn/forget UI ·
-(4) `MoveEntry` ailment fields · (5) damage + turn resolution, headless-testable
-in the emulator · (6) battle UI · (7) gyms.
+Phase order: (1) ~~special stat accessors~~ · (2) ~~move storage on `Pet` +
+`PartyMon`~~ · (3) ~~moveset UI~~ -- all **done**. Next: (4) `MoveEntry` ailment
+fields · (5) damage + turn resolution, headless-testable in the emulator ·
+(6) battle UI · (7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
+
+Note on (3): there is no level-up "you learned a move" prompt, and there should
+not be -- 1907 of 2281 learnset entries are level 0, so it would almost never
+fire. The moveset is edited on demand from card page 4 instead, which is both
+simpler and closer to what was asked for.
 
 ### Training mechanics — deliberately unresolved
 

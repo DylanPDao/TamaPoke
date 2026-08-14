@@ -17,6 +17,7 @@
 #include "species.h"
 #include "dex.h"
 #include "types.h"
+#include "moves.h"
 #include "party.h"
 #include "pet.h"
 #include "sdmon.h"
@@ -67,6 +68,7 @@ bool cardOpen = false;        // ficha del bicho (deslizar vertical)
 bool kbOpen = false;          // teclado para renombrar al bicho
 char nameBuf[12] = "";
 uint8_t nameLen = 0;
+#define CARD_PAGES 5   // profile, stats, medals, progress, moves
 uint8_t cardPage = 0;         // 0 perfil, 1 stats+medallas
 // Menu overlay: opened by tapping the pet's name on the main screen. The
 // horizontal swipe is already taken by the Pokedex (it pages through 10 pages
@@ -126,6 +128,16 @@ bool sackNewHi = false;
 // DEF has no minigame -- it rises on its own from good wellbeing -- so its row
 // is informational and does not respond to a tap.
 bool trainOpen = false;
+
+// move picker, opened from the MOVES card page. Most learnsets are level 0, so
+// a level-up "you learned a move" prompt would almost never fire -- the moveset
+// is edited on demand instead.
+bool movePickOpen = false;
+uint8_t movePickSlot = 0;   // which of the 4 slots is being replaced
+uint8_t movePickPage = 0;
+#define MOVE_ROW_Y(i) (96 + (i) * 58)
+#define MOVE_PICK_PER_PAGE 5
+#define MOVE_PICK_Y(i) (76 + (i) * 58)
 #define TRAIN_X 73
 #define TRAIN_Y 96
 #define TRAIN_W 320
@@ -625,6 +637,7 @@ void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (trainOpen) { trainOpen = false; return; }
+  if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
@@ -678,6 +691,7 @@ void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (trainOpen) { trainOpen = false; return; }
+  if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
@@ -686,7 +700,7 @@ void onSwipe(int dir) {
   if (gameOpen || kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
-    cardPage = p < 0 ? 0 : (p > 3 ? 3 : p);
+    cardPage = p < 0 ? 0 : (p > CARD_PAGES - 1 ? CARD_PAGES - 1 : p);
     return;
   }
   if (!galleryOpen) {
@@ -728,6 +742,28 @@ void onTap(int16_t x, int16_t y) {
         break;
       }
     }
+    return;
+  }
+  if (movePickOpen) {
+    uint8_t all[64];
+    uint8_t n = learnableList(all, sizeof(all));
+    for (uint8_t i = 0; i < MOVE_PICK_PER_PAGE; i++) {
+      uint8_t idx = movePickPage * MOVE_PICK_PER_PAGE + i;
+      if (idx >= n) break;
+      int ry = MOVE_PICK_Y(i);
+      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+      sfxPlay(SFX_TAP);
+      // Swapping for a move already in another slot would silently duplicate
+      // it, so trade the two slots instead of overwriting.
+      for (int s = 0; s < MOVE_SLOTS; s++)
+        if (pet.moves[s] == all[idx] && s != movePickSlot)
+          pet.moves[s] = pet.moves[movePickSlot];
+      pet.moves[movePickSlot] = all[idx];
+      pet.flushSave();
+      movePickOpen = false;
+      return;
+    }
+    movePickOpen = false;   // tap anywhere else = back to the moves page
     return;
   }
   if (trainOpen) {
@@ -790,6 +826,17 @@ void onTap(int16_t x, int16_t y) {
     else if (cardPage == 1 && y >= 300 && y <= 340 && x >= 96 && x <= 370) {
       cardOpen = false;            // boton ENTRENAR FUERZA
       startSack();
+    } else if (cardPage == 4) {
+      for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a slot to change it
+        int ry = MOVE_ROW_Y(i);
+        if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+        sfxPlay(SFX_TAP);
+        movePickSlot = i;
+        movePickPage = 0;
+        movePickOpen = true;
+        return;
+      }
+      cardOpen = false;            // anywhere else on the page still exits
     } else {
       cardOpen = false;
     }
@@ -1044,6 +1091,10 @@ void render() {
   }
   if (trainOpen) {
     renderTrain();
+    return;
+  }
+  if (movePickOpen) {
+    renderMovePick();
     return;
   }
   if (kbOpen) {
@@ -1773,6 +1824,101 @@ void renderCardStats() {
   gfx->print(T(S_TRAIN_STR));
 }
 
+// Draws one move as a row: name, its type in the type's own colour, and either
+// power or a STATUS marker. Shared by the moves page and the picker so a move
+// looks the same wherever you meet it.
+static void drawMoveRow(int y, uint8_t mv, bool highlight) {
+  gfx->fillRoundRect(70, y, 326, 50, 12, highlight ? UI_BAR_WARN : UI_BG_DAY);
+  gfx->drawRoundRect(70, y, 326, 50, 12, UI_INK);
+  if (!mv) {
+    gfx->setTextColor(UI_TRACK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - (int)strlen(T(S_MOVE_EMPTY)) * 6, y + 17);
+    gfx->print(T(S_MOVE_EMPTY));
+    return;
+  }
+  const MoveEntry &m = MOVE_TBL[mv];
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(82, y + 8);
+  gfx->print(m.name);
+  // There is no per-type palette (DexEntry.accent is per species), and inventing
+  // one by hand would duplicate what gen_dex.py generates. Colouring same-type
+  // moves in the species accent is more useful anyway: STAB is a 1.5x damage
+  // bonus, so this marks the moves that actually hit hardest for this creature.
+  bool stab = hasStab(pet.speciesId, m.type) && m.cat != MC_STATUS;
+  gfx->setTextColor(stab ? DEX_TBL[pet.speciesId].accent : UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(82, y + 32);
+  gfx->print(typeName(m.type));
+  char pw[16];
+  if (m.cat == MC_STATUS) snprintf(pw, sizeof(pw), "%s", T(S_MOVE_STATUS));
+  else snprintf(pw, sizeof(pw), T(S_MOVE_PWR), m.power);
+  gfx->setTextColor(UI_INK);
+  gfx->setCursor(384 - (int)strlen(pw) * 6, y + 32);
+  gfx->print(pw);
+}
+
+// card page 4: the four known moves. Tapping a slot opens the picker.
+void renderCardMoves() {
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - strlen(T(S_MOVES)) * 9, 44);
+  gfx->print(T(S_MOVES));
+  for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(MOVE_ROW_Y(i), pet.moves[i], false);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(T(S_MOVE_TAP)) * 3, 340);
+  gfx->print(T(S_MOVE_TAP));
+}
+
+// Every move the species can learn by this level, so a slot can be swapped for
+// anything legal -- not just the handful a level-up would have offered.
+uint8_t learnableList(uint8_t *out, uint8_t max) {
+  if (pet.isEgg()) return 0;
+  uint8_t lvl = pet.level(), n = learnCount(pet.speciesId), w = 0;
+  for (uint8_t i = 0; i < n && w < max; i++) {
+    if (learnLevel(pet.speciesId, i) > lvl) continue;
+    uint8_t mv = learnMove(pet.speciesId, i);
+    if (!mv || mv >= MOVE_COUNT) continue;
+    bool dup = false;
+    for (uint8_t j = 0; j < w; j++)
+      if (out[j] == mv) { dup = true; break; }
+    if (!dup) out[w++] = mv;
+  }
+  return w;
+}
+
+void renderMovePick() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_MOVE_PICK)) * 6, 40);
+  gfx->print(T(S_MOVE_PICK));
+
+  uint8_t all[64];
+  uint8_t n = learnableList(all, sizeof(all));
+  uint8_t pages = n ? (n + MOVE_PICK_PER_PAGE - 1) / MOVE_PICK_PER_PAGE : 1;
+  if (movePickPage >= pages) movePickPage = 0;
+  for (uint8_t i = 0; i < MOVE_PICK_PER_PAGE; i++) {
+    uint8_t idx = movePickPage * MOVE_PICK_PER_PAGE + i;
+    if (idx >= n) break;
+    // the move already in this slot is highlighted, so replacing like for like
+    // is obvious rather than a guess
+    drawMoveRow(MOVE_PICK_Y(i), all[idx], all[idx] == pet.moves[movePickSlot]);
+  }
+  for (uint8_t i = 0; i < pages && pages > 1; i++) {
+    if (i == movePickPage) gfx->fillCircle(CX - (pages - 1) * 13 + i * 26, 380, 5, UI_INK);
+    else gfx->drawCircle(CX - (pages - 1) * 13 + i * 26, 380, 4, UI_INK);
+  }
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 402);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
 // pagina 2: medallas con etiqueta descriptiva
 void renderCardMedals() {
   int got = 0;
@@ -1869,12 +2015,14 @@ void renderCard() {
   if (cardPage == 0) renderCardProfile();
   else if (cardPage == 1) renderCardStats();
   else if (cardPage == 2) renderCardMedals();
-  else renderCardProgress();
+  else if (cardPage == 3) renderCardProgress();
+  else renderCardMoves();
 
-  // indicador de 4 paginas + ayuda
-  for (int i = 0; i < 4; i++) {
-    if (i == cardPage) gfx->fillCircle(194 + i * 26, 374, 5, UI_INK);
-    else gfx->drawCircle(194 + i * 26, 374, 4, UI_INK);
+  // indicador de paginas + ayuda
+  for (int i = 0; i < CARD_PAGES; i++) {
+    int dx = CX - (CARD_PAGES - 1) * 13 + i * 26;
+    if (i == cardPage) gfx->fillCircle(dx, 374, 5, UI_INK);
+    else gfx->drawCircle(dx, 374, 4, UI_INK);
   }
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(2);

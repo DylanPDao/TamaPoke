@@ -70,6 +70,13 @@ enum StrId : uint8_t {
   S_TR_SPE,         // row: train speed (the ball game)
   S_TR_DEF,         // row: defence -- passive, shown for information only
   S_TR_DEF_HINT,    // why the defence row does nothing when tapped
+  // moves card page + the move picker behind it
+  S_MOVES,          // card page title
+  S_MOVE_EMPTY,     // an unused move slot
+  S_MOVE_PICK,      // picker title: choose what goes in this slot
+  S_MOVE_TAP,       // hint on the moves page: tap a slot to change it
+  S_MOVE_PWR,       // "PWR %u" next to an attacking move
+  S_MOVE_STATUS,    // shown instead of power for a status move
   STR_COUNT
 };
 

@@ -88,7 +88,7 @@ void loop();
 void render();
 extern Arduino_Canvas *gfx;
 extern Pet pet;
-extern bool cardOpen, galleryOpen, clockOpen, kbOpen, menuOpen, partyOpen, partyPick, trainOpen;
+extern bool cardOpen, galleryOpen, clockOpen, kbOpen, menuOpen, partyOpen, partyPick, trainOpen, movePickOpen;
 extern uint8_t cardPage;
 
 #define PANEL 466
@@ -125,7 +125,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   }
   for (int i = 0; i < 2; i++) loop();          // pick up the sprite for the new species
   cardOpen = galleryOpen = clockOpen = kbOpen = false;
-  menuOpen = partyOpen = partyPick = trainOpen = false;
+  menuOpen = partyOpen = partyPick = trainOpen = movePickOpen = false;
   if (!strcmp(screen, "battle"))      { cardOpen = true; cardPage = 1; }
   else if (!strcmp(screen, "profile")){ cardOpen = true; cardPage = 0; }
   else if (!strcmp(screen, "medals")) { cardOpen = true; cardPage = 2; }
@@ -134,6 +134,8 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "clock"))   clockOpen = true;
   else if (!strcmp(screen, "menu"))    menuOpen = true;
   else if (!strcmp(screen, "train"))   trainOpen = true;
+  else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 4; }
+  else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
   else if (!strcmp(screen, "party") || !strcmp(screen, "partyfull")) {
     partyOpen = true;
     static const int fill[] = { 6, 25, 149, 94, 143, 131 };
