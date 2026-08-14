@@ -204,7 +204,17 @@ Phase 1 turned out to be **already done**: `dex.h` has had `bSpA`/`bSpD` for all
 Phase order: (1) ~~special stat accessors~~ · (2) ~~move storage on `Pet` +
 `PartyMon`~~ · (3) ~~moveset UI~~ -- all **done**. Next: (4) `MoveEntry` ailment
 ~~fields~~ **done** · (5) damage + turn resolution, headless-testable in the
-emulator · (6) battle UI · (7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
+~~emulator~~ **done** (`battle.h`/`battle.cpp`) · (6) battle UI ·
+(7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
+
+**Open balance question from (5): fights are too short.** 240 simulated L50
+fights average **3.1 turns** (shortest 1, longest 6). Cause: `calcStat()` treats
+HP like every other stat, so vitality lands near the offensive stats, while the
+real games give HP its own bigger formula. A super-effective hit is a 2HKO. That
+leaves no room for the strategy layer the endgame wants -- SWORDS DANCE cannot
+pay for its turn in a 3-turn fight, and status barely registers. Fix by giving
+`vitStat()` a doubled base contribution (README + FW_VERSION bump, it changes the
+displayed VIT). Decide before tuning the gym ladder.
 
 Note on (4): `MoveEntry` gained `ailment` + `ailChance`, and the pair is
 OPTIONAL in `dex_moves.py` -- only the 17 moves that inflict one spell it out,
