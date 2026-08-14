@@ -203,8 +203,17 @@ Phase 1 turned out to be **already done**: `dex.h` has had `bSpA`/`bSpD` for all
 
 Phase order: (1) ~~special stat accessors~~ · (2) ~~move storage on `Pet` +
 `PartyMon`~~ · (3) ~~moveset UI~~ -- all **done**. Next: (4) `MoveEntry` ailment
-fields · (5) damage + turn resolution, headless-testable in the emulator ·
-(6) battle UI · (7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
+~~fields~~ **done** · (5) damage + turn resolution, headless-testable in the
+emulator · (6) battle UI · (7) trainer roster + gyms + Elite 4 · (8) hard mode AI.
+
+Note on (4): `MoveEntry` gained `ailment` + `ailChance`, and the pair is
+OPTIONAL in `dex_moves.py` -- only the 17 moves that inflict one spell it out,
+`gen_moves.py:unpack()` defaults the rest. Adding an ailment is a one-line edit.
+There is no dedicated status move (no THUNDER WAVE, no SLEEP POWDER), so
+ailments ride as secondary chances on damaging moves. `AIL_SLEEP` exists in the
+enum but nothing inflicts it yet -- adding TOXIC/THUNDER WAVE/SLEEP POWDER would
+mean new rows in `dex_moves.py` plus a re-run of `fetch_pokeapi.py`, which is now
+cheap since `tools/pokeapi_cache/` is warm.
 
 Note on (3): there is no level-up "you learned a move" prompt, and there should
 not be -- 1907 of 2281 learnset entries are level 0, so it would almost never

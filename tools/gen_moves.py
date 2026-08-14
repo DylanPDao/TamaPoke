@@ -16,7 +16,15 @@ import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from dex_moves import (MOVES, MC_PHYS, MC_SPEC, MC_STATUS, EF_STAGE,
-                       ST_ATK, ST_DEF, ST_SPA, ST_SPD, ST_SPE, TG_SELF, TG_FOE)
+                       ST_ATK, ST_DEF, ST_SPA, ST_SPD, ST_SPE, TG_SELF, TG_FOE,
+                       AIL_NONE, AIL_PARA, AIL_BURN, AIL_POISON, AIL_SLEEP,
+                       AIL_FREEZE, AIL_CONFUSE)
+
+# The ailment pair is optional in MOVES: only the ~17 moves that inflict one
+# spell it out, the rest are (AIL_NONE, 0). Keeps the table readable and means
+# adding an ailment touches one line rather than all 77.
+def unpack(m):
+    return tuple(m) + ((AIL_NONE, 0) if len(m) == 11 else ())
 from dex_learnsets import LEARNSETS
 
 DEX_COUNT = 151
@@ -32,7 +40,7 @@ def ident(name):
 def main():
     # --- validation: a bad row here is a silent wrong-damage bug on hardware
     seen = set()
-    for name, slug, typ, cat, power, acc, eff, param, mask, stages, tgt in MOVES:
+    for name, slug, typ, cat, power, acc, eff, param, mask, stages, tgt, _ail, _ach in map(unpack, MOVES):
         if len(name) > MAX_NAME:
             sys.exit('nombre demasiado largo (%d > %d): %s' % (len(name), MAX_NAME, name))
         if ident(name) in seen:
@@ -84,6 +92,13 @@ def main():
     o.append('enum : uint8_t { ST_ATK = %d, ST_DEF = %d, ST_SPA = %d, ST_SPD = %d, ST_SPE = %d };\n'
              % (ST_ATK, ST_DEF, ST_SPA, ST_SPD, ST_SPE))
     o.append('enum : uint8_t { TG_SELF = %d, TG_FOE = %d };\n\n' % (TG_SELF, TG_FOE))
+    o.append('// Status ailments. Battle-only: they live in the battle state and\n'
+             '// clear when it ends, so nothing is written to the pet or replayed\n'
+             '// by the RTC offline catch-up.\n'
+             'enum : uint8_t {\n'
+             '  AIL_NONE = %d, AIL_PARA = %d, AIL_BURN = %d, AIL_POISON = %d,\n'
+             '  AIL_SLEEP = %d, AIL_FREEZE = %d, AIL_CONFUSE = %d,\n};\n\n'
+             % (AIL_NONE, AIL_PARA, AIL_BURN, AIL_POISON, AIL_SLEEP, AIL_FREEZE, AIL_CONFUSE))
 
     o.append('struct MoveEntry {\n'
              '  const char *name;\n'
@@ -96,6 +111,8 @@ def main():
              '  uint8_t statMask;  // ST_* (solo EF_STAGE)\n'
              '  int8_t  stages;    // +/- niveles (solo EF_STAGE)\n'
              '  uint8_t target;    // TG_*\n'
+             '  uint8_t ailment;   // AIL_*, 0 = none\n'
+             '  uint8_t ailChance; // percent, 0 = never\n'
              '};\n\n')
 
     o.append('enum MoveId : uint8_t {\n  MV_NONE = 0,\n')
@@ -119,11 +136,17 @@ def main():
            9: 'EF_HEAL', 10: 'EF_RECHARGE', 11: 'EF_CHARGE'}
 
     o.append('static const MoveEntry MOVE_TBL[MOVE_COUNT] = {\n')
-    o.append('  { "-", T_NORMAL, MC_STATUS, 0, 0, EF_NONE, 0, 0, 0, TG_SELF },  // 0: sin usar\n')
-    for i, (name, slug, typ, cat, power, acc, eff, param, mask, stages, tgt) in enumerate(MOVES):
-        o.append('  { "%s", T_%s, %s, %d, %d, %s, %d, %s, %d, %s },  // %d\n'
+    o.append('  { "-", T_NORMAL, MC_STATUS, 0, 0, EF_NONE, 0, 0, 0, TG_SELF, AIL_NONE, 0 },  // 0: sin usar\n')
+    AILN = {AIL_NONE: 'AIL_NONE', AIL_PARA: 'AIL_PARA', AIL_BURN: 'AIL_BURN',
+            AIL_POISON: 'AIL_POISON', AIL_SLEEP: 'AIL_SLEEP',
+            AIL_FREEZE: 'AIL_FREEZE', AIL_CONFUSE: 'AIL_CONFUSE'}
+    for i, m in enumerate(MOVES):
+        (name, slug, typ, cat, power, acc, eff, param, mask, stages, tgt,
+         ail, ach) = unpack(m)
+        o.append('  { "%s", T_%s, %s, %d, %d, %s, %d, %s, %d, %s, %s, %d },  // %d\n'
                  % (name, typ.upper(), cname(cat), power, acc, EFN[eff], param,
-                    maskname(mask), stages, 'TG_SELF' if tgt == TG_SELF else 'TG_FOE', i + 1))
+                    maskname(mask), stages, 'TG_SELF' if tgt == TG_SELF else 'TG_FOE',
+                    AILN[ail], ach, i + 1))
     o.append('};\n\n')
 
     # --- learnsets, CSR ---------------------------------------------------

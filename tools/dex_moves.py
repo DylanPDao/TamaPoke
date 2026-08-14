@@ -27,6 +27,22 @@ absent for now -- the effect enum has room and they land in a later phase.
 # ivDef/trDef against bSpD. See gen_moves.py and the note in dex_stats.py.
 MC_PHYS, MC_SPEC, MC_STATUS = 0, 1, 2
 
+# Status ailments. Battle-only by design: they live in the battle state and are
+# cleared when it ends, never written to the pet or replayed by the RTC's
+# offline catch-up, so a burn can never grind against the care sim.
+#
+# There is no dedicated status move for these (no THUNDER WAVE, no SLEEP
+# POWDER), so they ride along as a SECONDARY chance on a damaging move -- which
+# is why they need their own two fields rather than reusing `effect`, whose one
+# slot is already spent on things like EF_RECOIL.
+AIL_NONE = 0
+AIL_PARA = 1        # speed cut, and some turns are lost outright
+AIL_BURN = 2        # chip damage each turn, physical attack cut
+AIL_POISON = 3      # chip damage each turn
+AIL_SLEEP = 4       # loses its turn for a few turns (no move inflicts it yet)
+AIL_FREEZE = 5      # loses its turn until it thaws
+AIL_CONFUSE = 6     # may hit itself instead
+
 # Effects. Anything not listed here is a plain damaging move.
 EF_NONE = 0
 EF_STAGE = 1        # raise/lower stat stages (statMask + stages + target)
@@ -61,20 +77,20 @@ MOVES = [
     ("DOUBLE-EDGE",  "double-edge",   'normal',   MC_PHYS, 120, 100, EF_RECOIL,    3, 0, 0, TG_FOE),
     ("HYPER BEAM",   "hyper-beam",    'normal',   MC_SPEC, 150,  90, EF_RECHARGE,  0, 0, 0, TG_FOE),
     # --- FIRE -------------------------------------------------------------
-    ("EMBER",        "ember",         'fire',     MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("FIRE PUNCH",   "fire-punch",    'fire',     MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("FLAMETHROWER", "flamethrower",  'fire',     MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("FIRE BLAST",   "fire-blast",    'fire',     MC_SPEC, 110,  85, EF_NONE,      0, 0, 0, TG_FOE),
+    ("EMBER",        "ember",         'fire',     MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
+    ("FIRE PUNCH",   "fire-punch",    'fire',     MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
+    ("FLAMETHROWER", "flamethrower",  'fire',     MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
+    ("FIRE BLAST",   "fire-blast",    'fire',     MC_SPEC, 110,  85, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
     # --- WATER ------------------------------------------------------------
     ("WATER GUN",    "water-gun",     'water',    MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("WATERFALL",    "waterfall",     'water',    MC_PHYS,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("SURF",         "surf",          'water',    MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("HYDRO PUMP",   "hydro-pump",    'water',    MC_SPEC, 110,  80, EF_NONE,      0, 0, 0, TG_FOE),
     # --- ELECTRIC ---------------------------------------------------------
-    ("THUNDERSHOCK", "thunder-shock", 'electric', MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("THUNDERPUNCH", "thunder-punch", 'electric', MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("THUNDERBOLT",  "thunderbolt",   'electric', MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("THUNDER",      "thunder",       'electric', MC_SPEC, 110,  70, EF_NONE,      0, 0, 0, TG_FOE),
+    ("THUNDERSHOCK", "thunder-shock", 'electric', MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 10),
+    ("THUNDERPUNCH", "thunder-punch", 'electric', MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 10),
+    ("THUNDERBOLT",  "thunderbolt",   'electric', MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 10),
+    ("THUNDER",      "thunder",       'electric', MC_SPEC, 110,  70, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 30),
     # --- GRASS ------------------------------------------------------------
     ("VINE WHIP",    "vine-whip",     'grass',    MC_PHYS,  45, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("RAZOR LEAF",   "razor-leaf",    'grass',    MC_PHYS,  55,  95, EF_NONE,      0, 0, 0, TG_FOE),
@@ -83,9 +99,9 @@ MOVES = [
     ("SOLAR BEAM",   "solar-beam",    'grass',    MC_SPEC, 120, 100, EF_CHARGE,    0, 0, 0, TG_FOE),
     # --- ICE --------------------------------------------------------------
     ("AURORA BEAM",  "aurora-beam",   'ice',      MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("ICE PUNCH",    "ice-punch",     'ice',      MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("ICE BEAM",     "ice-beam",      'ice',      MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("BLIZZARD",     "blizzard",      'ice',      MC_SPEC, 110,  70, EF_NONE,      0, 0, 0, TG_FOE),
+    ("ICE PUNCH",    "ice-punch",     'ice',      MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_FREEZE, 10),
+    ("ICE BEAM",     "ice-beam",      'ice',      MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_FREEZE, 10),
+    ("BLIZZARD",     "blizzard",      'ice',      MC_SPEC, 110,  70, EF_NONE,      0, 0, 0, TG_FOE, AIL_FREEZE, 10),
     # --- FIGHTING ---------------------------------------------------------
     ("KARATE CHOP",  "karate-chop",   'fighting', MC_PHYS,  50, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("SEISMIC TOSS", "seismic-toss",  'fighting', MC_PHYS,   0, 100, EF_FIXED_LVL, 0, 0, 0, TG_FOE),
@@ -93,9 +109,9 @@ MOVES = [
     # 130 in the modern games; 100 here so one move can't decide a gym
     ("HI JUMP KICK", "high-jump-kick",'fighting', MC_PHYS, 100,  90, EF_NONE,      0, 0, 0, TG_FOE),
     # --- POISON -----------------------------------------------------------
-    ("ACID",         "acid",          'poison',   MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("SLUDGE",       "sludge",        'poison',   MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("SLUDGE BOMB",  "sludge-bomb",   'poison',   MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 2)
+    ("ACID",         "acid",          'poison',   MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 10),
+    ("SLUDGE",       "sludge",        'poison',   MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 30),
+    ("SLUDGE BOMB",  "sludge-bomb",   'poison',   MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 30),  # LATER (Gen 2)
     # --- GROUND -----------------------------------------------------------
     ("BONE CLUB",    "bone-club",     'ground',   MC_PHYS,  65,  85, EF_NONE,      0, 0, 0, TG_FOE),
     ("DIG",          "dig",           'ground',   MC_PHYS,  80, 100, EF_CHARGE,    1, 0, 0, TG_FOE),
@@ -105,8 +121,8 @@ MOVES = [
     ("DRILL PECK",   "drill-peck",    'flying',   MC_PHYS,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("FLY",          "fly",           'flying',   MC_PHYS,  90,  95, EF_CHARGE,    1, 0, 0, TG_FOE),
     # --- PSYCHIC ----------------------------------------------------------
-    ("CONFUSION",    "confusion",     'psychic',  MC_SPEC,  50, 100, EF_NONE,      0, 0, 0, TG_FOE),
-    ("PSYBEAM",      "psybeam",       'psychic',  MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE),
+    ("CONFUSION",    "confusion",     'psychic',  MC_SPEC,  50, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_CONFUSE, 10),
+    ("PSYBEAM",      "psybeam",       'psychic',  MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_CONFUSE, 10),
     ("PSYCHIC",      "psychic",       'psychic',  MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
     # --- BUG --------------------------------------------------------------
     ("PIN MISSILE",  "pin-missile",   'bug',      MC_PHYS,  25,  95, EF_MULTI,     0, 0, 0, TG_FOE),
@@ -123,7 +139,7 @@ MOVES = [
     ("ROCK SLIDE",   "rock-slide",    'rock',     MC_PHYS,  75,  90, EF_NONE,      0, 0, 0, TG_FOE),
     ("ANCIENTPOWER", "ancient-power", 'rock',     MC_SPEC,  60, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 2)
     # --- GHOST ------------------------------------------------------------
-    ("LICK",         "lick",          'ghost',    MC_PHYS,  30, 100, EF_NONE,      0, 0, 0, TG_FOE),
+    ("LICK",         "lick",          'ghost',    MC_PHYS,  30, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 30),
     ("NIGHT SHADE",  "night-shade",   'ghost',    MC_SPEC,   0, 100, EF_FIXED_LVL, 0, 0, 0, TG_FOE),
     ("SHADOW BALL",  "shadow-ball",   'ghost',    MC_SPEC,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 2)
     # --- DRAGON -----------------------------------------------------------
