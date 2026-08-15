@@ -188,6 +188,8 @@ bool pickOpen = false;
 uint8_t pickTrainer = 0;
 bool pickHard = false;
 uint16_t squadMask = 0xFFFF;   // everything, until the player says otherwise
+uint8_t pickPage = 0;
+#define PICK_PER_PAGE 6
 #define PICK_CELL_W 150
 #define PICK_CELL_H 74
 #define PICK_X(i) (78 + ((i) % 2) * (PICK_CELL_W + 10))
@@ -816,7 +818,14 @@ void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
-  if (pickOpen) { pickOpen = false; return; }
+  if (pickOpen) {   // horizontal pages the candidates, as everywhere else
+    uint8_t pages = (pickCandidates() + PICK_PER_PAGE - 1) / PICK_PER_PAGE;
+    if (!pages) pages = 1;
+    int p = (int)pickPage + (dir > 0 ? -1 : 1);
+    if (p < 0 || p >= pages) pickOpen = false;
+    else pickPage = (uint8_t)p;
+    return;
+  }
   if (gymOpen) {   // horizontal pages the ladder; vertical backs out
     uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
     int p = (int)gymPage + (dir > 0 ? -1 : 1);
@@ -930,6 +939,8 @@ void onTap(int16_t x, int16_t y) {
       gymOpen = false;
       pickTrainer = idx;
       pickHard = gymHard;
+      pickPage = 0;
+      pickDefault(squadCap(idx, gymHard));
       pickOpen = true;
       return;
     }
@@ -2912,15 +2923,30 @@ void renderSpeed() {
 // in the party.
 
 // candidate n: 0 = the live pet, 1..PARTY_SLOTS = banked members
-static bool pickExists(uint8_t n) {
+bool pickExists(uint8_t n) {
   if (n == 0) return !pet.isEgg();
   return n <= PARTY_SLOTS && !party.slots[n - 1].empty();
 }
-static uint8_t pickChosen() {
+uint8_t pickChosen() {
   uint8_t c = 0;
   for (uint8_t n = 0; n <= PARTY_SLOTS; n++)
     if (pickExists(n) && (squadMask & (1 << n))) c++;
   return c;
+}
+uint8_t pickCandidates() {
+  uint8_t c = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS; n++)
+    if (pickExists(n)) c++;
+  return c;
+}
+// Trims the selection to the first `cap` candidates. The default used to be
+// "everything", which with a live pet plus six banked is seven against a cap of
+// six -- so the screen opened already invalid.
+void pickDefault(uint8_t cap) {
+  squadMask = 0;
+  uint8_t taken = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS && taken < cap; n++)
+    if (pickExists(n)) { squadMask |= (1 << n); taken++; }
 }
 
 static void drawPickCell(uint8_t n, int x, int y, uint8_t capLvl) {
@@ -2986,11 +3012,20 @@ void renderPick() {
   gfx->setCursor(CX - (int)strlen(sub) * 3, 68);
   gfx->print(sub);
 
-  uint8_t slot = 0;
-  for (uint8_t n = 0; n <= PARTY_SLOTS && slot < 6; n++) {
+  uint8_t seen = 0, drawn = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS; n++) {
     if (!pickExists(n)) continue;
-    drawPickCell(n, PICK_X(slot), PICK_Y(slot), top);
-    slot++;
+    if (seen++ < pickPage * PICK_PER_PAGE) continue;
+    if (drawn >= PICK_PER_PAGE) break;
+    drawPickCell(n, PICK_X(drawn), PICK_Y(drawn), top);
+    drawn++;
+  }
+  uint8_t pages = (pickCandidates() + PICK_PER_PAGE - 1) / PICK_PER_PAGE;
+  if (!pages) pages = 1;
+  for (uint8_t i = 0; i < pages && pages > 1; i++) {
+    int dx = CX - (pages - 1) * 13 + i * 26;
+    if (i == pickPage) gfx->fillCircle(dx, 332, 5, UI_INK);
+    else gfx->drawCircle(dx, 332, 4, UI_INK);
   }
 
   bool ok = pickChosen() > 0 && pickChosen() <= cap;
@@ -3012,11 +3047,13 @@ void pickTap(int16_t x, int16_t y) {
     startTrainerBattle(pickTrainer, pickHard);
     return;
   }
-  uint8_t slot = 0;
-  for (uint8_t n = 0; n <= PARTY_SLOTS && slot < 6; n++) {
+  uint8_t seen = 0, drawn = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS; n++) {
     if (!pickExists(n)) continue;
-    int cx0 = PICK_X(slot), cy0 = PICK_Y(slot);
-    slot++;
+    if (seen++ < pickPage * PICK_PER_PAGE) continue;
+    if (drawn >= PICK_PER_PAGE) break;
+    int cx0 = PICK_X(drawn), cy0 = PICK_Y(drawn);
+    drawn++;
     if (x < cx0 || x > cx0 + PICK_CELL_W || y < cy0 || y > cy0 + PICK_CELL_H) continue;
     squadMask ^= (1 << n);
     sfxPlay(SFX_TAP);
