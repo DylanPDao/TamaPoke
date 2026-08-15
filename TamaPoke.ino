@@ -21,6 +21,7 @@
 #include "battle.h"
 #include "trainers.h"
 #include "backs.h"
+#include "badges.h"
 #include <stdarg.h>
 #include "party.h"
 #include "pet.h"
@@ -2688,20 +2689,32 @@ static void renderPlayerBadges() {
   gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 142);
   gfx->print(T(S_AVATAR_HINT));
 
-  // 2x4 rather than a row of eight: bigger discs read better on the round
-  // panel, and no count is printed -- eight badges you can see are their own
-  // tally.
+  // The real badges, 2x4. Unearned ones draw as a faint outline so the shape
+  // of what is missing is still visible.
   for (int i = 0; i < TRAINER_GYMS; i++) {
     int bx = 140 + (i % 4) * 62, by = 188 + (i / 4) * 62;
     bool got = pet.hasBadge(i, false);
-    // no per-type palette exists, so take the colour from the leader's lead
-    // creature -- DexEntry.accent is already derived from its type
-    if (got) gfx->fillCircle(bx, by, 24, DEX_TBL[TRAINERS[i].team[0].dex].accent);
-    gfx->drawCircle(bx, by, 24, got ? UI_INK : UI_TRACK);
-    gfx->setTextColor(got ? UI_BG_DAY : UI_TRACK);
-    gfx->setTextSize(2);
-    gfx->setCursor(bx - 6, by - 7);
-    gfx->printf("%d", i + 1);
+    bool hard = pet.hasBadge(i, true);
+    if (hard) {
+      // Beaten on hard: a golden halo. Concentric rings, not a filled disc --
+      // a disc sat behind the art and read as a gold coin rather than a glow.
+      gfx->drawCircle(bx, by, 25, 0xFDE0);
+      gfx->drawCircle(bx, by, 24, 0xFEA0);
+      gfx->drawCircle(bx, by, 23, 0xFF60);
+      gfx->drawCircle(bx, by, 22, 0xFEA0);
+      gfx->drawCircle(bx, by, 21, 0xFDE0);
+    }
+    if (!got) {
+      gfx->drawCircle(bx, by, 20, UI_TRACK);
+      continue;
+    }
+    const BadgeArt &a = BADGES_ART[i];
+    for (int r = 0; r < BADGE_PX; r++)
+      for (int c = 0; c < BADGE_PX; c++) {
+        uint8_t v = a.idx[r * BADGE_PX + c];
+        if (v == 0xFF) continue;
+        gfx->fillRect(bx - BADGE_PX / 2 + c, by - BADGE_PX / 2 + r, 1, 1, a.pal[v]);
+      }
   }
   char l[32];
   gfx->setTextColor(UI_INK);

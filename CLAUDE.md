@@ -162,9 +162,9 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
    Reference supplied by the user; the current layout already matches the
    mainline arrangement (foe top-left info / top-right sprite, you bottom-right
    / bottom-left).
-1b. **Kanto badge art** from `SteGriff/pokemon-badges` (CC BY 3.0, see
-   CREDITS.md). Needs an SVG rasteriser -- none is installed -- and each badge
-   isolating from the single combined drawing.
+1b. ~~Kanto badge art~~ **done**. `tools/gen_badges.py` needs `rsvg-convert`
+   (`brew install librsvg`) and regenerates `badges.h` from the upstream SVG.
+   A hard-mode clear draws a golden halo behind its badge.
 
 1. ~~Battle animations~~ **done**, including real PMD playback. `btlPmd[2]`
    streams both combatants (~135 KB PSRAM each, freed when the fight ends) and
