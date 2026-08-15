@@ -116,6 +116,7 @@ public:
 
   // Player-wide, like the streak and the Pokedex: badges outlive the creature
   // that earned them, so newEgg() must never clear this.
+  uint8_t avatar = 0;       // which player sprite, 0..3
   uint16_t badges = 0;      // bit n = trainer n beaten on easy
   uint16_t badgesHard = 0;  // ... and on hard
   bool hasBadge(uint8_t i, bool hard) const {

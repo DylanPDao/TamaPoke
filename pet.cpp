@@ -832,6 +832,7 @@ void Pet::save() {
   prefs.putUChar("tspe", trSpe);
   prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putUChar("mvlv", lastLearnLevel);
+  prefs.putUChar("avtr", avatar);
   prefs.putUShort("badg", badges);
   prefs.putUShort("badh", badgesHard);
   prefs.putBool("bk", berryKnown);
@@ -928,6 +929,8 @@ void Pet::load() {
   for (int i = 0; i < MOVE_SLOTS; i++)
     if (moves[i] >= MOVE_COUNT) moves[i] = 0;   // never index MOVE_TBL with junk
   lastLearnLevel = prefs.getUChar("mvlv", 0);
+  avatar = prefs.getUChar("avtr", 0);
+  if (avatar > 3) avatar = 0;
   badges = prefs.getUShort("badg", 0);
   badgesHard = prefs.getUShort("badh", 0);
   if (!isEgg() && moveCount() == 0 && lastLearnLevel == 0) {

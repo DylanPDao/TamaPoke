@@ -141,6 +141,13 @@ Working state, so it survives a closed session. Tick items off as they land.
 
 ### Fix list (reported, in progress)
 
+- [x] **The training submenu froze the screen.** `renderTrain()` was the one
+      render path with no `gfx->flush()`, and the panel only updates on flush --
+      so the display stayed on the previous frame while taps still registered.
+      Headless screenshots CANNOT catch this: `shotMode` reads `gfx->buffer()`
+      directly and never looks at `frameReady`. There is now a test that opens
+      all 13 screens and asserts each one flushes.
+
 - [x] Profile card: BOND collided with its bar. drawCardStat drew the label at
       x=70 size 2 (12px/char) but started the bar at 112 -- room for three
       characters. BOND (EN), LIEN (FR) and LACO (PT) are four. Bar moved to 132.

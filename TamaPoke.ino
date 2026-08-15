@@ -71,7 +71,8 @@ bool cardOpen = false;        // ficha del bicho (deslizar vertical)
 bool kbOpen = false;          // teclado para renombrar al bicho
 char nameBuf[12] = "";
 uint8_t nameLen = 0;
-#define CARD_PAGES 5   // profile, stats, medals, progress, moves
+#define CARD_PAGES 4   // profile, stats, moves, progress -- medals moved to
+                       // the player card, where the totals already live
 uint8_t cardPage = 0;         // 0 perfil, 1 stats+medallas
 // Menu overlay: opened by tapping the pet's name on the main screen. The
 // horizontal swipe is already taken by the Pokedex (it pages through 10 pages
@@ -164,6 +165,7 @@ bool btlWon = false;
 // the gate, so walking into Lance at level 20 is allowed and simply loses.
 bool gymOpen = false;
 bool playerOpen = false;
+uint8_t playerPage = 0;   // 0 badges, 1 medals
 uint8_t gymPage = 0;
 #define GYM_ROWS 5
 #define GYM_ROW_Y(i) (92 + (i) * 52)
@@ -2492,7 +2494,6 @@ void renderCard() {
   if (cardPage == 0) renderCardProfile();
   else if (cardPage == 1) renderCardStats();
   else if (cardPage == 2) renderCardMoves();
-  else if (cardPage == 3) renderCardMedals();
   else renderCardProgress();
 
   // indicador de paginas + ayuda
@@ -2594,6 +2595,7 @@ void renderTrain() {
   gfx->setTextSize(1);
   gfx->setCursor(CX - (int)strlen(T(S_TR_DEF_HINT)) * 3, TRAIN_Y + TRAIN_H - 22);
   gfx->print(T(S_TR_DEF_HINT));
+  gfx->flush();   // without this the panel never updates and the screen freezes
 }
 
 // ---------- party ----------
