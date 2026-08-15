@@ -271,11 +271,12 @@ weaker, so team strength reflects how long each one was raised.
   Battling costs the *live* pet energy (banked pets are retired, so they cost
   nothing) — it ties battle to the care sim and rate-limits grinding without a
   cooldown timer.
-- **No gating on gyms.** Attrition is the gate: leaders always bring their full
-  roster and you bring whoever you have, so one strong pet can sweep an early
-  gym but cannot survive five opponents back-to-back later. Self-balancing, no
-  badge checks or minimum-team rules, and it never walls the endgame off behind
-  weeks of raising.
+- **The ladder is sequential** (this REVERSES the earlier "no gating, attrition
+  is the gate" rule). A leader opens once the previous is beaten, tracked
+  separately per difficulty so hard mode is its own run. The original rule was
+  written before both ladders were level-capped; once they were, nothing stopped
+  you opening on Lance and simply losing, which reads as a dead end rather than
+  a challenge. Attrition still does the work WITHIN a fight.
 - **Level caps at 100** (`MAX_LEVEL`), reached at 4d 3h. `MINUTES_PER_LEVEL`
   stays 60 — compressing the curve to force 100 into a 3-day life would be a
   balance change that buys a number you can already reach by playing on.

@@ -162,8 +162,11 @@ bool btlWon = false;
 // one steps up when the current one faints. This is the whole difficulty curve
 // -- no gating, just attrition, so one strong creature sweeps Brock and dies
 // four deep into Lance.
-// Every trainer is always selectable. There is no unlock order: attrition is
-// the gate, so walking into Lance at level 20 is allowed and simply loses.
+// The ladder is now sequential: a leader opens once the previous one is beaten,
+// tracked per difficulty so hard mode is its own run. This replaces the earlier
+// "no gating, attrition is the gate" rule -- with both ladders level-capped,
+// nothing stopped you opening with Lance and simply losing, which read as a
+// dead end rather than a challenge.
 // reaction test (trains SPEED)
 bool spdOpen = false;
 uint32_t spdUntil = 0, spdOverUntil = 0, spdBorn = 0;
@@ -174,6 +177,9 @@ bool spdNewHi = false;
 
 bool gymOpen = false;
 bool gymHard = false;   // which ladder the list is showing
+static bool gymUnlocked(uint8_t idx, bool hard) {
+  return idx == 0 || pet.hasBadge(idx - 1, hard);
+}
 
 // Team select. Candidate 0 is the live pet, 1..PARTY_SLOTS are the banked
 // members, so one bitmask covers the whole pool.
@@ -799,7 +805,13 @@ void onSwipe(int dir) {
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (pickOpen) { pickOpen = false; return; }
-  if (gymOpen) { gymOpen = false; return; }
+  if (gymOpen) {   // horizontal pages the ladder; vertical backs out
+    uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
+    int p = (int)gymPage + (dir > 0 ? -1 : 1);
+    if (p < 0 || p >= pages) gymOpen = false;
+    else gymPage = (uint8_t)p;
+    return;
+  }
   if (playerOpen) {   // horizontal pages it, like the card and the gallery
     int p = (int)playerPage + (dir > 0 ? -1 : 1);
     if (p < 0 || p >= PLAYER_PAGES) playerOpen = false;
@@ -901,6 +913,7 @@ void onTap(int16_t x, int16_t y) {
       if (idx >= TRAINER_COUNT) break;
       int ry = GYM_ROW_Y(i);
       if (x < 70 || x > 396 || y < ry || y > ry + 44) continue;
+      if (!gymUnlocked(idx, gymHard)) { sfxPlay(SFX_DENY); return; }
       sfxPlay(SFX_TAP);
       gymOpen = false;
       pickTrainer = idx;
@@ -2913,23 +2926,24 @@ void renderGyms() {
     const Trainer &t = TRAINERS[idx];
     int y = GYM_ROW_Y(i);
     bool done = pet.hasBadge(idx, gymHard);
+    bool open_ = gymUnlocked(idx, gymHard);
     gfx->fillRoundRect(70, y, 326, 44, 10, done ? UI_TRACK : UI_BG_DAY);
-    gfx->drawRoundRect(70, y, 326, 44, 10, UI_INK);
-    gfx->setTextColor(UI_INK);
+    gfx->drawRoundRect(70, y, 326, 44, 10, open_ ? UI_INK : UI_TRACK);
+    gfx->setTextColor(open_ ? UI_INK : UI_TRACK);
     gfx->setTextSize(2);
     gfx->setCursor(84, y + 8);
     gfx->print(t.name);
     gfx->setTextSize(1);
     gfx->setTextColor(UI_TRACK);
     gfx->setCursor(84, y + 28);
-    gfx->print(t.place);
+    gfx->print(open_ ? t.place : T(S_LOCKED));
     // the level of the strongest creature: the honest measure of the wall
     uint8_t top = 0;
     for (int k = 0; k < t.count; k++)
       if (t.team[k].level > top) top = t.team[k].level;
     char lv[16];
     snprintf(lv, sizeof(lv), "Lv.%u x%u", top, t.count);
-    gfx->setTextColor(done ? UI_BAR_OK : UI_INK);
+    gfx->setTextColor(done ? UI_BAR_OK : (open_ ? UI_INK : UI_TRACK));
     gfx->setCursor(384 - (int)strlen(lv) * 6, y + 28);
     gfx->print(lv);
     if (done) {

@@ -42,6 +42,7 @@ void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
 extern uint8_t btlFoeAt, btlSquadN;
 extern bool btlHard;
+extern bool gymOpen, gymHard; extern uint8_t gymPage;
 extern bool pickOpen, pickHard; extern uint8_t pickTrainer; extern uint16_t squadMask;
 uint8_t squadCap(uint8_t idx, bool hard);
 #define PICK_X(i) (78 + ((i) % 2) * 160)
@@ -306,6 +307,30 @@ int main(int argc, char **argv) {
   if (pet.level() != 100) { printf("FAIL: the stored pet was modified\n"); return 1; }
   printf("PASS: the stored creature is untouched (still L%u)\n", pet.level());
   battleOpen = false;
+
+  // ---- the gym ladder is sequential: only the next one may be entered
+  battleOpen = false; pickOpen = false;
+  pet.badges = 0;                       // nothing beaten yet
+  gymOpen = true; gymHard = false; gymPage = 0;
+  click(233, 110 + 1 * 50 + 20);        // MISTY, the second row
+  if (pickOpen || battleOpen) { printf("FAIL: a locked leader was enterable\n"); return 1; }
+  printf("PASS: a locked leader cannot be entered\n");
+  click(233, 110 + 0 * 50 + 20);        // BROCK, the first
+  if (!pickOpen) { printf("FAIL: the first leader was not enterable\n"); return 1; }
+  printf("PASS: the first leader is always open\n");
+  pickOpen = false;
+  pet.badges = 1;                       // Brock beaten
+  gymOpen = true; gymPage = 0;
+  click(233, 110 + 1 * 50 + 20);        // MISTY again
+  if (!pickOpen) { printf("FAIL: beating one did not unlock the next\n"); return 1; }
+  printf("PASS: beating a leader unlocks the next\n");
+  pickOpen = false;
+  // and the hard ladder is its own run
+  gymOpen = true; gymHard = true; gymPage = 0;
+  click(233, 110 + 1 * 50 + 20);
+  if (pickOpen) { printf("FAIL: easy progress unlocked the hard ladder\n"); return 1; }
+  printf("PASS: hard mode keeps its own unlock order\n");
+  gymHard = false; gymOpen = false; pet.badges = 0;
 
   // ---- team select: cap enforcement and toggling
   battleOpen = false;

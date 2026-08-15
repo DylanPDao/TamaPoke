@@ -99,6 +99,7 @@ enum StrId : uint8_t {
   S_EASY, S_HARD,   // gym ladder difficulty toggle
   S_PICK_FMT,       // "CHOSEN %u/%u"
   S_FIGHT,          // start the battle
+  S_LOCKED,         // a gym not yet unlocked
   STR_COUNT
 };
 
