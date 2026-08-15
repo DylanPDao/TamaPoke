@@ -122,64 +122,72 @@ Plus a 24–48 h soak test using `HEALTH`.
 
 Working state, so it survives a closed session. Tick items off as they land.
 
-### In flight — branch `fix/emu-touch-int`
+### Done (branch `feat/battle-foundations`, pushed)
 
-- [x] Emulator: touch was dead (`attachInterrupt` was a no-op, so the `gTouchIrq`
-      gate in `handleTouch` never opened). Committed.
-- [x] Emulator: `--fast` scaled `millis()`, which the sketch also uses for gesture
-      timing, shrinking the tap window (`dt < 1500`) to `1500/scale` real ms. Clock
-      now runs 1x during a gesture. Committed, `tools/emu/clock.cpp`.
-- [x] Menu: `STATS` row added as row 0, opens `cardOpen` at `cardPage 1`. Panel
-      recentred (`MENU_Y 75`, `MENU_H 316`) — five rows at the old Y got clipped
-      by the round bezel.
-- [x] 5th icon (dumbbell, `SPR_ICON_TRAIN`) + `trainOpen` submenu: STRENGTH →
-      `startSack()`, SPEED → `startGame()`, DEFENCE → informational only.
-      Icon row re-spaced 62 → 54 to clear the ENE/HYG bars at y=361.
-- [x] Bumped `FW_VERSION` to 1.8 and the README firmware badge.
-- [ ] Optional: move the emulator touch/i18n test harnesses out of the scratchpad
-      into `tools/emu/` as regression tests.
+Emulator: touch was dead (`attachInterrupt` was a no-op so the `gTouchIrq` gate
+never opened) and `--fast` scaled `millis()`, which the sketch also uses for
+gesture timing, shrinking the tap window to `1500/scale` ms. Clock now runs 1x
+during a gesture; `millis()` lives in `clock.cpp` so the tests share it.
 
-### Fix list (reported, in progress)
+Firmware: level caps at 100 (which also closes a `uint8_t` overflow the RTC's
+two-week catch-up could reach), special-stat accessors, move storage on `Pet`
+and `PartyMon` with a length-checked party migration, the moves card page and
+on-demand picker, real level gates in the learnsets, level-up learn prompts,
+`MoveEntry` ailment fields, the battle engine, the battle screen, and the gym
+ladder with badges.
 
-- [x] **Split JOY from SPEED.** The ball game trains nothing now; SPEED has its
-      own reaction test (15 s, target shrinks, window tightens with each hit).
-      Three distinct verbs: the bag mashes, the ball juggles, the test reacts.
+UI fixes: BOND label collided with its bar (label at x=70 size 2 = 12px a
+character, bar started at 112 -- three characters, and BOND/LIEN/LACO are four).
+The training submenu froze the panel because `renderTrain()` was the one render
+path with no `gfx->flush()`. Card pages reordered. Gestures settled: up = the
+creature's card, down = the player card, left = the gym ladder, right free.
 
-- [ ] **Battle animations.** The battle screen is static: sprites do not move on
-      a hit, there is no damage flash, no HP-bar tween, no faint. `PmdMon` already
-      streams multi-action sprites (`PMD_ATTACK`, `PMD_HURT` exist in the TPK2
-      format, see `pack_pmd.py`), so the art is already on the SD -- this is
-      wiring, not new assets.
+Minigames: SPEED moved off the ball game onto its own reaction test, so playing
+is no longer a stat grind. Three bugs in a row came from the ball game quietly
+discarding sessions -- the header tap forfeited (and the ball reaches y=28, well
+inside the y<72 quit strip, so reaching for a high ball quit the game), then the
+swipe exit forfeited too, and speed trained at `score/5` which integer-divides
+to zero below 5 points. All three minigames now bank what was earned on exit.
 
-- [x] **The training submenu froze the screen.** `renderTrain()` was the one
-      render path with no `gfx->flush()`, and the panel only updates on flush --
-      so the display stayed on the previous frame while taps still registered.
-      Headless screenshots CANNOT catch this: `shotMode` reads `gfx->buffer()`
-      directly and never looks at `frameReady`. There is now a test that opens
-      all 13 screens and asserts each one flushes.
+**Two tests exist because screenshots could not catch these:**
+`shotMode` reads `gfx->buffer()` directly and never consults `frameReady`, so a
+missing flush is invisible to every capture. One test opens all 13 screens and
+asserts each flushes; another checks the 6 x N i18n table for nulls and
+non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
-- [x] Profile card: BOND collided with its bar. drawCardStat drew the label at
-      x=70 size 2 (12px/char) but started the bar at 112 -- room for three
-      characters. BOND (EN), LIEN (FR) and LACO (PT) are four. Bar moved to 132.
-- [x] Stats card: dropped the TRAIN STRENGTH button -- the 5th icon's training
-      submenu owns training now, and it covers both STRENGTH and SPEED.
-- [x] Card page order: moves before medals -> profile, stats, moves, medals,
-      progress.
-- [x] Main-screen gestures, final layout:
-      swipe **up** = current creature's card (already the case),
-      swipe **down** = player card (new screen; currently opens the clock),
-      swipe **left** = gym leaders,
-      swipe **right** = unassigned for now.
-      The clock loses its gesture -- the menu's SETTINGS row already opens it.
-- [~] Player card BUILT (swipe down): the 8 badges as discs tinted by each
-      leader's lead creature, plus badges/streak/Pokedex/party/medals. Still NO
-      player sprite -- the SD carries PMD *creature* sprites only, so a trainer
-      portrait needs new art from somewhere. Decide the source before adding it.
-- [ ] Party box grows 6 -> 18 (3 pages of 6). **Fix `Party::begin()` first**: it
-      infers the old record size as `stored / PARTY_SLOTS`, which is right when
-      the stride grows and wrong when the slot count does -- 180 bytes over 18
-      slots would infer a 10-byte record and shred the party. Key it off
-      `sizeof(PartyMon)`.
+### Next up, roughly in order
+
+1. **Hard mode.** Caps your team size and levels to the opponent's (Brock brings
+   2 at L14, so you bring 2 at L14) rather than making the AI cheat. Applied when
+   building the squad, never written back. `badgesHard`/`HARD_IV` already exist.
+2. **Battle AI (phase 8).** The foe picks `random()` today, so hard mode is thin
+   without it. Wants type effectiveness (`typeEffPct` exists), STAB, stat stages
+   and available KOs.
+3. **Battle animations.** The battle screen is static. `PmdMon` already streams
+   multi-action sprites and TPK2 carries `PMD_ATTACK`/`PMD_HURT`, so the art is
+   on the SD already -- this is wiring, not new assets.
+4. **Player card paging.** Badges on page 1, medals on page 2. Medals currently
+   have NO home: the creature card's medals page was removed and the player card
+   is still single-page. Also needs the avatar picker -- four hand-drawn sprites
+   exist (`SPR_PLAYER_A..D`) and `Pet::avatar` persists, but nothing selects them.
+5. **Box 6 -> 18** (3 pages of 6). `S_PARTY_FMT` hardcodes "%u/6" in all six
+   languages, the party screen needs paging, and **`Party::begin()` must be
+   re-keyed off `sizeof(PartyMon)` first** -- it infers the old record size as
+   `stored / PARTY_SLOTS`, which is right when the stride grows and wrong when
+   the slot count does, so 180 bytes over 18 slots would infer a 10-byte record
+   and shred the party.
+6. **Team-select screen.** The squad is the live pet plus the first five banked
+   members in order; it only bites once you hold 7 candidates.
+7. **Peer-to-peer** (see below) -- the biggest, and the only one needing a
+   hardware subsystem that has never been brought up.
+
+### Tests live in the scratchpad, not the repo
+
+`touch_test` (20 tap assertions through the real handlers), `flush_test`,
+`i18n_test`, `battle_test`, `moves_test`, `gym_test`, `evo_test`. They compile
+the real sources against `tools/emu` stubs. **They are not committed** -- worth
+folding into `tools/emu/` so they survive, since several caught real bugs that
+screenshots and the compiler both missed.
 
 ### Battle system — decided, not started
 
