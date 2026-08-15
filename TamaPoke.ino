@@ -2358,6 +2358,13 @@ static void btlResolve(uint8_t yourMove) {
   }
 }
 
+static void btlPlatform(int cx, int cy, int rx, int ry, uint16_t col) {
+  for (int dy = -ry; dy <= ry; dy++) {
+    int w = (int)(rx * sqrtf(1.0f - (float)(dy * dy) / (float)(ry * ry)));
+    if (w > 0) gfx->drawFastHLine(cx - w, cy + dy, w * 2, col);
+  }
+}
+
 static void btlHpBar(int x, int y, int w, const Combatant &c, uint16_t shown) {
   int fw = c.maxHp ? (w - 4) * shown / c.maxHp : 0;
   uint16_t col = (shown * 2 > c.maxHp) ? UI_BAR_OK
@@ -2370,22 +2377,40 @@ static void btlHpBar(int x, int y, int w, const Combatant &c, uint16_t shown) {
 static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t who) {
   // the scenes are busy, so the name and bar sit on their own plate rather
   // than fighting the artwork for contrast
-  gfx->fillRoundRect(tx - 8, ty - 8, 158, 42, 8, UI_BG_DAY);
-  gfx->drawRoundRect(tx - 8, ty - 8, 158, 42, 8, UI_INK);
+  int ph = (who == 0) ? 54 : 40;
+  gfx->fillRoundRect(tx - 8, ty - 8, 158, ph, 8, UI_BG_DAY);
+  gfx->drawRoundRect(tx - 8, ty - 8, 158, ph, 8, UI_INK);
   char l[28];
   snprintf(l, sizeof(l), "%s Lv.%u", c.name, c.level);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(1);
   gfx->setCursor(tx, ty);
   gfx->print(l);
-  btlHpBar(tx, ty + 12, 140, c, btlHpShown[who]);
+  gfx->setTextColor(UI_BAR_WARN);
+  gfx->setCursor(tx, ty + 14);
+  gfx->print("HP");
+  btlHpBar(tx + 18, ty + 12, 122, c, btlHpShown[who]);
+  if (who == 0) {                 // your own numbers, as the games do
+    char hp[16];
+    snprintf(hp, sizeof(hp), "%u/%u", btlHpShown[who], c.maxHp);
+    gfx->setTextColor(UI_INK);
+    gfx->setCursor(tx + 140 - (int)strlen(hp) * 6, ty + 28);
+    gfx->print(hp);
+  }
   if (c.ailment != AIL_NONE) {   // a status is the thing you most need to see
     static const StrId AIL_STR[] = { S_AIL_PARA, S_AIL_PARA, S_AIL_BURN, S_AIL_POISON,
                                      S_AIL_SLEEP, S_AIL_FREEZE, S_AIL_CONFUSE };
     gfx->setTextColor(UI_BAR_BAD);
-    gfx->setCursor(tx, ty + 30);
+    gfx->setCursor(tx + 18, ty + 28);
     gfx->print(T(AIL_STR[c.ailment]));
   }
+  // a platform under each creature, so they stand in the scene rather than
+  // floating over it
+  // two passes: a light disc with a darker rim, so it reads against both a
+  // bright beach and a night sky -- a single dark ellipse vanished into the
+  // latter entirely
+  btlPlatform(sx + 24, sy + 52, 46, 12, 0x6B4D);
+  btlPlatform(sx + 24, sy + 51, 40, 9, 0xAD55);
   const uint8_t *th = thumbs.get(c.dex);
   if (!th) return;
   uint32_t now = millis();
