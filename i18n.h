@@ -100,6 +100,7 @@ enum StrId : uint8_t {
   S_PICK_FMT,       // "CHOSEN %u/%u"
   S_FIGHT,          // start the battle
   S_LOCKED,         // a gym not yet unlocked
+  S_BTL_SWITCH,     // battle menu: bring on another creature
   STR_COUNT
 };
 

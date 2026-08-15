@@ -217,6 +217,17 @@ uint16_t btlHpShown[2] = { 0, 0 };      // bars ease toward the real value
 // party member rather than the live pet.
 PmdMon btlPmd[2];
 int16_t btlPmdDex[2] = { 0, 0 };
+// A faint used to swap the next creature in instantly, inside the same call
+// that resolved the turn -- which is why it felt like a jump cut. The swap is
+// now deferred: the fainted one drops out of frame, and the replacement slides
+// in only once the player dismisses that message.
+uint32_t btlFaintUntil[2] = { 0, 0 };
+uint32_t btlEnterUntil[2] = { 0, 0 };
+int8_t btlSwapWho = -1;        // 0 = your side, 1 = the foe's, -1 = nothing due
+#define BTL_FAINT_MS 700
+#define BTL_ENTER_MS 420
+// battle menu: 0 = FIGHT/POKEMON, 1 = the moves, 2 = the switch list
+uint8_t btlMenu = 0;
 #define BTL_LUNGE_MS 260
 #define BTL_HIT_MS 420
 char btlMsg[6][40];
@@ -2301,6 +2312,10 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   btlMsgCount = 0;
   btlOver = false;
   btlWon = false;
+  btlMenu = 0;
+  btlSwapWho = -1;
+  btlFaintUntil[0] = btlFaintUntil[1] = 0;
+  btlEnterUntil[0] = btlEnterUntil[1] = 0;
   btlHpShown[0] = btlYou.maxHp;
   btlHpShown[1] = btlFoe.maxHp;
   btlSyncSprite(0, btlYou);
@@ -2327,6 +2342,10 @@ void startBattle(int16_t dex, uint8_t lvl) {
   btlMsgCount = 0;
   btlOver = false;
   btlWon = false;
+  btlMenu = 0;
+  btlSwapWho = -1;
+  btlFaintUntil[0] = btlFaintUntil[1] = 0;
+  btlEnterUntil[0] = btlEnterUntil[1] = 0;
   btlHpShown[0] = btlYou.maxHp;
   btlHpShown[1] = btlFoe.maxHp;
   btlSyncSprite(0, btlYou);
@@ -2367,29 +2386,17 @@ static void btlResolve(uint8_t yourMove) {
     battleEndTurn(btlFoe, lg);
     if (lg.damage) btlNarrate(btlFoe, btlFoe, lg);
   }
-  // Someone went down: send in the next of that side's squad, and only call the
-  // battle when a side has nobody left.
-  if (btlFoe.fainted() && btlTrainer >= 0) {
-    const Trainer &t = TRAINERS[btlTrainer];
-    if (btlFoeAt + 1 < t.count) {
-      btlFoeAt++;
-      foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
-                     btlHard ? HARD_IV : EASY_IV);
-      btlHpShown[1] = btlFoe.maxHp;
-      btlSyncSprite(1, btlFoe);
-      btlLungeUntil[1] = btlHitUntil[1] = 0;
-      btlSay(T(S_BTL_SENDS), t.name, btlFoe.name);
-      return;
-    }
+  // Someone went down. The replacement is NOT swapped in here -- that made the
+  // change instant and read as a jump cut. Flag it, let the sprite drop out of
+  // frame, and swap when the player dismisses the message.
+  if (btlFoe.fainted() && btlTrainer >= 0 && btlFoeAt + 1 < TRAINERS[btlTrainer].count) {
+    btlFaintUntil[1] = millis() + BTL_FAINT_MS;
+    btlSwapWho = 1;
+    return;
   }
   if (btlYou.fainted() && btlSquadAt + 1 < btlSquadN) {
-    btlSquad[btlSquadAt] = btlYou;      // remember how battered it was
-    btlSquadAt++;
-    btlYou = btlSquad[btlSquadAt];
-    btlHpShown[0] = btlYou.hp;      // its own health, not the fainted one's
-    btlSyncSprite(0, btlYou);
-    btlLungeUntil[0] = btlHitUntil[0] = 0;
-    btlSay(T(S_BTL_GO), btlYou.name);
+    btlFaintUntil[0] = millis() + BTL_FAINT_MS;
+    btlSwapWho = 0;
     return;
   }
   if (btlFoe.fainted() || btlYou.fainted()) {
@@ -2445,6 +2452,16 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
   uint32_t now = millis();
   int ox = 0, oy = 0;
   bool flash = false;
+  if (now < btlFaintUntil[who]) {          // sinks out of frame as it faints
+    uint32_t left = btlFaintUntil[who] - now;
+    oy += (int)((BTL_FAINT_MS - left) * 70 / BTL_FAINT_MS);
+  } else if (c.fainted() && btlSwapWho == (int8_t)who) {
+    return;                                // gone, waiting to be replaced
+  }
+  if (now < btlEnterUntil[who]) {          // and the next one rises into place
+    uint32_t left = btlEnterUntil[who] - now;
+    oy += (int)(left * 70 / BTL_ENTER_MS);
+  }
   if (now < btlLungeUntil[who]) {          // lean in, then back out
     uint32_t left = btlLungeUntil[who] - now;
     int amt = (int)(left > BTL_LUNGE_MS / 2 ? BTL_LUNGE_MS - left : left) * 22 / (BTL_LUNGE_MS / 2);
@@ -2516,6 +2533,35 @@ void renderBattle() {
     gfx->setTextColor(UI_TRACK);
     gfx->setCursor(CX - 30, BTL_GRID_Y + 84);
     gfx->print("tap...");
+  } else if (btlMenu == 0) {
+    // FIGHT or POKEMON, the mainline's own first choice
+    const char *lab[2] = { T(S_FIGHT), T(S_BTL_SWITCH) };
+    for (int i = 0; i < 2; i++) {
+      int x = BTL_GRID_X, y = BTL_GRID_Y + i * (BTL_CELL_H + 8);
+      gfx->fillRoundRect(x, y, 328, BTL_CELL_H, 10, i ? UI_TRACK : UI_BG_DAY);
+      gfx->drawRoundRect(x, y, 328, BTL_CELL_H, 10, UI_INK);
+      gfx->setTextColor(UI_INK);
+      gfx->setTextSize(2);
+      gfx->setCursor(CX - (int)strlen(lab[i]) * 6, y + 14);
+      gfx->print(lab[i]);
+    }
+  } else if (btlMenu == 2) {
+    // who to bring on instead; the current one and anything fainted is inert
+    for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
+      int x = BTL_CELL_X(i), y = BTL_CELL_Y(i);
+      const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
+      bool usable = (i != btlSquadAt) && !m.fainted();
+      gfx->fillRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, usable ? UI_BG_DAY : UI_TRACK);
+      gfx->drawRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, usable ? UI_INK : 0x8410);
+      gfx->setTextColor(usable ? UI_INK : 0x8410);
+      gfx->setTextSize(1);
+      gfx->setCursor(x + 10, y + 10);
+      gfx->print(m.name);
+      char hp[20];
+      snprintf(hp, sizeof(hp), "%u/%u", m.hp, m.maxHp);
+      gfx->setCursor(x + 10, y + 28);
+      gfx->print(hp);
+    }
   } else {
     for (int i = 0; i < MOVE_SLOTS; i++) {
       int x = BTL_CELL_X(i), y = BTL_CELL_Y(i);
@@ -2538,10 +2584,76 @@ void renderBattle() {
   gfx->flush();
 }
 
+// Brings on the flagged replacement and starts its entrance.
+static void btlDoSwap() {
+  uint32_t now = millis();
+  if (btlSwapWho == 1) {
+    const Trainer &t = TRAINERS[btlTrainer];
+    btlFoeAt++;
+    foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
+                   btlHard ? HARD_IV : EASY_IV);
+    btlHpShown[1] = btlFoe.maxHp;
+    btlSyncSprite(1, btlFoe);
+    btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
+    btlEnterUntil[1] = now + BTL_ENTER_MS;
+    btlSay(T(S_BTL_SENDS), t.name, btlFoe.name);
+  } else if (btlSwapWho == 0) {
+    btlSquad[btlSquadAt] = btlYou;     // remember how battered it was
+    btlSquadAt++;
+    btlYou = btlSquad[btlSquadAt];
+    btlHpShown[0] = btlYou.hp;
+    btlSyncSprite(0, btlYou);
+    btlLungeUntil[0] = btlHitUntil[0] = btlFaintUntil[0] = 0;
+    btlEnterUntil[0] = now + BTL_ENTER_MS;
+    btlSay(T(S_BTL_GO), btlYou.name);
+  }
+  btlSwapWho = -1;
+}
+
+// Switching spends your turn: the opponent still acts. That is what stops it
+// being a free look at the matchup every round.
+static void btlSwitchTo(uint8_t i) {
+  if (i >= btlSquadN || i == btlSquadAt) return;
+  btlSquad[btlSquadAt] = btlYou;
+  btlSquadAt = i;
+  btlYou = btlSquad[i];
+  btlHpShown[0] = btlYou.hp;
+  btlSyncSprite(0, btlYou);
+  btlLungeUntil[0] = btlHitUntil[0] = btlFaintUntil[0] = 0;
+  btlEnterUntil[0] = millis() + BTL_ENTER_MS;
+  btlMenu = 0;
+  btlSay(T(S_BTL_GO), btlYou.name);
+  btlResolve(0);          // move 0 = no attack, so only the foe acts
+}
+
 void battleTap(int16_t x, int16_t y) {
   if (btlMsgCount) {          // a tap clears the narration and returns the menu
     btlMsgCount = 0;
-    if (btlOver) { btlFreeSprites(); battleOpen = false; }
+    if (btlOver) { btlFreeSprites(); battleOpen = false; return; }
+    if (btlSwapWho >= 0) btlDoSwap();   // the replacement arrives on this beat
+    return;
+  }
+  if (btlMenu == 0) {
+    for (int i = 0; i < 2; i++) {
+      int cy = BTL_GRID_Y + i * (BTL_CELL_H + 8);
+      if (x < BTL_GRID_X || x > BTL_GRID_X + 328 || y < cy || y > cy + BTL_CELL_H) continue;
+      sfxPlay(SFX_TAP);
+      btlMenu = i ? 2 : 1;
+      return;
+    }
+    return;
+  }
+  if (btlMenu == 2) {
+    for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
+      int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
+      if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
+      const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
+      if (i == btlSquadAt || m.fainted()) { sfxPlay(SFX_DENY); return; }
+      sfxPlay(SFX_TAP);
+      btlSwitchTo(i);
+      return;
+    }
+    btlMenu = 0;      // anywhere else backs out
     return;
   }
   for (int i = 0; i < MOVE_SLOTS; i++) {
@@ -2549,9 +2661,11 @@ void battleTap(int16_t x, int16_t y) {
     int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
     if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
     sfxPlay(SFX_TAP);
+    btlMenu = 0;
     btlResolve(btlYou.moves[i]);
     return;
   }
+  btlMenu = 0;        // a tap off the grid goes back to FIGHT/POKEMON
 }
 
 // ---------- player card (swipe down) ----------

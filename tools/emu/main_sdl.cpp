@@ -87,6 +87,7 @@ void emuSetSpriteDir(const char *);
 void startBattle(int16_t dex, uint8_t lvl);
 extern Combatant btlYou, btlFoe;
 extern uint32_t btlLungeUntil[2], btlHitUntil[2];
+extern uint8_t btlMenu;
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern uint8_t playerPage;
@@ -148,6 +149,8 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 2; }
   else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
   else if (!strcmp(screen, "battle2")) { startBattle(9, 50); }
+  else if (!strcmp(screen, "btlmenu")) { startTrainerBattle(3, false); }
+  else if (!strcmp(screen, "btlswitch")) { startTrainerBattle(3, false); btlMenu = 2; }
   else if (!strcmp(screen, "battleanim")) {
     startBattle(9, 50);
     btlFoe.hp = btlFoe.maxHp / 3;      // bar mid-drain

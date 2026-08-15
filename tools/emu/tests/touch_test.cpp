@@ -40,7 +40,9 @@ extern Combatant btlYou, btlFoe;
 extern uint8_t btlMsgCount;
 void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
-extern uint8_t btlFoeAt, btlSquadN;
+extern uint8_t btlFoeAt, btlSquadN, btlSquadAt, btlMenu;
+extern Combatant btlSquad[7];
+extern int8_t btlSwapWho;
 extern bool btlHard;
 extern bool gymOpen, gymHard; extern uint8_t gymPage;
 extern bool pickOpen, pickHard; extern uint8_t pickTrainer; extern uint16_t squadMask;
@@ -307,6 +309,37 @@ int main(int argc, char **argv) {
   if (pet.level() != 100) { printf("FAIL: the stored pet was modified\n"); return 1; }
   printf("PASS: the stored creature is untouched (still L%u)\n", pet.level());
   battleOpen = false;
+
+  // ---- switching mid-fight
+  battleOpen = false; pickOpen = false; pet.badges = 0;
+  for (int i = 0; i < 3; i++) { PartyMon m; m.dex = 9 + i * 20; m.level = 40;
+    m.ivAtk = m.ivDef = m.ivSpe = m.ivHp = 25; party.replaceAt(i, m); }
+  squadMask = 0xFFFF;
+  startTrainerBattle(0, false);
+  if (btlSquadN < 2) { printf("FAIL: squad too small to test switching\n"); return 1; }
+  printf("PASS: battle starts with a squad of %u\n", btlSquadN);
+
+  btlMenu = 0;
+  click(233, 286 + 52 + 22);            // POKEMON is the SECOND root row
+  if (btlMenu != 2) { printf("FAIL: POKEMON did not open the switch list\n"); return 1; }
+  printf("PASS: POKEMON opens the switch list\n");
+
+  uint8_t was = btlSquadAt;
+  uint16_t swFoeHp0 = btlFoe.hp;
+  click(69 + 40, 286 + 22);             // slot 0 = the one already out: inert
+  if (btlSquadAt != was) { printf("FAIL: switching to the active creature was allowed\n"); return 1; }
+  printf("PASS: you cannot switch to the one already out\n");
+
+  btlMenu = 2;
+  click(69 + 168 + 40, 286 + 22);       // slot 1
+  if (btlSquadAt == was) { printf("FAIL: the switch did not happen\n"); return 1; }
+  printf("PASS: switching brings on another creature (slot %u -> %u)\n", was, btlSquadAt);
+  bool costTurn = (btlYou.hp < btlYou.maxHp) || (btlFoe.hp == swFoeHp0);
+  printf("     foe hp %u -> %u, your new one %u/%u\n", swFoeHp0, btlFoe.hp, btlYou.hp, btlYou.maxHp);
+  if (!costTurn) { printf("FAIL: switching was free -- the foe never acted\n"); return 1; }
+  printf("PASS: switching spends the turn\n");
+  battleOpen = false; btlMenu = 0;
+  for (int i = 0; i < 3; i++) party.releaseAt(i);
 
   // ---- the gym ladder is sequential: only the next one may be entered
   battleOpen = false; pickOpen = false;
