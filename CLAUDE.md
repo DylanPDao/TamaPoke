@@ -157,6 +157,35 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
+**A. Audio.**
+- **Battle music**, with **volume and mute**. `audio.cpp` drives an ES8311 over
+  I2S and `SFX_*` one-shots exist, but there is no music path and no volume
+  control at all -- settings has only SND ON/OFF. Volume wants to be a stored
+  0-10, not a toggle.
+- **Attack sound effects.** Every move currently lands in silence, which is what
+  makes a fight feel flat. A handful keyed off `MoveEntry` -- physical hit,
+  special/beam, status, super-effective, faint -- goes further than one per move.
+
+**B. Storage and the box.**
+- **Box system** for more than the six party slots. `sizeof(PartyMon)` is 30 B
+  and the NVS partition is 20 KB, so ~100 fits in a single blob; 151 (4530 B)
+  exceeds the ~4000 B single-blob limit and needs splitting.
+  **`Party::begin()` must be re-keyed off `sizeof(PartyMon)` FIRST** -- it infers
+  the old record size as `stored / PARTY_SLOTS`, which is right when the stride
+  grows and wrong when the slot count does, so 180 bytes over 18 slots would
+  infer a 10-byte record and shred the party.
+- **Move creatures between the box and the active party**, which is the point of
+  having a box.
+
+**C. Multiplayer.** See the peer-to-peer section below -- ESP-NOW, one
+authoritative device, forced by the 11 `random()` calls a turn.
+
+**D. Licensing, before this repo goes public.** `CREDITS.md` records that the
+twelve battle backgrounds in `tools/backs/` have **no established provenance**.
+Everything else is accounted for (PMD sprites CC BY-NC, badges CC BY 3.0). Either
+confirm their licence or replace them.
+
+
 0. **Fight UI polish** toward the mainline look: HP plates with an `HP` label,
    numeric HP on your own side, and a platform ellipse under each creature.
    Reference supplied by the user; the current layout already matches the

@@ -82,16 +82,15 @@ uint8_t cardPage = 0;         // 0 perfil, 1 stats+medallas
 // and is the only free surface left.
 bool menuOpen = false;
 #define MENU_X 73
-// Six rows, sized to the bezel rather than to taste: the panel is 320 wide, so
-// it is 160 from the centre, and sqrt(233^2 - 160^2) = 169 -- it can only span
-// y 64..402. That is 338px for 6 rows, hence ROW_H 46. Going any taller clips
-// the bottom corners on the round panel.
-#define MENU_Y 64
+// Four rows: PARTY and GYMS came out, since a swipe right and a swipe left now
+// reach them directly. Sized to the bezel -- the panel is 320 wide, so 160 from
+// the centre, and sqrt(233^2 - 160^2) = 169 means it can only span y 64..402.
+#define MENU_Y 104
 #define MENU_W 320
-#define MENU_H 338
-#define MENU_ROW_H 46
+#define MENU_H 258
+#define MENU_ROW_H 52
 #define MENU_ROW_GAP 6
-#define MENU_ROWS 6
+#define MENU_ROWS 4
 #define MENU_ROW_Y(i) (MENU_Y + 16 + (i) * (MENU_ROW_H + MENU_ROW_GAP))
 
 // Party screen. partyPick != 0 means the newcomer needs a slot: the player
@@ -1015,10 +1014,8 @@ void onTap(int16_t x, int16_t y) {
       menuOpen = false;
       if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
       else if (i == 1) { galleryOpen = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
-      else if (i == 2) { partyOpen = true; }
-      else if (i == 3) { gymOpen = true; gymPage = 0; }
-      else if (i == 4) { openClock(); }
-      return;                                     // i == 5 is CLOSE: just shut
+      else if (i == 2) { openClock(); }
+      return;                                     // i == 3 is CLOSE: just shut
     }
     return;
   }
@@ -3275,9 +3272,7 @@ static void menuRowLabel(int i, char *out, size_t n) {
   switch (i) {
     case 0: snprintf(out, n, "%s", T(S_STATS)); break;
     case 1: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount()); break;
-    case 2: snprintf(out, n, T(S_PARTY_FMT), party.count()); break;
-    case 3: snprintf(out, n, "%s", T(S_GYMS)); break;
-    case 4: snprintf(out, n, "%s", T(S_SETTINGS)); break;
+    case 2: snprintf(out, n, "%s", T(S_SETTINGS)); break;
     default: snprintf(out, n, "%s", T(S_CLOSE)); break;
   }
 }
