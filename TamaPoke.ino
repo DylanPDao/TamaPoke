@@ -20,6 +20,7 @@
 #include "moves.h"
 #include "battle.h"
 #include "trainers.h"
+#include "backs.h"
 #include <stdarg.h>
 #include "party.h"
 #include "pet.h"
@@ -2142,6 +2143,38 @@ void renderMovePick() {
 
 // ---------- battle ----------
 
+// Draws a battle backdrop scaled 2x. Emitted as runs of identical indices
+// rather than a write per pixel: this is flat pixel art with long horizontal
+// runs, and 240x112 at 2x would otherwise be 26,880 fillRect calls a frame.
+// The round bezel crops the overhang physically, so nothing is clipped here.
+static void drawBack(const BackScene &b, int y0) {
+  const int SC = 2;
+  int x0 = CX - (b.w * SC) / 2;
+  for (int r = 0; r < b.h; r++) {
+    const uint8_t *row = b.idx + (uint32_t)r * b.w;
+    int c = 0;
+    while (c < b.w) {
+      uint8_t v = row[c];
+      int run = 1;
+      while (c + run < b.w && row[c + run] == v) run++;
+      uint16_t col = b.pal[v];
+      gfx->fillRect(x0 + c * SC, y0 + r * SC, run * SC, SC, col);
+      c += run;
+    }
+  }
+}
+
+// Which scene: the FOE's biome, since a battle happens where it lives, and the
+// same day/night split the main screen already uses.
+static void drawBattleBack() {
+  int16_t dex = btlFoe.dex;
+  if (dex < 1 || dex > DEX_COUNT) { gfx->fillCircle(CX, CY, 231, UI_BG_DAY); return; }
+  uint8_t bi = DEX_TBL[dex].biome;
+  if (bi >= BACK_BIOMES) bi = 0;
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  drawBack(BACKS[bi][night ? 1 : 0], 30);
+}
+
 static void btlSay(const char *fmt, ...) {
   if (btlMsgCount >= 6) return;
   va_list ap;
@@ -2335,6 +2368,10 @@ static void btlHpBar(int x, int y, int w, const Combatant &c, uint16_t shown) {
 }
 
 static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t who) {
+  // the scenes are busy, so the name and bar sit on their own plate rather
+  // than fighting the artwork for contrast
+  gfx->fillRoundRect(tx - 8, ty - 8, 158, 42, 8, UI_BG_DAY);
+  gfx->drawRoundRect(tx - 8, ty - 8, 158, 42, 8, UI_INK);
   char l[28];
   snprintf(l, sizeof(l), "%s Lv.%u", c.name, c.level);
   gfx->setTextColor(UI_INK);
@@ -2384,7 +2421,10 @@ static void btlEaseBars() {
 void renderBattle() {
   btlEaseBars();
   gfx->fillScreen(RGB565_BLACK);
-  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  drawBattleBack();
+  // the lower band stays flat so the move grid and the HP text keep their
+  // contrast against it
+  gfx->fillRect(0, 254, 466, 212, UI_BG_DAY);
 
   // x=82 not 58: at y=60 the round bezel starts around x=77, and a longer
   // name like BLASTOISE was losing its first characters off the edge

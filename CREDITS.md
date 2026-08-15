@@ -39,3 +39,13 @@ Huge thanks to that whole community for an enormous amount of work.
 | 5x7 bitmap font in `tools/emu/font.cpp` | [Adafruit_GFX](https://github.com/adafruit/Adafruit-GFX-Library) © 2012 Adafruit Industries, BSD licence |
 
 TamaPoke's own code (firmware and tools) is original work.
+
+## Battle backgrounds
+
+`tools/backs/*.png` — twelve 240x112 scenes, one day and one night per biome,
+packed into `backs.h` by `tools/gen_backs.py`.
+
+**Provenance not established.** These were supplied for the project rather than
+sourced by it. Before this repo goes public, confirm where they came from and
+under what licence, the same way the PMD sprites are accounted for above — and
+replace them if that cannot be answered.
