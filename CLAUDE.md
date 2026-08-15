@@ -157,39 +157,37 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
-1. ~~Hard mode~~ and ~~battle AI~~ -- **done**. BOTH ladders cap your level to
-   the leader's best (without it a raised team walks everything at 100% and the
-   type chart never matters); hard also caps your team SIZE to the leader's, uses
-   `HARD_IV` 31 and switches the AI on. Caps are applied while building the
-   combatants, so the stored creature is never touched. `aiChooseMove` weighs
-   expected damage, accuracy, whether a move kills this turn, ailment value and
-   whether a stat boost is worth its turn -- it beats the random chooser **74%**
-   of mirror matches, which `ai_test` measures rather than assumes.
-
-   Measured with a team of six IDENTICAL Charizards (team-select is not built),
-   so the hard numbers below are one species' matchups, not a balanced team's:
-   Brock 10%, Misty 0%, Lance 0% are Charizard being Fire/Flying, and would be
-   covered by bringing the right creature. Easy stays ~100% because you bring six
-   bodies against the leader's two-to-five -- that is the reward for having built
-   a team, and the challenge lives in hard.
-3. **Battle animations.** The battle screen is static. `PmdMon` already streams
-   multi-action sprites and TPK2 carries `PMD_ATTACK`/`PMD_HURT`, so the art is
-   on the SD already -- this is wiring, not new assets.
-4. ~~Player card paging~~ **done** -- badges + avatar on page 1, medals on
-   page 2, swipe between them, tap the avatar to cycle the four hand-drawn
-   sprites.
-5. **Box 6 -> 18** (3 pages of 6). `S_PARTY_FMT` hardcodes "%u/6" in all six
+1. **Battle animations.** The battle screen is completely static: no lunge, no
+   hit flash, no HP tween, no faint. `PmdMon` already streams multi-action
+   sprites and TPK2 carries `PMD_ATTACK`/`PMD_HURT`, so the art is on the SD
+   already -- but the battle screen draws flat thumbnails today, so the cheap
+   win (lunge, shake, flash, HP tween) needs no streaming at all.
+2. **Trainer name.** There is no player name -- the player card is titled with
+   the generic `S_TRAINER`. Needs `char trainerName[12]` on `Pet` (player-wide,
+   so `newEgg()` must not clear it, like `badges` and the streak) plus save/load.
+   The keyboard exists and is reached by tapping the pet's name on card page 0,
+   but commit hardcodes `pet.rename(nameBuf)` (`TamaPoke.ino:3156`), so it needs
+   a target flag before a second caller can share it. Entry: tap TRAINER.
+3. **Box 6 -> 18** (3 pages of 6). `S_PARTY_FMT` hardcodes "%u/6" in all six
    languages, the party screen needs paging, and **`Party::begin()` must be
    re-keyed off `sizeof(PartyMon)` first** -- it infers the old record size as
-   `stored / PARTY_SLOTS`, which is right when the stride grows and wrong when
-   the slot count does, so 180 bytes over 18 slots would infer a 10-byte record
-   and shred the party.
-6. ~~Team-select screen~~ **done** -- tap to pick who comes, levels shown as
-   they will actually be FOUGHT at (capped), typings on every cell since that is
-   the whole reason for the screen. FIGHT stays inert until the selection is
-   within the cap.
-7. **Peer-to-peer** (see below) -- the biggest, and the only one needing a
+   `stored / PARTY_SLOTS`, right when the stride grows and wrong when the slot
+   count does, so 180 bytes over 18 slots would infer a 10-byte record.
+4. **Peer-to-peer** (see below) -- the biggest, and the only one needing a
    hardware subsystem that has never been brought up.
+
+### Done since the battle plan
+
+Hard mode + battle AI. Both ladders cap your level to the leader's best (without
+it a raised team walks everything at 100% and the type chart never matters);
+hard also caps team SIZE, uses `HARD_IV` 31 and switches the AI on. Caps are
+applied while building the combatants, so the stored creature is never touched.
+`aiChooseMove` beats the random chooser **74%** of mirror matches -- `ai_test`
+measures that rather than assuming it.
+
+Team select, so which creature you bring is a real decision now that hard mode
+caps the size. Player card paging (badges + avatar, then medals). The reaction
+test for SPEED, splitting stat training out of the joy game.
 
 ### Tests
 
