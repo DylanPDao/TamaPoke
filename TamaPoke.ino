@@ -196,6 +196,16 @@ bool btlHard = false;
 Combatant btlSquad[TRAINER_TEAM_MAX + 1];
 uint8_t btlSquadN = 0, btlSquadAt = 0;
 uint8_t btlFoeAt = 0;
+
+// Animation. Deliberately built on the thumbnails the screen already draws
+// rather than on PmdMon: three PmdMon blobs are live already, and the battle
+// has to stay graceful on a board with no SD at all (S_NO_SPRITES). Index 0 is
+// you, 1 is the foe.
+uint32_t btlLungeUntil[2] = { 0, 0 };   // acted: leans toward the opponent
+uint32_t btlHitUntil[2] = { 0, 0 };     // was hit: jitters and flashes
+uint16_t btlHpShown[2] = { 0, 0 };      // bars ease toward the real value
+#define BTL_LUNGE_MS 260
+#define BTL_HIT_MS 420
 char btlMsg[6][40];
 uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 #define BTL_CELL_W 160
@@ -2224,6 +2234,10 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   btlMsgCount = 0;
   btlOver = false;
   btlWon = false;
+  btlHpShown[0] = btlYou.maxHp;
+  btlHpShown[1] = btlFoe.maxHp;
+  btlLungeUntil[0] = btlLungeUntil[1] = 0;
+  btlHitUntil[0] = btlHitUntil[1] = 0;
   battleOpen = true;
 }
 
@@ -2244,6 +2258,10 @@ void startBattle(int16_t dex, uint8_t lvl) {
   btlMsgCount = 0;
   btlOver = false;
   btlWon = false;
+  btlHpShown[0] = btlYou.maxHp;
+  btlHpShown[1] = btlFoe.maxHp;
+  btlLungeUntil[0] = btlLungeUntil[1] = 0;
+  btlHitUntil[0] = btlHitUntil[1] = 0;
   battleOpen = true;
 }
 
@@ -2258,12 +2276,20 @@ static void btlResolve(uint8_t yourMove) {
   uint8_t ma = youFirst ? yourMove : foeMove;
   uint8_t mb = youFirst ? foeMove : yourMove;
 
+  uint32_t now = millis();
+  uint16_t hp0You = btlYou.hp, hp0Foe = btlFoe.hp;
   battleAct(*a, *b, ma, lg);
   btlNarrate(*a, *b, lg);
+  if (lg.damage && !lg.hurtSelf) btlLungeUntil[a == &btlYou ? 0 : 1] = now + BTL_LUNGE_MS;
   if (!b->fainted()) {
     battleAct(*b, *a, mb, lg);
     btlNarrate(*b, *a, lg);
+    if (lg.damage && !lg.hurtSelf)
+      btlLungeUntil[b == &btlYou ? 0 : 1] = now + BTL_LUNGE_MS + BTL_LUNGE_MS;
   }
+  // whoever actually lost health flinches, whichever side dealt it
+  if (btlYou.hp < hp0You) btlHitUntil[0] = now + BTL_HIT_MS;
+  if (btlFoe.hp < hp0Foe) btlHitUntil[1] = now + BTL_HIT_MS;
   if (!btlYou.fainted() && !btlFoe.fainted()) {
     battleEndTurn(btlYou, lg);
     if (lg.damage) btlNarrate(btlYou, btlYou, lg);
@@ -2278,6 +2304,7 @@ static void btlResolve(uint8_t yourMove) {
       btlFoeAt++;
       foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
                      btlHard ? HARD_IV : EASY_IV);
+      btlHpShown[1] = btlFoe.maxHp;
       btlSay(T(S_BTL_SENDS), t.name, btlFoe.name);
       return;
     }
@@ -2298,23 +2325,23 @@ static void btlResolve(uint8_t yourMove) {
   }
 }
 
-static void btlHpBar(int x, int y, int w, const Combatant &c) {
-  int fw = c.maxHp ? (w - 4) * c.hp / c.maxHp : 0;
-  uint16_t col = (c.hp * 2 > c.maxHp) ? UI_BAR_OK
-                 : (c.hp * 4 > c.maxHp) ? UI_BAR_WARN : UI_BAR_BAD;
+static void btlHpBar(int x, int y, int w, const Combatant &c, uint16_t shown) {
+  int fw = c.maxHp ? (w - 4) * shown / c.maxHp : 0;
+  uint16_t col = (shown * 2 > c.maxHp) ? UI_BAR_OK
+                 : (shown * 4 > c.maxHp) ? UI_BAR_WARN : UI_BAR_BAD;
   gfx->fillRoundRect(x, y, w, 14, 4, UI_TRACK);
   if (fw > 0) gfx->fillRoundRect(x + 2, y + 2, fw, 10, 3, col);
   gfx->drawRoundRect(x, y, w, 14, 4, UI_INK);
 }
 
-static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c) {
+static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t who) {
   char l[28];
   snprintf(l, sizeof(l), "%s Lv.%u", c.name, c.level);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(1);
   gfx->setCursor(tx, ty);
   gfx->print(l);
-  btlHpBar(tx, ty + 12, 140, c);
+  btlHpBar(tx, ty + 12, 140, c, btlHpShown[who]);
   if (c.ailment != AIL_NONE) {   // a status is the thing you most need to see
     static const StrId AIL_STR[] = { S_AIL_PARA, S_AIL_PARA, S_AIL_BURN, S_AIL_POISON,
                                      S_AIL_SLEEP, S_AIL_FREEZE, S_AIL_CONFUSE };
@@ -2323,17 +2350,46 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c) {
     gfx->print(T(AIL_STR[c.ailment]));
   }
   const uint8_t *th = thumbs.get(c.dex);
-  if (th) drawThumb(th, sx, sy, 3, false);
+  if (!th) return;
+  uint32_t now = millis();
+  int ox = 0, oy = 0;
+  bool flash = false;
+  if (now < btlLungeUntil[who]) {          // lean in, then back out
+    uint32_t left = btlLungeUntil[who] - now;
+    int amt = (int)(left > BTL_LUNGE_MS / 2 ? BTL_LUNGE_MS - left : left) * 22 / (BTL_LUNGE_MS / 2);
+    ox = who == 0 ? amt : -amt;            // you lunge right, the foe lunges left
+    oy = who == 0 ? -amt / 2 : amt / 2;
+  }
+  if (now < btlHitUntil[who]) {
+    uint32_t left = btlHitUntil[who] - now;
+    ox += ((left / 50) % 2) ? 5 : -5;      // jitter
+    flash = ((left / 60) % 2) == 0;        // and strobe as a silhouette
+  }
+  drawThumb(th, sx + ox, sy + oy, 3, flash);
+}
+
+// Bars drain rather than snap: a hit that removes half your health should be
+// visible as it happens, not as a value that was already different.
+static void btlEaseBars() {
+  const uint16_t real[2] = { btlYou.hp, btlFoe.hp };
+  for (int i = 0; i < 2; i++) {
+    int diff = (int)real[i] - (int)btlHpShown[i];
+    if (!diff) continue;
+    int step = diff / 5;
+    if (!step) step = diff > 0 ? 1 : -1;
+    btlHpShown[i] = (uint16_t)((int)btlHpShown[i] + step);
+  }
 }
 
 void renderBattle() {
+  btlEaseBars();
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
 
   // x=82 not 58: at y=60 the round bezel starts around x=77, and a longer
   // name like BLASTOISE was losing its first characters off the edge
-  btlSide(82, 60, 300, 40, btlFoe);    // foe reads top-left, sprite top-right
-  btlSide(250, 190, 76, 168, btlYou);  // you read bottom-right, sprite bottom-left
+  btlSide(82, 60, 300, 40, btlFoe, 1);    // foe reads top-left, sprite top-right
+  btlSide(250, 190, 76, 168, btlYou, 0);  // you read bottom-right, sprite bottom-left
 
   if (btlMsgCount) {                   // narration takes over the menu area
     gfx->fillRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_WHITE);

@@ -6,6 +6,7 @@
 #include "Preferences.h"
 #include "pet.h"
 #include "party.h"
+#include "battle.h"
 #include <chrono>
 #include <string>
 #include <deque>
@@ -84,6 +85,8 @@ void nvsSave(const char *path) {
 // the sketch
 void emuSetSpriteDir(const char *);
 void startBattle(int16_t dex, uint8_t lvl);
+extern Combatant btlYou, btlFoe;
+extern uint32_t btlLungeUntil[2], btlHitUntil[2];
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern uint8_t playerPage;
@@ -145,6 +148,12 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 2; }
   else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
   else if (!strcmp(screen, "battle2")) { startBattle(9, 50); }
+  else if (!strcmp(screen, "battleanim")) {
+    startBattle(9, 50);
+    btlFoe.hp = btlFoe.maxHp / 3;      // bar mid-drain
+    btlLungeUntil[0] = millis() + 130; // you mid-lunge
+    btlHitUntil[1] = millis() + 300;   // foe flinching
+  }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
   else if (!strcmp(screen, "pick")) {
     static const int fill[]={9,25,143,94,131,3};

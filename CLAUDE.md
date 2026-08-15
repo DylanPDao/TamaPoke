@@ -157,11 +157,13 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
-1. **Battle animations.** The battle screen is completely static: no lunge, no
-   hit flash, no HP tween, no faint. `PmdMon` already streams multi-action
-   sprites and TPK2 carries `PMD_ATTACK`/`PMD_HURT`, so the art is on the SD
-   already -- but the battle screen draws flat thumbnails today, so the cheap
-   win (lunge, shake, flash, HP tween) needs no streaming at all.
+1. **Battle animations -- first pass done, PMD actions still open.** Lunge on
+   attack, jitter + silhouette strobe on being hit, and HP bars that drain
+   instead of snapping. Built on the thumbnails the screen already draws, NOT on
+   `PmdMon`: three PmdMon blobs are already live (`pmd`, `evoPmd`, `galleryPmd`)
+   and the battle has to stay graceful with no SD at all. Still to do: real
+   `PMD_ATTACK`/`PMD_HURT` action playback, which needs a fourth streamed sprite
+   for the foe and a decision about the PSRAM cost.
 2. **Trainer name.** There is no player name -- the player card is titled with
    the generic `S_TRAINER`. Needs `char trainerName[12]` on `Pet` (player-wide,
    so `newEgg()` must not clear it, like `badges` and the streak) plus save/load.
