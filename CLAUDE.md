@@ -177,6 +177,20 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 - **Move creatures between the box and the active party**, which is the point of
   having a box.
 
+**B2. Multi-region, once the Gen 2/3 expansion is untabled.** These four hang
+together and should be designed as one thing, not bolted on separately:
+- **Region egg switcher** -- choose which generation your eggs come from, so a
+  player can run a Kanto game, a Johto game, or mix. Touches `pickEggSpecies()`
+  and the rarity tiers, both of which currently assume one flat 1-151 pool.
+- **Badges per region** -- `badges`/`badgesHard` are `uint16_t` bitmasks with
+  room for 16, so a second region fits, but a third needs widening or an array.
+  `badges.h` is Kanto-only; `gen_badges.py` already handles any of the five
+  regional SVGs upstream, so the art side is a re-run.
+- **Gyms and an Elite 4 per region** -- pure data in the `trainers.h` shape.
+- **Swipe left becomes a chooser**: LAN battle or gym battle; gyms then go
+  region -> leader. That replaces today's flat list and is what makes multiple
+  regions navigable at all.
+
 **C. Multiplayer.** See the peer-to-peer section below -- ESP-NOW, one
 authoritative device, forced by the 11 `random()` calls a turn.
 
