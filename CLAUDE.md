@@ -166,13 +166,13 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
    CREDITS.md). Needs an SVG rasteriser -- none is installed -- and each badge
    isolating from the single combined drawing.
 
-1. **Battle animations -- first pass done, PMD actions still open.** Lunge on
-   attack, jitter + silhouette strobe on being hit, and HP bars that drain
-   instead of snapping. Built on the thumbnails the screen already draws, NOT on
-   `PmdMon`: three PmdMon blobs are already live (`pmd`, `evoPmd`, `galleryPmd`)
-   and the battle has to stay graceful with no SD at all. Still to do: real
-   `PMD_ATTACK`/`PMD_HURT` action playback, which needs a fourth streamed sprite
-   for the foe and a decision about the PSRAM cost.
+1. ~~Battle animations~~ **done**, including real PMD playback. `btlPmd[2]`
+   streams both combatants (~135 KB PSRAM each, freed when the fight ends) and
+   plays `PMD_ATTACK` while lunging, `PMD_HURT` while flinching, `PMD_IDLE`
+   otherwise -- each guarded by `has()`, since not every species ships every
+   action, falling back to idle and then to the flat thumbnail with no SD.
+   The player's slot is NOT the global `pmd`: the active creature may be a
+   banked party member rather than the live pet.
 2. **Trainer name.** There is no player name -- the player card is titled with
    the generic `S_TRAINER`. Needs `char trainerName[12]` on `Pet` (player-wide,
    so `newEgg()` must not clear it, like `badges` and the streak) plus save/load.

@@ -205,6 +205,12 @@ uint8_t btlFoeAt = 0;
 uint32_t btlLungeUntil[2] = { 0, 0 };   // acted: leans toward the opponent
 uint32_t btlHitUntil[2] = { 0, 0 };     // was hit: jitters and flashes
 uint16_t btlHpShown[2] = { 0, 0 };      // bars ease toward the real value
+// Two streamed sprites, so the creatures can actually swing and flinch. They
+// cost ~135 KB of PSRAM each on average and are freed when the fight ends. The
+// player's side is NOT the global `pmd`: the active creature may be a banked
+// party member rather than the live pet.
+PmdMon btlPmd[2];
+int16_t btlPmdDex[2] = { 0, 0 };
 #define BTL_LUNGE_MS 260
 #define BTL_HIT_MS 420
 char btlMsg[6][40];
@@ -824,12 +830,12 @@ void onSwipe(int dir) {
     return;
   }
   if (!galleryOpen) {
-    // Swipe LEFT opens the gym ladder; right is deliberately unassigned for now.
-    // The Pokedex lost this gesture: it has a menu row, and the gestures are
-    // worth more spent on the things without one.
-    if (!pet.ceremony && !confirmUntil && dir < 0) {
-      gymOpen = true;
-      gymPage = 0;
+    // Swipe LEFT is the gym ladder, RIGHT is the party. The Pokedex lost this
+    // gesture: it has a menu row, and gestures are worth more spent on screens
+    // without one.
+    if (!pet.ceremony && !confirmUntil) {
+      if (dir < 0) { gymOpen = true; gymPage = 0; }
+      else partyOpen = true;
     }
     return;
   }
@@ -2175,6 +2181,21 @@ static void drawBattleBack() {
   drawBack(BACKS[bi][night ? 1 : 0], 30);
 }
 
+// Streams a side's sprite if it is not already the one loaded. Called whenever
+// a creature steps in, never per frame.
+static void btlSyncSprite(uint8_t who, const Combatant &c) {
+  int16_t key = c.dex * (c.shiny ? -1 : 1);
+  if (btlPmdDex[who] == key && btlPmd[who].loaded) return;
+  btlPmd[who].unload();
+  btlPmdDex[who] = 0;
+  if (c.dex < 1 || c.dex > DEX_COUNT) return;
+  if (btlPmd[who].load((uint8_t)c.dex, c.shiny)) btlPmdDex[who] = key;
+}
+
+static void btlFreeSprites() {
+  for (int i = 0; i < 2; i++) { btlPmd[i].unload(); btlPmdDex[i] = 0; }
+}
+
 static void btlSay(const char *fmt, ...) {
   if (btlMsgCount >= 6) return;
   va_list ap;
@@ -2269,6 +2290,8 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   btlWon = false;
   btlHpShown[0] = btlYou.maxHp;
   btlHpShown[1] = btlFoe.maxHp;
+  btlSyncSprite(0, btlYou);
+  btlSyncSprite(1, btlFoe);
   btlLungeUntil[0] = btlLungeUntil[1] = 0;
   btlHitUntil[0] = btlHitUntil[1] = 0;
   battleOpen = true;
@@ -2293,6 +2316,8 @@ void startBattle(int16_t dex, uint8_t lvl) {
   btlWon = false;
   btlHpShown[0] = btlYou.maxHp;
   btlHpShown[1] = btlFoe.maxHp;
+  btlSyncSprite(0, btlYou);
+  btlSyncSprite(1, btlFoe);
   btlLungeUntil[0] = btlLungeUntil[1] = 0;
   btlHitUntil[0] = btlHitUntil[1] = 0;
   battleOpen = true;
@@ -2338,6 +2363,8 @@ static void btlResolve(uint8_t yourMove) {
       foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
                      btlHard ? HARD_IV : EASY_IV);
       btlHpShown[1] = btlFoe.maxHp;
+      btlSyncSprite(1, btlFoe);
+      btlLungeUntil[1] = btlHitUntil[1] = 0;
       btlSay(T(S_BTL_SENDS), t.name, btlFoe.name);
       return;
     }
@@ -2346,6 +2373,9 @@ static void btlResolve(uint8_t yourMove) {
     btlSquad[btlSquadAt] = btlYou;      // remember how battered it was
     btlSquadAt++;
     btlYou = btlSquad[btlSquadAt];
+    btlHpShown[0] = btlYou.hp;      // its own health, not the fainted one's
+    btlSyncSprite(0, btlYou);
+    btlLungeUntil[0] = btlHitUntil[0] = 0;
     btlSay(T(S_BTL_GO), btlYou.name);
     return;
   }
@@ -2399,8 +2429,6 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
   }
   // a platform under each creature, so they stand in the scene rather than
   // floating over it
-  const uint8_t *th = thumbs.get(c.dex);
-  if (!th) return;
   uint32_t now = millis();
   int ox = 0, oy = 0;
   bool flash = false;
@@ -2413,8 +2441,27 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
   if (now < btlHitUntil[who]) {
     uint32_t left = btlHitUntil[who] - now;
     ox += ((left / 50) % 2) ? 5 : -5;      // jitter
-    flash = ((left / 60) % 2) == 0;        // and strobe as a silhouette
   }
+
+  // Real PMD playback when the sprite streamed: attack while lunging, hurt
+  // while flinching, idle otherwise. `has()` guards every one, because not
+  // every species ships every action -- falling through to idle, and to the
+  // flat thumbnail if the sprite is missing entirely (no SD).
+  if (btlPmd[who].loaded) {
+    uint8_t act = PMD_IDLE;
+    bool loop = true;
+    uint32_t t = now;
+    if (now < btlHitUntil[who] && btlPmd[who].has(PMD_HURT)) {
+      act = PMD_HURT; loop = false; t = now - (btlHitUntil[who] - BTL_HIT_MS);
+    } else if (now < btlLungeUntil[who] && btlPmd[who].has(PMD_ATTACK)) {
+      act = PMD_ATTACK; loop = false; t = now - (btlLungeUntil[who] - BTL_LUNGE_MS);
+    }
+    drawPmdActM(btlPmd[who], act, sx + 24 + ox, sy + 78 + oy, t, loop, false, 4);
+    return;
+  }
+  const uint8_t *th = thumbs.get(c.dex);
+  if (!th) return;
+  if (now < btlHitUntil[who]) flash = ((btlHitUntil[who] - now) / 60) % 2 == 0;
   drawThumb(th, sx + ox, sy + oy, 3, flash);
 }
 
@@ -2481,7 +2528,7 @@ void renderBattle() {
 void battleTap(int16_t x, int16_t y) {
   if (btlMsgCount) {          // a tap clears the narration and returns the menu
     btlMsgCount = 0;
-    if (btlOver) battleOpen = false;
+    if (btlOver) { btlFreeSprites(); battleOpen = false; }
     return;
   }
   for (int i = 0; i < MOVE_SLOTS; i++) {

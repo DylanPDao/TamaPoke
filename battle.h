@@ -26,6 +26,7 @@ struct Combatant {
   uint8_t confuseTurns = 0;  // confusion runs alongside a real ailment
   bool recharge = false;     // EF_RECHARGE spent this creature's next turn
   uint8_t charging = 0;      // EF_CHARGE move already wound up
+  bool shiny = false;        // which sprite variant to stream
   char name[12] = "";
 
   bool fainted() const { return hp == 0; }
