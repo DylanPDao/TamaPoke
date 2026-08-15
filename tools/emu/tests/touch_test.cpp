@@ -33,7 +33,7 @@ String FakeSerial::readStringUntil(char) { return String(""); }
 void setup();
 void loop();
 extern Pet pet;   // defined in the sketch
-extern bool trainOpen, sackOpen, gameOpen, menuOpen, cardOpen, movePickOpen;
+extern bool trainOpen, sackOpen, gameOpen, menuOpen, cardOpen, movePickOpen, spdOpen;
 extern uint8_t movePickSlot, movePickPage;
 extern bool battleOpen, btlOver, btlWon;
 extern Combatant btlYou, btlFoe;
@@ -129,13 +129,13 @@ int main(int argc, char **argv) {
 
   click(341, 390);
   click(233, 242);                       // row 1 == SPEED == TRAIN_ROW_Y(1)+28
-  if (!gameOpen) { printf("FAIL: SPEED row did not start the ball game\n"); return 1; }
-  printf("PASS: SPEED routes to the ball game\n");
-  gameOpen = false;
+  if (!spdOpen) { printf("FAIL: SPEED row did not start the reaction test\n"); return 1; }
+  printf("PASS: SPEED routes to the reaction test\n");
+  spdOpen = false;
 
   click(341, 390);
   click(233, 306);                       // row 2 == DEFENCE: must stay put
-  if (!trainOpen || sackOpen || gameOpen) {
+  if (!trainOpen || sackOpen || spdOpen) {
     printf("FAIL: DEFENCE row is not inert (trainOpen=%d)\n", (int)trainOpen);
     return 1;
   }

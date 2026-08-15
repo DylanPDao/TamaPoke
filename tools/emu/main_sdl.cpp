@@ -86,6 +86,7 @@ void emuSetSpriteDir(const char *);
 void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
+extern uint8_t playerPage;
 void startSpeedGame();
 void setup();
 void loop();
@@ -144,6 +145,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
   else if (!strcmp(screen, "speed")) { startSpeedGame(); }
   else if (!strcmp(screen, "player")) { pet.badges = 0x2B; pet.streak = 5; playerOpen = true; }
+  else if (!strcmp(screen, "medals2")) { pet.medals = 0x5B; pet.totalMedals = 12; playerOpen = true; playerPage = 1; }
   else if (!strcmp(screen, "gymfight")) { startTrainerBattle(0, false); }
   else if (!strcmp(screen, "learn")) {
     // fill the four slots, then cross a gate so the offer has to be answered

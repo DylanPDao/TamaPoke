@@ -174,6 +174,7 @@ bool spdNewHi = false;
 bool gymOpen = false;
 bool playerOpen = false;
 uint8_t playerPage = 0;   // 0 badges, 1 medals
+#define PLAYER_PAGES 2
 uint8_t gymPage = 0;
 #define GYM_ROWS 5
 #define GYM_ROW_Y(i) (92 + (i) * 52)
@@ -701,7 +702,12 @@ void onSwipeV(int dir) {
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (gymOpen) { gymOpen = false; return; }
-  if (playerOpen) { playerOpen = false; return; }
+  if (playerOpen) {
+    int p = (int)playerPage + (dir > 0 ? -1 : 1);
+    if (p < 0 || p >= PLAYER_PAGES) playerOpen = false;
+    else playerPage = (uint8_t)p;
+    return;
+  }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -829,7 +835,17 @@ void onTap(int16_t x, int16_t y) {
     battleTap(x, y);
     return;
   }
-  if (playerOpen) { playerOpen = false; return; }   // tap anywhere: back
+  if (playerOpen) {
+    // the avatar is the only live target; everything else backs out
+    if (playerPage == 0 && x > CX - 40 && x < CX + 40 && y > 70 && y < 146) {
+      pet.avatar = (pet.avatar + 1) & 3;
+      pet.flushSave();
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    playerOpen = false;
+    return;
+  }
   if (gymOpen) {
     for (int i = 0; i < GYM_ROWS; i++) {
       uint8_t idx = gymPage * GYM_ROWS + i;
@@ -2306,21 +2322,27 @@ void battleTap(int16_t x, int16_t y) {
 // Everything here is player-wide and outlives the creature: badges, the daily
 // streak, the Pokedex and the party. No player sprite yet -- the SD carries
 // PMD creature sprites only, so a trainer portrait needs new art.
-void renderPlayer() {
-  gfx->fillScreen(RGB565_BLACK);
-  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+// Page 1: who you are -- avatar, badges, totals. Tap the avatar to cycle it;
+// the four sprites are hand-drawn (see species.h) because SpriteCollab has no
+// trainer art and ripped sprites would be unlicensed.
+static void renderPlayerBadges() {
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(3);
-  gfx->setCursor(CX - strlen(T(S_TRAINER)) * 9, 44);
+  gfx->setCursor(CX - strlen(T(S_TRAINER)) * 9, 40);
   gfx->print(T(S_TRAINER));
 
-  // the eight gym badges as a row of discs, filled once earned
+  static const char *const *AV[4] = { SPR_PLAYER_A, SPR_PLAYER_B, SPR_PLAYER_C, SPR_PLAYER_D };
+  drawMap(AV[pet.avatar & 3], 16, CX - 32, 74, 4, false);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 144);
+  gfx->print(T(S_AVATAR_HINT));
+
   for (int i = 0; i < TRAINER_GYMS; i++) {
-    int bx = 82 + i * 38, by = 104;
+    int bx = 82 + i * 38, by = 184;
     bool got = pet.hasBadge(i, false);
-    // There is no per-type palette, so take the colour from the leader's lead
-    // creature -- DexEntry.accent is already derived from its primary type,
-    // which for a gym is the gym's type.
+    // no per-type palette exists, so take the colour from the leader's lead
+    // creature -- DexEntry.accent is already derived from its type
     if (got) gfx->fillCircle(bx, by, 15, DEX_TBL[TRAINERS[i].team[0].dex].accent);
     gfx->drawCircle(bx, by, 15, UI_INK);
     gfx->setTextColor(got ? UI_BG_DAY : UI_TRACK);
@@ -2332,29 +2354,68 @@ void renderPlayer() {
   snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCount(false));
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - (int)strlen(l) * 6, 140);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 216);
   gfx->print(l);
 
   snprintf(l, sizeof(l), T(S_STREAK_FMT), pet.streak, pet.bestStreak);
-  gfx->setTextSize(2);
-  gfx->setCursor(CX - (int)strlen(l) * 6, 186);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 252);
   gfx->print(l);
-
   snprintf(l, sizeof(l), T(S_POKEDEX_FMT), pet.registeredCount());
-  gfx->setCursor(CX - (int)strlen(l) * 6, 220);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 284);
   gfx->print(l);
-
   snprintf(l, sizeof(l), T(S_PARTY_FMT), party.count());
-  gfx->setCursor(CX - (int)strlen(l) * 6, 254);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 316);
   gfx->print(l);
+}
 
-  snprintf(l, sizeof(l), T(S_MEDALS_FMT), pet.totalMedals, MED_COUNT);
-  gfx->setCursor(CX - (int)strlen(l) * 6, 288);
-  gfx->print(l);
+// Page 2: the medals. They used to sit on the creature's card; they belong with
+// the player, since totalMedals accumulates across every pet you raise.
+static void renderPlayerMedals() {
+  int got = 0;
+  for (int i = 0; i < MED_COUNT; i++)
+    if (pet.hasMedal(1 << i)) got++;
+  char head[24];
+  snprintf(head, sizeof(head), T(S_MEDALS_FMT), got, MED_COUNT);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - strlen(head) * 9, 44);
+  gfx->print(head);
 
+  for (int i = 0; i < MED_COUNT; i++) {
+    int x = 46 + (i % 2) * 190, y = 96 + (i / 2) * 58;
+    bool g = pet.hasMedal(1 << i);
+    gfx->fillRoundRect(x, y, 180, 48, 10, g ? UI_BAR_OK : UI_TRACK);
+    gfx->drawRoundRect(x, y, 180, 48, 10, UI_INK);
+    gfx->setTextColor(g ? UI_BG_DAY : UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(x + (180 - (int)strlen(medalLabel(i)) * 12) / 2, y + 6);
+    gfx->print(medalLabel(i));
+    gfx->setTextSize(1);
+    gfx->setCursor(x + (180 - (int)strlen(medalDesc(i)) * 6) / 2, y + 30);
+    gfx->print(medalDesc(i));
+  }
+  char tot[28];
+  snprintf(tot, sizeof(tot), T(S_MEDALS_TOTAL_FMT), pet.totalMedals);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(tot) * 3, 344);
+  gfx->print(tot);
+}
+
+void renderPlayer() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  if (playerPage == 0) renderPlayerBadges();
+  else renderPlayerMedals();
+
+  for (uint8_t i = 0; i < PLAYER_PAGES; i++) {
+    int dx = CX - (PLAYER_PAGES - 1) * 13 + i * 26;
+    if (i == playerPage) gfx->fillCircle(dx, 366, 5, UI_INK);
+    else gfx->drawCircle(dx, 366, 4, UI_INK);
+  }
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 356);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
   gfx->print(T(S_BACK));
   gfx->flush();
 }

@@ -166,10 +166,9 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 3. **Battle animations.** The battle screen is static. `PmdMon` already streams
    multi-action sprites and TPK2 carries `PMD_ATTACK`/`PMD_HURT`, so the art is
    on the SD already -- this is wiring, not new assets.
-4. **Player card paging.** Badges on page 1, medals on page 2. Medals currently
-   have NO home: the creature card's medals page was removed and the player card
-   is still single-page. Also needs the avatar picker -- four hand-drawn sprites
-   exist (`SPR_PLAYER_A..D`) and `Pet::avatar` persists, but nothing selects them.
+4. ~~Player card paging~~ **done** -- badges + avatar on page 1, medals on
+   page 2, swipe between them, tap the avatar to cycle the four hand-drawn
+   sprites.
 5. **Box 6 -> 18** (3 pages of 6). `S_PARTY_FMT` hardcodes "%u/6" in all six
    languages, the party screen needs paging, and **`Party::begin()` must be
    re-keyed off `sizeof(PartyMon)` first** -- it infers the old record size as

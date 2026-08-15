@@ -49,9 +49,12 @@ for src in "$HERE"/*_test.cpp; do
     echo "=== $name: DID NOT COMPILE"; tail -5 "$OUT/$name.log"; fail=$((fail+1)); continue
   fi
   echo "=== $name"
-  if (cd "$OUT" && "./$name" 2>&1 | grep -vE '^(TamaPoke fw|emu:|RTC )'); then
+  # pipefail matters: piping the test through grep would otherwise report
+  # grep's exit status and every failure would be counted as a pass
+  if (cd "$OUT" && set -o pipefail && "./$name" 2>&1 | grep -vE '^(TamaPoke fw|emu:|RTC )'); then
     pass=$((pass+1))
   else
+    echo "    ^ $name FAILED"
     fail=$((fail+1))
   fi
 done
