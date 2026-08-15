@@ -200,6 +200,17 @@ Team select, so which creature you bring is a real decision now that hard mode
 caps the size. Player card paging (badges + avatar, then medals). The reaction
 test for SPEED, splitting stat training out of the joy game.
 
+### Player-wide vs per-creature state
+
+Badges (easy and hard), the avatar, the daily streak, the Pokedex bitmaps and
+`totalMedals` belong to the PLAYER and outlive every pet. `newEgg()` must never
+clear them -- `persist_test` proves they survive all three endings plus a
+reload, so adding a reset there will now fail the suite rather than quietly
+erase a run.
+
+The one thing that does take them is `WIPE` (`factoryReset()` -> `prefs.clear()`),
+which is a factory reset and is meant to.
+
 ### Tests
 
 ```bash
