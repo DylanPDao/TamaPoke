@@ -181,13 +181,26 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 7. **Peer-to-peer** (see below) -- the biggest, and the only one needing a
    hardware subsystem that has never been brought up.
 
-### Tests live in the scratchpad, not the repo
+### Tests
 
-`touch_test` (20 tap assertions through the real handlers), `flush_test`,
-`i18n_test`, `battle_test`, `moves_test`, `gym_test`, `evo_test`. They compile
-the real sources against `tools/emu` stubs. **They are not committed** -- worth
-folding into `tools/emu/` so they survive, since several caught real bugs that
-screenshots and the compiler both missed.
+```bash
+bash tools/emu/tests/run.sh          # all 10 suites
+bash tools/emu/tests/run.sh battle   # just matching ones
+```
+
+They compile the REAL sources against the emulator stubs, so they assert against
+`Pet`/`Party`/`Combatant` themselves rather than restating their rules. Two exist
+because nothing else can catch what they catch:
+
+- `flush_test` -- a screen with no `gfx->flush()` leaves the panel frozen, and
+  screenshots are structurally blind to it: `--shot` reads `gfx->buffer()`
+  directly and never consults `frameReady`. The training submenu shipped frozen
+  exactly this way.
+- `i18n_test` -- `STRINGS` is positional, so a short language row is zero-padded
+  by the compiler with no diagnostic, shifting every later string in that
+  language only.
+
+Run them after touching `pet.cpp`, `battle.cpp`, `i18n.cpp` or any render path.
 
 ### Battle system — decided, not started
 
