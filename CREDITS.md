@@ -49,3 +49,19 @@ packed into `backs.h` by `tools/gen_backs.py`.
 sourced by it. Before this repo goes public, confirm where they came from and
 under what licence, the same way the PMD sprites are accounted for above — and
 replace them if that cannot be answered.
+
+## Gym badge artwork (not yet integrated)
+
+**https://github.com/SteGriff/pokemon-badges** — SVG recreations of the first 40
+league badges, Kanto through Unova, traced from Bulbapedia. Stephen Griffiths,
+2011, **CC BY 3.0** (attribution required, commercial use permitted).
+
+`svg/Kanto.svg` holds the eight Kanto badges this project needs. Not integrated
+yet: the file is a single 147 KB Inkscape drawing containing all eight, so each
+has to be isolated and rasterised to roughly 32x32, and no SVG rasteriser is
+installed here (`rsvg-convert`, `inkscape`, ImageMagick and `cairosvg` are all
+absent). Until then the player card draws each badge as a coloured disc tinted
+from that leader's lead creature.
+
+If they are integrated, this attribution must ship with the firmware or its
+documentation, as CC BY requires.

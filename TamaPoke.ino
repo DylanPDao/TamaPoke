@@ -2495,39 +2495,38 @@ static void renderPlayerBadges() {
   gfx->print(T(S_TRAINER));
 
   static const char *const *AV[4] = { SPR_PLAYER_A, SPR_PLAYER_B, SPR_PLAYER_C, SPR_PLAYER_D };
-  drawMap(AV[pet.avatar & 3], 16, CX - 32, 74, 4, false);
+  drawMap(AV[pet.avatar & 3], 16, CX - 32, 72, 4, false);
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(1);
-  gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 144);
+  gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 142);
   gfx->print(T(S_AVATAR_HINT));
 
+  // 2x4 rather than a row of eight: bigger discs read better on the round
+  // panel, and no count is printed -- eight badges you can see are their own
+  // tally.
   for (int i = 0; i < TRAINER_GYMS; i++) {
-    int bx = 82 + i * 38, by = 184;
+    int bx = 140 + (i % 4) * 62, by = 188 + (i / 4) * 62;
     bool got = pet.hasBadge(i, false);
     // no per-type palette exists, so take the colour from the leader's lead
     // creature -- DexEntry.accent is already derived from its type
-    if (got) gfx->fillCircle(bx, by, 15, DEX_TBL[TRAINERS[i].team[0].dex].accent);
-    gfx->drawCircle(bx, by, 15, UI_INK);
+    if (got) gfx->fillCircle(bx, by, 24, DEX_TBL[TRAINERS[i].team[0].dex].accent);
+    gfx->drawCircle(bx, by, 24, got ? UI_INK : UI_TRACK);
     gfx->setTextColor(got ? UI_BG_DAY : UI_TRACK);
-    gfx->setTextSize(1);
-    gfx->setCursor(bx - 3, by - 3);
+    gfx->setTextSize(2);
+    gfx->setCursor(bx - 6, by - 7);
     gfx->printf("%d", i + 1);
   }
   char l[32];
-  snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCount(false));
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - (int)strlen(l) * 6, 216);
-  gfx->print(l);
-
   snprintf(l, sizeof(l), T(S_STREAK_FMT), pet.streak, pet.bestStreak);
-  gfx->setCursor(CX - (int)strlen(l) * 6, 252);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 286);
   gfx->print(l);
   snprintf(l, sizeof(l), T(S_POKEDEX_FMT), pet.registeredCount());
-  gfx->setCursor(CX - (int)strlen(l) * 6, 284);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 312);
   gfx->print(l);
   snprintf(l, sizeof(l), T(S_PARTY_FMT), party.count());
-  gfx->setCursor(CX - (int)strlen(l) * 6, 316);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 338);
   gfx->print(l);
 }
 

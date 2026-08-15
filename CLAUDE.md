@@ -157,6 +157,15 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
+0. **Fight UI polish** toward the mainline look: HP plates with an `HP` label,
+   numeric HP on your own side, and a platform ellipse under each creature.
+   Reference supplied by the user; the current layout already matches the
+   mainline arrangement (foe top-left info / top-right sprite, you bottom-right
+   / bottom-left).
+0b. **Kanto badge art** from `SteGriff/pokemon-badges` (CC BY 3.0, see
+   CREDITS.md). Needs an SVG rasteriser -- none is installed -- and each badge
+   isolating from the single combined drawing.
+
 1. **Battle animations -- first pass done, PMD actions still open.** Lunge on
    attack, jitter + silhouette strobe on being hit, and HP bars that drain
    instead of snapping. Built on the thumbnails the screen already draws, NOT on
