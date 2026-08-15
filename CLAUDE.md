@@ -227,6 +227,62 @@ A banked team is the answer, which makes farewells matter.
 Team-select is NOT built: the squad is the live pet plus the first five banked
 members in order. It only bites when you hold 7 candidates.
 
+### Hard mode (designed, not built)
+
+Not "the AI cheats". Hard mode **removes overlevelling as a strategy** so the
+fight is about type matchups, movesets and decisions:
+
+- **Team size is capped to the opponent's.** Brock brings 2, so you bring 2.
+- **Levels are capped to the opponent's highest.** A level 100 creature fights
+  Brock at 14.
+- Opponents roll `HARD_IV` (31) instead of `EASY_IV` (16), already in trainers.h.
+- The AI actually chooses (see phase 8) instead of `random()`.
+
+Both caps are applied when building the squad, not to the stored creature --
+nothing is written back, exactly like ailments. `badgesHard` already exists on
+Pet and is tracked separately from `badges`.
+
+### Peer-to-peer battles (designed, not built)
+
+The S3 has WiFi and BLE; neither is currently brought up anywhere in the
+firmware. **ESP-NOW** is the fit: peer-to-peer, no router, ~250-byte payloads,
+and a `Combatant` is only ~40 bytes.
+
+**One device is authoritative.** The host owns the whole battle state and runs
+`battleAct()`; the guest only sends a move index and renders what it is told.
+This is not a preference -- `battle.cpp` makes **11 `random()` calls per turn**
+(crit, damage spread, accuracy, ailment procs, multi-hit count, confusion,
+thaw, wake, speed ties). Two devices resolving independently desync inside a
+single turn, and a shared seed only papers over it until the builds differ by
+one `random()` call. Sending resolved outcomes cannot drift.
+
+Wire format, roughly:
+
+1. `HELLO` -- firmware version + protocol version. Refuse a mismatch loudly;
+   a silent desync is far worse than a refusal.
+2. `SQUAD` -- each side sends its team as `Combatant`s (dex, level, the five
+   stats, 4 moves, name). ~40 bytes each, up to 6.
+3. Per turn: guest sends `MOVE <slot>`; host resolves and replies with the
+   `TurnLog`s plus both HP/ailment states. `TurnLog` already carries everything
+   needed to narrate, which is why the guest needs no game logic at all.
+4. `END` -- winner.
+
+Costs to weigh before starting: the WiFi stack is ~40-50 KB RAM (there is
+headroom -- currently 10% used), meaningful current draw on a battery device,
+and pairing UX on a touch-only screen.
+
+### Box size (if the party grows past 6)
+
+`sizeof(PartyMon)` is 30 bytes and the NVS partition is 20 KB (`0x5000`). A box
+of 100 is 3000 bytes and still fits one NVS blob; 151 (4530) exceeds the ~4000
+byte single-blob limit and would need splitting across two keys. RAM is a
+non-issue.
+
+**Fix the migration first.** `Party::begin()` infers the old record size as
+`stored / PARTY_SLOTS`, which is right when the stride grows but wrong when the
+slot count does: 180 stored bytes over 30 slots would infer a 6-byte record and
+destroy the party. Key it off `sizeof(PartyMon)` before changing PARTY_SLOTS.
+
 Note on (6): the battle screen is a 2x2 move grid, not four stacked rows --
 the round panel has to fit both creatures, both HP bars and the menu. The only
 way into a battle right now is the serial command `BATTLE <dex> [level]`; it
