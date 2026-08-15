@@ -200,6 +200,33 @@ Team select, so which creature you bring is a real decision now that hard mode
 caps the size. Player card paging (badges + avatar, then medals). The reaction
 test for SPEED, splitting stat training out of the joy game.
 
+### Expanding past Kanto (TABLED -- analysis kept so it need not be redone)
+
+Feasible, and cheaper than it looks. **SpriteCollab already covers Gen 2 and 3**
+under the same CC BY-NC licence already in use -- dex 152, 252 and 384 all
+return HTTP 200 from the existing `pack_pmd.py` URL. There is no need for
+ripped assets from elsewhere; `ZeChrales/PogoAssets` is Niantic art with no
+clear licence and would undo the care in CREDITS.md.
+
+What changes for 386 species:
+
+- `dex.h`, `moves.h` and the learnsets **regenerate** -- `gen_dex.py` already
+  loops `range(1, DEX_COUNT + 1)` and `fetch_pokeapi.py` fetches by number.
+- `dexReg[19]`/`dexShinyReg[19]` -> `[49]`. This migrates safely on its own: a
+  shorter stored blob reads into the front of the bigger array, so bits 1-151
+  keep their meaning.
+- **Eight places use the literal `151` instead of `DEX_COUNT`** -- `pet.cpp`
+  lines ~243, 256, 283, 295, 572, 592 and `pet.h` `isRegistered`/
+  `isShinyRegistered`. These are the ones that will bite.
+- `"POKEDEX %u/151"` is hardcoded in all six languages.
+- Sprites on the SD go 40 MB -> ~100 MB. Fine on a card.
+- **The blocker is the web installer**: `sprites.pak` goes 58 MB -> ~150 MB,
+  which is not practical to flash through a browser. Split it by region or make
+  the sprite load optional before attempting this.
+- `dex_moves.py` is 77 moves hand-picked so every *Kanto* typing has a STAB
+  option; Hoenn adds species that would need coverage added.
+- Johto/Hoenn gyms are pure data, in the shape `trainers.h` already uses.
+
 ### Player-wide vs per-creature state
 
 Badges (easy and hard), the avatar, the daily streak, the Pokedex bitmaps and
