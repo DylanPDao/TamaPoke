@@ -141,6 +141,12 @@ Working state, so it survives a closed session. Tick items off as they land.
 
 ### Fix list (reported, in progress)
 
+- [ ] **Battle animations.** The battle screen is static: sprites do not move on
+      a hit, there is no damage flash, no HP-bar tween, no faint. `PmdMon` already
+      streams multi-action sprites (`PMD_ATTACK`, `PMD_HURT` exist in the TPK2
+      format, see `pack_pmd.py`), so the art is already on the SD -- this is
+      wiring, not new assets.
+
 - [x] **The training submenu froze the screen.** `renderTrain()` was the one
       render path with no `gfx->flush()`, and the panel only updates on flush --
       so the display stayed on the previous frame while taps still registered.

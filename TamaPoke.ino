@@ -30,7 +30,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.0"
+#define FW_VERSION "2.1"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1376,12 +1376,17 @@ void respawnBall() {
 
 void gameTap(int16_t x, int16_t y) {
   if (gameOverUntil) return;
-  if (y < 72) {  // tocar la cabecera = abandonar sin premio
+  // The ball is checked BEFORE the quit strip. The ball bounces inside a circle
+  // of radius 205 about the centre, so it reaches y=28 -- well inside the y<72
+  // header. Reaching up to hit a high ball used to abandon the game instead,
+  // silently forfeiting the score, the speed training and the record.
+  float dx = ballX - x, dy = ballY - y;
+  bool onBall = (dx * dx + dy * dy < 74 * 74);
+  if (!onBall && y < 72) {  // tocar la cabecera = abandonar sin premio
     gameOpen = false;
     return;
   }
-  float dx = ballX - x, dy = ballY - y;
-  if (dx * dx + dy * dy < 74 * 74) {  // toque a la bola!
+  if (onBall) {  // toque a la bola!
     gameScore++;
     sfxPlay(SFX_PLAY);
     // golpe mas suave: impulso moderado que crece poco a poco con la puntuacion

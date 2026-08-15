@@ -728,7 +728,15 @@ void Pet::feedCandy() {
 
 void Pet::playResult(uint8_t score) {
   if (ceremony != CER_NONE || isEgg()) return;
-  uint8_t v = trSpe + score / 5;  // jugar entrena la velocidad
+  // Speed trains at score/2, capped per session exactly like the bag's +18.
+  // It used to be score/5, which is integer division: any game ending under 5
+  // points trained nothing at all, and since the game ends on the third miss
+  // that was most early sessions -- the bar simply never moved. The bag gave
+  // up to +18 for ten seconds of tapping while a longer, harder ball game gave
+  // +3, so the two are now worth comparable effort.
+  uint8_t gain = score / 2;
+  if (gain > 18) gain = 18;
+  uint8_t v = trSpe + gain;
   trSpe = v > trMaxSpe() ? trMaxSpe() : v;  // el IV pone el techo
   joy = clamp100(joy + 5 + (score > 15 ? 30 : score * 2));
   energy = dropTo(energy, 10 + score / 2, 5);

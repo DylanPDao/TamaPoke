@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.0-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.1-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -341,9 +341,9 @@ Typing is shown on the Battle page of the stat card. *(Battles: on the roadmap.)
 
 Each creature has ATK/DEF/SPD/VIT = **base stat** + level + **IV** (0–31, rolled
 at hatch, `IV × level/100` exactly as in the real games) + **training**:
-- SPEED ← the minigame
+- SPEED ← the minigame (**score/2**, cap +18 per game, same as the bag)
 - DEFENSE ← accumulated wellbeing (1 h resting or well-cared = +1)
-- STRENGTH ← the training bag (whacking)
+- STRENGTH ← the training bag (~4 hits = 1 pt, cap +18 per session)
 - VIT (vitality, from the base HP stat) — not trainable
 
 ### Moves
