@@ -42,6 +42,10 @@ void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
 extern uint8_t btlFoeAt, btlSquadN;
 extern bool btlHard;
+extern bool pickOpen, pickHard; extern uint8_t pickTrainer; extern uint16_t squadMask;
+uint8_t squadCap(uint8_t idx, bool hard);
+#define PICK_X(i) (78 + ((i) % 2) * 160)
+#define PICK_Y(i) (86 + ((i) / 2) * 80)
 #define BTL_CELL_X(i) (69 + ((i) % 2) * 168)
 #define BTL_CELL_Y(i) (286 + ((i) / 2) * 52)
 uint8_t learnableList(uint8_t *out, uint8_t max);
@@ -302,6 +306,29 @@ int main(int argc, char **argv) {
   if (pet.level() != 100) { printf("FAIL: the stored pet was modified\n"); return 1; }
   printf("PASS: the stored creature is untouched (still L%u)\n", pet.level());
   battleOpen = false;
+
+  // ---- team select: cap enforcement and toggling
+  battleOpen = false;
+  for (int i = 0; i < 5; i++) { PartyMon m; m.dex = 9 + i; m.level = 40;
+    m.ivAtk = m.ivDef = m.ivSpe = m.ivHp = 25; party.replaceAt(i, m); }
+  squadMask = 0xFFFF;
+  pickTrainer = 0; pickHard = true; pickOpen = true;   // BROCK: cap of 2
+  uint8_t cap = squadCap(0, true);
+  click(233, 370);                                     // FIGHT with 6 chosen
+  if (battleOpen || !pickOpen) { printf("FAIL: FIGHT fired while over the cap\n"); return 1; }
+  printf("PASS: FIGHT is inert while over the cap (%u chosen, cap %u)\n", 6, cap);
+
+  // deselect down to the cap, then it should start
+  for (int slot = 5; slot >= (int)cap; slot--)
+    click(PICK_X(slot) + 40, PICK_Y(slot) + 30);
+  click(233, 370);
+  if (!battleOpen) { printf("FAIL: FIGHT did not start at the cap\n"); return 1; }
+  printf("PASS: trimming to the cap lets the fight start (squad %u)\n", btlSquadN);
+  if (btlSquadN > cap) { printf("FAIL: squad exceeded the cap\n"); return 1; }
+  printf("PASS: the squad respects the chosen team\n");
+  battleOpen = false;
+  squadMask = 0xFFFF;
+  for (int i = 0; i < 5; i++) party.releaseAt(i);
 
   // easy caps the level too -- it just does not cap the team size
   startTrainerBattle(0, false);

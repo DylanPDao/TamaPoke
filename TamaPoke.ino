@@ -173,6 +173,18 @@ bool spdNewHi = false;
 
 bool gymOpen = false;
 bool gymHard = false;   // which ladder the list is showing
+
+// Team select. Candidate 0 is the live pet, 1..PARTY_SLOTS are the banked
+// members, so one bitmask covers the whole pool.
+bool pickOpen = false;
+uint8_t pickTrainer = 0;
+bool pickHard = false;
+uint16_t squadMask = 0xFFFF;   // everything, until the player says otherwise
+#define PICK_CELL_W 150
+#define PICK_CELL_H 74
+#define PICK_X(i) (78 + ((i) % 2) * (PICK_CELL_W + 10))
+#define PICK_Y(i) (86 + ((i) / 2) * (PICK_CELL_H + 6))
+#define PICK_GO_Y 350
 bool playerOpen = false;
 uint8_t playerPage = 0;   // 0 badges, 1 medals
 #define PLAYER_PAGES 2
@@ -702,13 +714,9 @@ void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
+  if (pickOpen) { pickOpen = false; return; }
   if (gymOpen) { gymOpen = false; return; }
-  if (playerOpen) {
-    int p = (int)playerPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= PLAYER_PAGES) playerOpen = false;
-    else playerPage = (uint8_t)p;
-    return;
-  }
+  if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -773,10 +781,24 @@ void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
+  if (pickOpen) { pickOpen = false; return; }
   if (gymOpen) { gymOpen = false; return; }
-  if (playerOpen) { playerOpen = false; return; }
+  if (playerOpen) {   // horizontal pages it, like the card and the gallery
+    int p = (int)playerPage + (dir > 0 ? -1 : 1);
+    if (p < 0 || p >= PLAYER_PAGES) playerOpen = false;
+    else playerPage = (uint8_t)p;
+    return;
+  }
   if (trainOpen) { trainOpen = false; return; }
-  if (movePickOpen) { movePickOpen = false; return; }
+  if (movePickOpen) {   // the picker is paged; without this its later pages
+    uint8_t all[64];    // were simply unreachable
+    uint8_t n = learnableList(all, sizeof(all));
+    uint8_t pages = n ? (n + MOVE_PICK_PER_PAGE - 1) / MOVE_PICK_PER_PAGE : 1;
+    int p = (int)movePickPage + (dir > 0 ? -1 : 1);
+    if (p < 0 || p >= pages) movePickOpen = false;
+    else movePickPage = (uint8_t)p;
+    return;
+  }
   if (partyOpen) {
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
@@ -847,6 +869,10 @@ void onTap(int16_t x, int16_t y) {
     playerOpen = false;
     return;
   }
+  if (pickOpen) {
+    pickTap(x, y);
+    return;
+  }
   if (gymOpen) {
     if (y >= 76 && y <= 100) {          // the difficulty pill
       gymHard = !gymHard;
@@ -860,7 +886,9 @@ void onTap(int16_t x, int16_t y) {
       if (x < 70 || x > 396 || y < ry || y > ry + 44) continue;
       sfxPlay(SFX_TAP);
       gymOpen = false;
-      startTrainerBattle(idx, gymHard);
+      pickTrainer = idx;
+      pickHard = gymHard;
+      pickOpen = true;
       return;
     }
     gymOpen = false;
@@ -1249,6 +1277,10 @@ void render() {
   }
   if (battleOpen) {
     renderBattle();
+    return;
+  }
+  if (pickOpen) {
+    renderPick();
     return;
   }
   if (gymOpen) {
@@ -2148,23 +2180,29 @@ static void foeFromSpecies(Combatant &c, int16_t dex, uint8_t lvl, uint8_t iv) {
 // leader's, so Brock is two-on-two. The caps are applied while BUILDING the
 // combatants, so nothing is ever written back to the stored creature, exactly
 // like ailments.
-static void buildSquad(uint8_t maxLvl, uint8_t maxCount) {
+static void buildSquad(uint8_t maxLvl, uint8_t maxCount, uint16_t mask) {
   btlSquadN = 0;
   btlSquadAt = 0;
   if (maxCount > TRAINER_TEAM_MAX) maxCount = TRAINER_TEAM_MAX;
-  if (!pet.isEgg() && btlSquadN < maxCount) {
+  if (!pet.isEgg() && btlSquadN < maxCount && (mask & 1)) {
     Pet tmp = pet;                       // a copy: the real pet is untouched
     if (maxLvl && tmp.level() > maxLvl)
       tmp.ageMinutes = (uint32_t)(maxLvl - 1) * MINUTES_PER_LEVEL;
     combatantFromPet(btlSquad[btlSquadN++], tmp);
   }
   for (int i = 0; i < PARTY_SLOTS && btlSquadN < maxCount; i++) {
-    if (party.slots[i].empty()) continue;
+    if (party.slots[i].empty() || !(mask & (1 << (i + 1)))) continue;
     PartyMon m = party.slots[i];
     if (maxLvl && m.level > maxLvl) m.level = maxLvl;
     combatantFromParty(btlSquad[btlSquadN++], m);
   }
   if (btlSquadN) btlYou = btlSquad[0];
+}
+
+// How many you may bring: the leader's own count in hard mode, six otherwise.
+uint8_t squadCap(uint8_t idx, bool hard) {
+  if (idx >= TRAINER_COUNT) return TRAINER_TEAM_MAX;
+  return hard ? TRAINERS[idx].count : TRAINER_TEAM_MAX;
 }
 
 void startTrainerBattle(uint8_t idx, bool hard) {
@@ -2176,7 +2214,7 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   // BOTH ladders cap your level to the leader's best. Without it a L73 team
   // walks every trainer at 100% and the type chart never matters. Hard adds the
   // size cap on top, plus a smarter AI and better opposing IVs.
-  buildSquad(top, hard ? tr.count : TRAINER_TEAM_MAX);
+  buildSquad(top, hard ? tr.count : TRAINER_TEAM_MAX, squadMask);
   if (!btlSquadN) return;
   btlTrainer = (int8_t)idx;
   btlHard = hard;
@@ -2192,7 +2230,7 @@ void startTrainerBattle(uint8_t idx, bool hard) {
 void startBattle(int16_t dex, uint8_t lvl) {
   if (pet.isEgg() || pet.ceremony != CER_NONE) return;
   if (dex < 1 || dex > DEX_COUNT) return;
-  buildSquad(0, TRAINER_TEAM_MAX);
+  buildSquad(0, TRAINER_TEAM_MAX, 0xFFFF);
   if (!btlSquadN) return;
   // The opponent is built through Pet so it gets the same stat formula and the
   // same learnset-driven moveset the player's creature does -- no special-cased
@@ -2570,6 +2608,125 @@ void renderSpeed() {
   gfx->setCursor(CX - strlen(b) * 6, 76);
   gfx->print(b);
   gfx->flush();
+}
+
+// ---------- team select ----------
+// Which creatures come to this fight. It exists because hard mode caps your
+// team to the leader's size, so the difference between a sweep and a wipe is
+// bringing the right type -- and the squad used to be simply whoever sat first
+// in the party.
+
+// candidate n: 0 = the live pet, 1..PARTY_SLOTS = banked members
+static bool pickExists(uint8_t n) {
+  if (n == 0) return !pet.isEgg();
+  return n <= PARTY_SLOTS && !party.slots[n - 1].empty();
+}
+static uint8_t pickChosen() {
+  uint8_t c = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS; n++)
+    if (pickExists(n) && (squadMask & (1 << n))) c++;
+  return c;
+}
+
+static void drawPickCell(uint8_t n, int x, int y, uint8_t capLvl) {
+  bool on = (squadMask & (1 << n)) != 0;
+  int16_t dex; uint16_t lvl; const char *nm; bool shiny;
+  if (n == 0) {
+    dex = pet.speciesId; lvl = pet.level(); shiny = pet.shiny;
+    nm = pet.nick[0] ? pet.nick : DEX_TBL[dex].name;
+  } else {
+    const PartyMon &m = party.slots[n - 1];
+    dex = m.dex; lvl = m.level; shiny = m.shiny;
+    nm = m.nick[0] ? m.nick : DEX_TBL[dex].name;
+  }
+  if (capLvl && lvl > capLvl) lvl = capLvl;   // show the level it will FIGHT at
+  gfx->fillRoundRect(x, y, PICK_CELL_W, PICK_CELL_H, 10, on ? UI_BG_DAY : UI_TRACK);
+  gfx->drawRoundRect(x, y, PICK_CELL_W, PICK_CELL_H, 10, on ? UI_INK : 0x8410);
+  const uint8_t *th = thumbs.get(dex);
+  if (th) drawThumb(th, x - 12, y - 6, 2, !on);
+  gfx->setTextColor(on ? UI_INK : 0x8410);
+  gfx->setTextSize(1);
+  gfx->setCursor(x + 54, y + 14);
+  gfx->print(nm);
+  char l[16];
+  snprintf(l, sizeof(l), "Lv.%u%s", (unsigned)lvl, shiny ? " *" : "");
+  gfx->setCursor(x + 54, y + 30);
+  gfx->print(l);
+  // its typing is the whole reason you are on this screen
+  const DexEntry &d = DEX_TBL[dex];
+  gfx->setTextColor(on ? d.accent : 0x8410);
+  gfx->setCursor(x + 54, y + 48);
+  gfx->print(typeName(d.type1));
+  if (d.type2 != T_NONE) {
+    gfx->setCursor(x + 54, y + 60);
+    gfx->print(typeName(d.type2));
+  }
+  if (on) {
+    gfx->fillCircle(x + PICK_CELL_W - 16, y + 16, 9, UI_BAR_OK);
+    gfx->setTextColor(UI_BG_DAY);
+    gfx->setCursor(x + PICK_CELL_W - 19, y + 13);
+    gfx->print("*");
+  }
+}
+
+void renderPick() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  const Trainer &t = TRAINERS[pickTrainer];
+  uint8_t cap = squadCap(pickTrainer, pickHard);
+  uint8_t top = 0;
+  for (int k = 0; k < t.count; k++)
+    if (t.team[k].level > top) top = t.team[k].level;
+
+  char head[40];
+  snprintf(head, sizeof(head), "%s  Lv.%u x%u", t.name, top, t.count);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(head) * 6, 44);
+  gfx->print(head);
+  char sub[28];
+  snprintf(sub, sizeof(sub), T(S_PICK_FMT), pickChosen(), cap);
+  gfx->setTextSize(1);
+  gfx->setTextColor(pickChosen() > cap ? UI_BAR_BAD : UI_TRACK);
+  gfx->setCursor(CX - (int)strlen(sub) * 3, 68);
+  gfx->print(sub);
+
+  uint8_t slot = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS && slot < 6; n++) {
+    if (!pickExists(n)) continue;
+    drawPickCell(n, PICK_X(slot), PICK_Y(slot), top);
+    slot++;
+  }
+
+  bool ok = pickChosen() > 0 && pickChosen() <= cap;
+  gfx->fillRoundRect(140, PICK_GO_Y, 186, 40, 12, ok ? UI_BAR_OK : UI_TRACK);
+  gfx->drawRoundRect(140, PICK_GO_Y, 186, 40, 12, UI_INK);
+  gfx->setTextColor(ok ? UI_BG_DAY : 0x8410);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_FIGHT)) * 6, PICK_GO_Y + 12);
+  gfx->print(T(S_FIGHT));
+  gfx->flush();
+}
+
+void pickTap(int16_t x, int16_t y) {
+  if (y >= PICK_GO_Y && y <= PICK_GO_Y + 40 && x >= 140 && x <= 326) {
+    uint8_t cap = squadCap(pickTrainer, pickHard);
+    if (pickChosen() == 0 || pickChosen() > cap) return;   // GO stays inert
+    sfxPlay(SFX_TAP);
+    pickOpen = false;
+    startTrainerBattle(pickTrainer, pickHard);
+    return;
+  }
+  uint8_t slot = 0;
+  for (uint8_t n = 0; n <= PARTY_SLOTS && slot < 6; n++) {
+    if (!pickExists(n)) continue;
+    int cx0 = PICK_X(slot), cy0 = PICK_Y(slot);
+    slot++;
+    if (x < cx0 || x > cx0 + PICK_CELL_W || y < cy0 || y > cy0 + PICK_CELL_H) continue;
+    squadMask ^= (1 << n);
+    sfxPlay(SFX_TAP);
+    return;
+  }
 }
 
 // ---------- gym list ----------

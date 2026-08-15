@@ -184,8 +184,10 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
    `stored / PARTY_SLOTS`, which is right when the stride grows and wrong when
    the slot count does, so 180 bytes over 18 slots would infer a 10-byte record
    and shred the party.
-6. **Team-select screen.** The squad is the live pet plus the first five banked
-   members in order; it only bites once you hold 7 candidates.
+6. ~~Team-select screen~~ **done** -- tap to pick who comes, levels shown as
+   they will actually be FOUGHT at (capped), typings on every cell since that is
+   the whole reason for the screen. FIGHT stays inert until the selection is
+   within the cap.
 7. **Peer-to-peer** (see below) -- the biggest, and the only one needing a
    hardware subsystem that has never been brought up.
 

@@ -97,6 +97,8 @@ enum StrId : uint8_t {
   S_AVATAR_HINT,    // "tap: change avatar"
   S_MEDALS_TOTAL_FMT,  // "%u earned in all"
   S_EASY, S_HARD,   // gym ladder difficulty toggle
+  S_PICK_FMT,       // "CHOSEN %u/%u"
+  S_FIGHT,          // start the battle
   STR_COUNT
 };
 
