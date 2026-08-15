@@ -157,12 +157,21 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
-1. **Hard mode.** Caps your team size and levels to the opponent's (Brock brings
-   2 at L14, so you bring 2 at L14) rather than making the AI cheat. Applied when
-   building the squad, never written back. `badgesHard`/`HARD_IV` already exist.
-2. **Battle AI (phase 8).** The foe picks `random()` today, so hard mode is thin
-   without it. Wants type effectiveness (`typeEffPct` exists), STAB, stat stages
-   and available KOs.
+1. ~~Hard mode~~ and ~~battle AI~~ -- **done**. BOTH ladders cap your level to
+   the leader's best (without it a raised team walks everything at 100% and the
+   type chart never matters); hard also caps your team SIZE to the leader's, uses
+   `HARD_IV` 31 and switches the AI on. Caps are applied while building the
+   combatants, so the stored creature is never touched. `aiChooseMove` weighs
+   expected damage, accuracy, whether a move kills this turn, ailment value and
+   whether a stat boost is worth its turn -- it beats the random chooser **74%**
+   of mirror matches, which `ai_test` measures rather than assumes.
+
+   Measured with a team of six IDENTICAL Charizards (team-select is not built),
+   so the hard numbers below are one species' matchups, not a balanced team's:
+   Brock 10%, Misty 0%, Lance 0% are Charizard being Fire/Flying, and would be
+   covered by bringing the right creature. Easy stays ~100% because you bring six
+   bodies against the leader's two-to-five -- that is the reward for having built
+   a team, and the challenge lives in hard.
 3. **Battle animations.** The battle screen is static. `PmdMon` already streams
    multi-action sprites and TPK2 carries `PMD_ATTACK`/`PMD_HURT`, so the art is
    on the SD already -- this is wiring, not new assets.

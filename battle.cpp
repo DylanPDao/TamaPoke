@@ -238,3 +238,56 @@ void battleEndTurn(Combatant &c, TurnLog &log) {
     log.targetFainted = c.fainted();
   }
 }
+
+// ---------- move choice ----------
+
+uint8_t aiChooseMove(const Combatant &self, const Combatant &foe, bool smart) {
+  uint8_t legal[MOVE_SLOTS], n = 0;
+  for (int i = 0; i < MOVE_SLOTS; i++)
+    if (self.moves[i] && self.moves[i] < MOVE_COUNT) legal[n++] = self.moves[i];
+  if (!n) return 0;
+  if (!smart) return legal[random(n)];
+
+  int16_t bestScore = -32768;
+  uint8_t best = legal[0];
+  for (uint8_t i = 0; i < n; i++) {
+    uint8_t mv = legal[i];
+    const MoveEntry &m = MOVE_TBL[mv];
+    int32_t sc;
+    if (m.cat == MC_STATUS) {
+      // A status move costs a whole turn, so it has to buy more than chip
+      // damage would. Healing is worth it only when actually hurt; a boost is
+      // worth it early and worthless once the stage is already stacked.
+      if (m.effect == EF_HEAL) {
+        int missing = (int)self.maxHp - self.hp;
+        sc = (missing * 100 / (self.maxHp ? self.maxHp : 1)) - 30;
+      } else if (m.effect == EF_STAGE) {
+        static const uint8_t BIT[SI_COUNT] = { ST_ATK, ST_DEF, ST_SPA, ST_SPD, ST_SPE };
+        int stacked = 0, hit = 0;
+        const Combatant &t = (m.target == TG_SELF) ? self : foe;
+        for (int k = 0; k < SI_COUNT; k++)
+          if (m.statMask & BIT[k]) { stacked += t.stage[k] * (m.stages > 0 ? 1 : -1); hit++; }
+        if (!hit) hit = 1;
+        // diminishing: +2 ATK is strong at stage 0, pointless at +6
+        sc = 26 - (stacked * 12 / hit);
+        // and never set up when one more hit would finish you
+        if (self.hp * 3 < self.maxHp) sc -= 40;
+      } else {
+        sc = 5;
+      }
+    } else {
+      uint16_t dmg = battleDamage(self, foe, mv, false, 236);  // average roll
+      sc = dmg;
+      if (dmg >= foe.hp) sc += 1000;              // a kill this turn beats all
+      uint8_t acc = m.acc ? m.acc : 100;
+      sc = sc * acc / 100;                        // discount what tends to miss
+      if (m.effect == EF_RECHARGE) sc -= dmg / 4; // a free turn for the foe
+      if (m.effect == EF_RECOIL) sc -= dmg / 6;
+      if (m.effect == EF_CHARGE) sc -= dmg / 3;   // a turn spent winding up
+      if (m.ailment != AIL_NONE && foe.ailment == AIL_NONE)
+        sc += m.ailChance / 4;
+    }
+    if (sc > bestScore) { bestScore = (int16_t)sc; best = mv; }
+  }
+  return best;
+}

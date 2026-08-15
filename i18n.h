@@ -96,6 +96,7 @@ enum StrId : uint8_t {
   S_SPD_GAIN_FMT,   // "SPEED +%u" after the reaction test
   S_AVATAR_HINT,    // "tap: change avatar"
   S_MEDALS_TOTAL_FMT,  // "%u earned in all"
+  S_EASY, S_HARD,   // gym ladder difficulty toggle
   STR_COUNT
 };
 

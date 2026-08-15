@@ -44,7 +44,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s ha fallado!", "Golpe critico!", "%s se debilita!", "Se ha herido!",
     "%s: %s", "PARALISIS", "QUEMADURA", "VENENO", "DORMIDO", "CONGELADO", "CONFUSION",
     "Has ganado!", "Has perdido...",
-    "%s saca a %s", "Adelante, %s!", "GIMNASIOS", "MEDALLAS %u/8", "ENTRENADOR", "VELOCIDAD +%u", "toca: cambiar avatar", "%u en total",
+    "%s saca a %s", "Adelante, %s!", "GIMNASIOS", "MEDALLAS %u/8", "ENTRENADOR", "VELOCIDAD +%u", "toca: cambiar avatar", "%u en total", "NORMAL", "DIFICIL",
   },
   // ---------------- EN ----------------
   {
@@ -84,7 +84,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s: %s", "PARALYSED", "BURNED", "POISONED", "ASLEEP", "FROZEN", "CONFUSED",
     "You win!", "You lost...",
     "%s sends out %s", "Go, %s!", "GYMS", "BADGES %u/8", "TRAINER",
- "SPEED +%u", "tap: change avatar", "%u earned in all",
+ "SPEED +%u", "tap: change avatar", "%u earned in all", "EASY", "HARD",
   },
   // ---------------- FR ----------------
   {
@@ -123,7 +123,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s a rate!", "Coup critique!", "%s est K.O.!", "Il se blesse!",
     "%s: %s", "PARALYSIE", "BRULURE", "POISON", "ENDORMI", "GELE", "CONFUSION",
     "Gagne!", "Perdu...",
-    "%s envoie %s", "Vas-y, %s!", "ARENES", "BADGES %u/8", "DRESSEUR", "VITESSE +%u", "touche: changer d'avatar", "%u au total",
+    "%s envoie %s", "Vas-y, %s!", "ARENES", "BADGES %u/8", "DRESSEUR", "VITESSE +%u", "touche: changer d'avatar", "%u au total", "NORMAL", "DIFFICILE",
   },
   // ---------------- DE ----------------
   {
@@ -162,7 +162,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s hat verfehlt!", "Volltreffer!", "%s wurde besiegt!", "Es verletzt sich!",
     "%s: %s", "PARALYSE", "VERBRANNT", "VERGIFTET", "SCHLAEFT", "GEFROREN", "VERWIRRT",
     "Gewonnen!", "Verloren...",
-    "%s schickt %s", "Los, %s!", "ARENEN", "ORDEN %u/8", "TRAINER", "TEMPO +%u", "tippen: Avatar wechseln", "%u insgesamt",
+    "%s schickt %s", "Los, %s!", "ARENEN", "ORDEN %u/8", "TRAINER", "TEMPO +%u", "tippen: Avatar wechseln", "%u insgesamt", "NORMAL", "SCHWER",
   },
   // ---------------- IT ----------------
   {
@@ -201,7 +201,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s ha mancato!", "Brutto colpo!", "%s e\' esausto!", "Si e ferito!",
     "%s: %s", "PARALISI", "SCOTTATURA", "VELENO", "ADDORMENTATO", "CONGELATO", "CONFUSIONE",
     "Hai vinto!", "Hai perso...",
-    "%s manda %s", "Vai, %s!", "PALESTRE", "MEDAGLIE %u/8", "ALLENATORE", "VELOCITA +%u", "tocca: cambia avatar", "%u in totale",
+    "%s manda %s", "Vai, %s!", "PALESTRE", "MEDAGLIE %u/8", "ALLENATORE", "VELOCITA +%u", "tocca: cambia avatar", "%u in totale", "NORMALE", "DIFFICILE",
   },
   // ---------------- PT ----------------
   {
@@ -240,7 +240,7 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s falhou!", "Acerto critico!", "%s desmaiou!", "Feriu-se!",
     "%s: %s", "PARALISIA", "QUEIMADURA", "VENENO", "A DORMIR", "CONGELADO", "CONFUSAO",
     "Ganhaste!", "Perdeste...",
-    "%s envia %s", "Vai, %s!", "GINASIOS", "MEDALHAS %u/8", "TREINADOR", "VELOCIDADE +%u", "toca: mudar avatar", "%u no total",
+    "%s envia %s", "Vai, %s!", "GINASIOS", "MEDALHAS %u/8", "TREINADOR", "VELOCIDADE +%u", "toca: mudar avatar", "%u no total", "NORMAL", "DIFICIL",
   },
 };
 

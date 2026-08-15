@@ -172,12 +172,13 @@ uint8_t spdGain = 0;
 bool spdNewHi = false;
 
 bool gymOpen = false;
+bool gymHard = false;   // which ladder the list is showing
 bool playerOpen = false;
 uint8_t playerPage = 0;   // 0 badges, 1 medals
 #define PLAYER_PAGES 2
 uint8_t gymPage = 0;
 #define GYM_ROWS 5
-#define GYM_ROW_Y(i) (92 + (i) * 52)
+#define GYM_ROW_Y(i) (110 + (i) * 50)
 int8_t btlTrainer = -1;      // index into TRAINERS, -1 = a one-off fight
 bool btlHard = false;
 Combatant btlSquad[TRAINER_TEAM_MAX + 1];
@@ -847,6 +848,11 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (gymOpen) {
+    if (y >= 76 && y <= 100) {          // the difficulty pill
+      gymHard = !gymHard;
+      sfxPlay(SFX_TAP);
+      return;
+    }
     for (int i = 0; i < GYM_ROWS; i++) {
       uint8_t idx = gymPage * GYM_ROWS + i;
       if (idx >= TRAINER_COUNT) break;
@@ -854,7 +860,7 @@ void onTap(int16_t x, int16_t y) {
       if (x < 70 || x > 396 || y < ry || y > ry + 44) continue;
       sfxPlay(SFX_TAP);
       gymOpen = false;
-      startTrainerBattle(idx, false);
+      startTrainerBattle(idx, gymHard);
       return;
     }
     gymOpen = false;
@@ -2134,20 +2140,43 @@ static void foeFromSpecies(Combatant &c, int16_t dex, uint8_t lvl, uint8_t iv) {
   combatantFromPet(c, foe);
 }
 
-// Your side: the live pet first, then the banked party. Up to 6, like the games.
-static void buildSquad() {
+// Your side: the live pet first, then the banked party.
+//
+// Both ladders cap your LEVEL to the leader's best, so a gym is always fought
+// on its own terms and grinding is never the answer -- the type chart, the
+// movesets and the choices are. Hard additionally caps your team SIZE to the
+// leader's, so Brock is two-on-two. The caps are applied while BUILDING the
+// combatants, so nothing is ever written back to the stored creature, exactly
+// like ailments.
+static void buildSquad(uint8_t maxLvl, uint8_t maxCount) {
   btlSquadN = 0;
   btlSquadAt = 0;
-  if (!pet.isEgg()) combatantFromPet(btlSquad[btlSquadN++], pet);
-  for (int i = 0; i < PARTY_SLOTS && btlSquadN < TRAINER_TEAM_MAX; i++)
-    if (!party.slots[i].empty())
-      combatantFromParty(btlSquad[btlSquadN++], party.slots[i]);
+  if (maxCount > TRAINER_TEAM_MAX) maxCount = TRAINER_TEAM_MAX;
+  if (!pet.isEgg() && btlSquadN < maxCount) {
+    Pet tmp = pet;                       // a copy: the real pet is untouched
+    if (maxLvl && tmp.level() > maxLvl)
+      tmp.ageMinutes = (uint32_t)(maxLvl - 1) * MINUTES_PER_LEVEL;
+    combatantFromPet(btlSquad[btlSquadN++], tmp);
+  }
+  for (int i = 0; i < PARTY_SLOTS && btlSquadN < maxCount; i++) {
+    if (party.slots[i].empty()) continue;
+    PartyMon m = party.slots[i];
+    if (maxLvl && m.level > maxLvl) m.level = maxLvl;
+    combatantFromParty(btlSquad[btlSquadN++], m);
+  }
   if (btlSquadN) btlYou = btlSquad[0];
 }
 
 void startTrainerBattle(uint8_t idx, bool hard) {
   if (idx >= TRAINER_COUNT || pet.isEgg() || pet.ceremony != CER_NONE) return;
-  buildSquad();
+  const Trainer &tr = TRAINERS[idx];
+  uint8_t top = 0;
+  for (int k = 0; k < tr.count; k++)
+    if (tr.team[k].level > top) top = tr.team[k].level;
+  // BOTH ladders cap your level to the leader's best. Without it a L73 team
+  // walks every trainer at 100% and the type chart never matters. Hard adds the
+  // size cap on top, plus a smarter AI and better opposing IVs.
+  buildSquad(top, hard ? tr.count : TRAINER_TEAM_MAX);
   if (!btlSquadN) return;
   btlTrainer = (int8_t)idx;
   btlHard = hard;
@@ -2163,7 +2192,8 @@ void startTrainerBattle(uint8_t idx, bool hard) {
 void startBattle(int16_t dex, uint8_t lvl) {
   if (pet.isEgg() || pet.ceremony != CER_NONE) return;
   if (dex < 1 || dex > DEX_COUNT) return;
-  combatantFromPet(btlYou, pet);
+  buildSquad(0, TRAINER_TEAM_MAX);
+  if (!btlSquadN) return;
   // The opponent is built through Pet so it gets the same stat formula and the
   // same learnset-driven moveset the player's creature does -- no special-cased
   // "enemy" maths that could quietly diverge.
@@ -2182,8 +2212,7 @@ void startBattle(int16_t dex, uint8_t lvl) {
 // One exchange: both sides act in speed order, then burn/poison chip.
 static void btlResolve(uint8_t yourMove) {
   TurnLog lg;
-  uint8_t foeMove = btlFoe.moves[random(MOVE_SLOTS)];
-  for (int i = 0; i < MOVE_SLOTS && !foeMove; i++) foeMove = btlFoe.moves[i];
+  uint8_t foeMove = aiChooseMove(btlFoe, btlYou, btlHard);
 
   bool youFirst = battleMovesFirst(btlYou, yourMove, btlFoe, foeMove);
   Combatant *a = youFirst ? &btlYou : &btlFoe;
@@ -2552,17 +2581,26 @@ void renderGyms() {
   gfx->setCursor(CX - strlen(T(S_GYMS)) * 6, 42);
   gfx->print(T(S_GYMS));
   char sub[24];
-  snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCount(false));
+  snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCount(gymHard));
   gfx->setTextSize(1);
   gfx->setCursor(CX - (int)strlen(sub) * 3, 66);
   gfx->print(sub);
+  // difficulty pill: hard caps YOUR team to the leader's size and level, so it
+  // is a different ladder with its own badges rather than a damage multiplier
+  const char *dif = T(gymHard ? S_HARD : S_EASY);
+  int dw = (int)strlen(dif) * 12 + 24;
+  gfx->fillRoundRect(CX - dw / 2, 76, dw, 24, 10, gymHard ? UI_BAR_BAD : UI_TRACK);
+  gfx->setTextColor(gymHard ? UI_BG_DAY : UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(dif) * 6, 81);
+  gfx->print(dif);
 
   for (int i = 0; i < GYM_ROWS; i++) {
     uint8_t idx = gymPage * GYM_ROWS + i;
     if (idx >= TRAINER_COUNT) break;
     const Trainer &t = TRAINERS[idx];
     int y = GYM_ROW_Y(i);
-    bool done = pet.hasBadge(idx, false);
+    bool done = pet.hasBadge(idx, gymHard);
     gfx->fillRoundRect(70, y, 326, 44, 10, done ? UI_TRACK : UI_BG_DAY);
     gfx->drawRoundRect(70, y, 326, 44, 10, UI_INK);
     gfx->setTextColor(UI_INK);

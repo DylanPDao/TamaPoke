@@ -41,6 +41,7 @@ extern uint8_t btlMsgCount;
 void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
 extern uint8_t btlFoeAt, btlSquadN;
+extern bool btlHard;
 #define BTL_CELL_X(i) (69 + ((i) % 2) * 168)
 #define BTL_CELL_Y(i) (286 + ((i) / 2) * 52)
 uint8_t learnableList(uint8_t *out, uint8_t max);
@@ -284,5 +285,27 @@ int main(int argc, char **argv) {
   if (!btlWon) { printf("FAIL: a L100 creature lost to Brock\n"); return 1; }
   if (!pet.hasBadge(0, false) || hadBadge) { printf("FAIL: no badge awarded\n"); return 1; }
   printf("PASS: beating a leader awards its badge (%u/8)\n", pet.badgeCount(false));
+
+  // ---- hard mode caps the team to the opponent's size AND level
+  battleOpen = false;
+  pet.ageMinutes = 100 * MINUTES_PER_LEVEL;   // a level 100 creature
+  startTrainerBattle(0, true);                // BROCK: 2 mons, top level 14
+  printf("     hard vs BROCK: squad %u, your lead is L%u (pet is L%u)\n",
+         btlSquadN, btlYou.level, pet.level());
+  if (btlYou.level != 14) {
+    printf("FAIL: level not capped to the leader's top (got %u, want 14)\n", btlYou.level);
+    return 1;
+  }
+  printf("PASS: hard mode caps your level to the leader's best\n");
+  if (btlSquadN > 2) { printf("FAIL: squad not capped to 2\n"); return 1; }
+  printf("PASS: hard mode caps your team size to the leader's\n");
+  if (pet.level() != 100) { printf("FAIL: the stored pet was modified\n"); return 1; }
+  printf("PASS: the stored creature is untouched (still L%u)\n", pet.level());
+  battleOpen = false;
+
+  // easy caps the level too -- it just does not cap the team size
+  startTrainerBattle(0, false);
+  if (btlYou.level != 14) { printf("FAIL: easy mode did not cap the level\n"); return 1; }
+  printf("PASS: easy mode caps the level as well\n");
   return 0;
 }

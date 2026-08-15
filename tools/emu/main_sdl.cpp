@@ -87,6 +87,7 @@ void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern uint8_t playerPage;
+extern bool gymHard;
 void startSpeedGame();
 void setup();
 void loop();
@@ -143,6 +144,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
   else if (!strcmp(screen, "battle2")) { startBattle(9, 50); }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
+  else if (!strcmp(screen, "gymshard")) { gymOpen = true; gymHard = true; pet.badgesHard = 0x03; }
   else if (!strcmp(screen, "speed")) { startSpeedGame(); }
   else if (!strcmp(screen, "player")) { pet.badges = 0x2B; pet.streak = 5; playerOpen = true; }
   else if (!strcmp(screen, "medals2")) { pet.medals = 0x5B; pet.totalMedals = 12; playerOpen = true; playerPage = 1; }

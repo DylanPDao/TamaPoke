@@ -67,3 +67,9 @@ void battleAct(Combatant &atk, Combatant &def, uint8_t mv, TurnLog &log);
 
 // Burn and poison chip damage, applied to one creature after both have acted.
 void battleEndTurn(Combatant &c, TurnLog &log);
+
+// Picks the attacker's move. `smart` is what separates hard mode from easy:
+// easy picks uniformly at random, hard reads the type chart, accuracy, whether
+// a move kills this turn, and whether a status or a stat boost is worth the
+// turn it costs.
+uint8_t aiChooseMove(const Combatant &self, const Combatant &foe, bool smart);
