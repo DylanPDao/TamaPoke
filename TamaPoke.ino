@@ -701,7 +701,12 @@ void onSwipeV(int dir) {
     partyOpen = false;
     return;
   }
-  if (gameOpen || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
+  // Either minigame exits on a swipe. A swipe cannot be confused with a ball
+  // hit -- the gesture resolver separates them -- which the header tap no
+  // longer can now that the ball is hittable up there.
+  if (gameOpen) { gameOpen = false; return; }
+  if (sackOpen) { sackOpen = false; return; }
+  if (galleryOpen || kbOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
     if (dir < 0) cardOpen = false;  // arriba cierra la ficha
@@ -761,7 +766,8 @@ void onSwipe(int dir) {
     partyOpen = false;
     return;
   }
-  if (gameOpen || kbOpen || clockOpen) return;
+  if (gameOpen) { gameOpen = false; return; }   // swipe out of the minigame
+  if (kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
     cardPage = p < 0 ? 0 : (p > CARD_PAGES - 1 ? CARD_PAGES - 1 : p);
