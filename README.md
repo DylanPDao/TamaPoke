@@ -64,8 +64,9 @@ While **awake**, per minute:
 - 🍎 **Berry** (3 flavors): +25 FOOD. Each species has a **hidden favorite flavor**
   → +35 FOOD, +10 JOY, ♥, bond, and it gets revealed.
 - 🍬 **Candy:** +10 FOOD, +12 JOY, but **+12 weight** (fattening).
-- ⚽ **Play / minigame:** +JOY, −ENE, burns weight. Pure happiness — it trains
-  nothing, so playing with your pet is never a stat grind.
+- ⚽ **Play / minigame:** **+5 JOY, plus 2 per rally** (max +35), −ENE, burns
+  weight. Pure happiness — it trains nothing, so playing is never a stat grind.
+  Leaving early keeps what you earned.
 - 🎯 **Reaction test:** a target appears, tap it before it shrinks away. Trains
   **SPEED**; the window tightens as you go.
 - 🥊 **Training bag:** trains **STRENGTH** (~4 hits = 1 pt, cap +18/session), tires it.

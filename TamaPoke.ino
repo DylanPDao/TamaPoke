@@ -655,7 +655,7 @@ void handleTouch() {
   if (sackOpen) {
     if (pressed && !wasPressed) {
       lastInteract = millis();
-      if (y < 72) sackOpen = false;  // tocar arriba = abandonar
+      if (y < 72) leaveSack();       // tocar arriba = salir, conservando lo ganado
       else sackTap();
     }
     wasPressed = pressed;
@@ -712,9 +712,9 @@ void onSwipeV(int dir) {
   // Either minigame exits on a swipe. A swipe cannot be confused with a ball
   // hit -- the gesture resolver separates them -- which the header tap no
   // longer can now that the ball is hittable up there.
-  if (gameOpen) { gameOpen = false; return; }
-  if (sackOpen) { sackOpen = false; return; }
-  if (spdOpen) { spdOpen = false; return; }
+  if (gameOpen) { leaveGame(); return; }
+  if (sackOpen) { leaveSack(); return; }
+  if (spdOpen) { leaveSpeed(); return; }
   if (galleryOpen || kbOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
@@ -775,8 +775,8 @@ void onSwipe(int dir) {
     partyOpen = false;
     return;
   }
-  if (gameOpen) { gameOpen = false; return; }   // swipe out of the minigame
-  if (spdOpen) { spdOpen = false; return; }
+  if (gameOpen) { leaveGame(); return; }   // swipe out, keeping what you earned
+  if (spdOpen) { leaveSpeed(); return; }
   if (kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
@@ -1398,6 +1398,24 @@ void respawnBall() {
   ballVY = 0;
 }
 
+// Leaving a minigame early banks what was actually earned rather than voiding
+// it. Quitting used to forfeit everything, which mattered little when the ball
+// game trained a stat you could grind back -- but it is now purely about
+// happiness, and a pet that just played should be happier for it. The
+// gameOver/over guards stop a swipe during the results screen paying twice.
+void leaveGame() {
+  if (!gameOverUntil) pet.playResult(gameScore);
+  gameOpen = false;
+}
+void leaveSack() {
+  if (!sackOverUntil) pet.trainStrength(sackHits);
+  sackOpen = false;
+}
+void leaveSpeed() {
+  if (!spdOverUntil) pet.trainSpeed(spdHits);
+  spdOpen = false;
+}
+
 void gameTap(int16_t x, int16_t y) {
   if (gameOverUntil) return;
   // The ball is checked BEFORE the quit strip. The ball bounces inside a circle
@@ -1406,8 +1424,8 @@ void gameTap(int16_t x, int16_t y) {
   // silently forfeiting the score, the speed training and the record.
   float dx = ballX - x, dy = ballY - y;
   bool onBall = (dx * dx + dy * dy < 74 * 74);
-  if (!onBall && y < 72) {  // tocar la cabecera = abandonar sin premio
-    gameOpen = false;
+  if (!onBall && y < 72) {  // tocar la cabecera = salir, conservando lo ganado
+    leaveGame();
     return;
   }
   if (onBall) {  // toque a la bola!
