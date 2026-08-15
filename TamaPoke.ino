@@ -2358,13 +2358,6 @@ static void btlResolve(uint8_t yourMove) {
   }
 }
 
-static void btlPlatform(int cx, int cy, int rx, int ry, uint16_t col) {
-  for (int dy = -ry; dy <= ry; dy++) {
-    int w = (int)(rx * sqrtf(1.0f - (float)(dy * dy) / (float)(ry * ry)));
-    if (w > 0) gfx->drawFastHLine(cx - w, cy + dy, w * 2, col);
-  }
-}
-
 static void btlHpBar(int x, int y, int w, const Combatant &c, uint16_t shown) {
   int fw = c.maxHp ? (w - 4) * shown / c.maxHp : 0;
   uint16_t col = (shown * 2 > c.maxHp) ? UI_BAR_OK
@@ -2406,11 +2399,6 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
   }
   // a platform under each creature, so they stand in the scene rather than
   // floating over it
-  // two passes: a light disc with a darker rim, so it reads against both a
-  // bright beach and a night sky -- a single dark ellipse vanished into the
-  // latter entirely
-  btlPlatform(sx + 24, sy + 52, 46, 12, 0x6B4D);
-  btlPlatform(sx + 24, sy + 51, 40, 9, 0xAD55);
   const uint8_t *th = thumbs.get(c.dex);
   if (!th) return;
   uint32_t now = millis();
@@ -2453,7 +2441,7 @@ void renderBattle() {
 
   // x=82 not 58: at y=60 the round bezel starts around x=77, and a longer
   // name like BLASTOISE was losing its first characters off the edge
-  btlSide(82, 60, 300, 40, btlFoe, 1);    // foe reads top-left, sprite top-right
+  btlSide(82, 82, 300, 40, btlFoe, 1);    // foe reads top-left, sprite top-right
   btlSide(250, 190, 76, 168, btlYou, 0);  // you read bottom-right, sprite bottom-left
 
   if (btlMsgCount) {                   // narration takes over the menu area
