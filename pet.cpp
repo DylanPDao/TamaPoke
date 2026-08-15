@@ -728,16 +728,9 @@ void Pet::feedCandy() {
 
 void Pet::playResult(uint8_t score) {
   if (ceremony != CER_NONE || isEgg()) return;
-  // Speed trains at score/2, capped per session exactly like the bag's +18.
-  // It used to be score/5, which is integer division: any game ending under 5
-  // points trained nothing at all, and since the game ends on the third miss
-  // that was most early sessions -- the bar simply never moved. The bag gave
-  // up to +18 for ten seconds of tapping while a longer, harder ball game gave
-  // +3, so the two are now worth comparable effort.
-  uint8_t gain = score / 2;
-  if (gain > 18) gain = 18;
-  uint8_t v = trSpe + gain;
-  trSpe = v > trMaxSpe() ? trMaxSpe() : v;  // el IV pone el techo
+  // No stat training here any more. Playing is for happiness; SPEED has its own
+  // reaction test (trainSpeed). Doing both made the ball game a stat grind and
+  // forced speed's rate to be tuned against joy's pacing instead of the bag's.
   joy = clamp100(joy + 5 + (score > 15 ? 30 : score * 2));
   energy = dropTo(energy, 10 + score / 2, 5);
   fullness = dropTo(fullness, 5, 5);
@@ -751,6 +744,26 @@ void Pet::playResult(uint8_t score) {
 }
 
 // saco de entrenamiento: los golpes entrenan la fuerza. Devuelve la subida.
+uint8_t Pet::trainSpeed(uint16_t hits) {
+  if (ceremony != CER_NONE || isEgg()) return 0;
+  uint8_t gain = hits / 2;          // ~2 reactions = 1 point
+  if (gain > 18) gain = 18;         // same per-session ceiling as the bag
+  uint8_t before = trSpe;
+  uint8_t v = trSpe + gain;
+  trSpe = v > trMaxSpe() ? trMaxSpe() : v;   // el IV pone el techo
+  gain = trSpe - before;
+  energy = dropTo(energy, 10, 5);
+  fullness = dropTo(fullness, 4, 5);
+  int burn = (int)weight - hits / 2;
+  weight = burn > 0 ? burn : 0;
+  joy = clamp100(joy + 4);
+  if (hits > spdHi) spdHi = hits;
+  addBond(1);
+  registerCare();
+  save();
+  return gain;
+}
+
 uint8_t Pet::trainStrength(uint16_t hits) {
   if (ceremony != CER_NONE || isEgg()) return 0;
   uint8_t gain = hits / 4;          // ~4 golpes = 1 punto de entrenamiento
@@ -866,6 +879,7 @@ void Pet::save() {
   prefs.putUShort("mstone", lastMilestone);
   prefs.putUShort("ghi", gameHi);
   prefs.putUShort("shi", strHi);
+  prefs.putUShort("qhi", spdHi);
   prefs.putString("nick", nick);
 }
 
@@ -928,6 +942,7 @@ void Pet::load() {
   lastMilestone = prefs.getUShort("mstone", 0);
   gameHi = prefs.getUShort("ghi", 0);
   strHi = prefs.getUShort("shi", 0);
+  spdHi = prefs.getUShort("qhi", 0);
   prefs.getString("nick", nick, sizeof(nick));
   // Moves load last: relearnFromLevel() needs speciesId and ageMinutes, both of
   // which are read above. A save from before moves existed has no "mvs" key and

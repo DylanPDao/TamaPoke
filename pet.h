@@ -89,6 +89,10 @@ public:
   }
   void playResult(uint8_t score);  // recompensa del minijuego (entrena VEL)
   uint8_t trainStrength(uint16_t hits);  // saco de entrenamiento (entrena FUE)
+  // Reaction test: its own trainer, so the ball game can go back to being purely
+  // about joy instead of doubling as a stat grind.
+  uint8_t trainSpeed(uint16_t hits);
+  uint16_t spdHi = 0;    // best reaction-test score
 
   // stats de combate: base real de gen 1 + nivel + IV + entrenamiento
   uint16_t atkStat() const;

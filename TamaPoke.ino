@@ -30,7 +30,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.1"
+#define FW_VERSION "2.2"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -163,6 +163,14 @@ bool btlWon = false;
 // four deep into Lance.
 // Every trainer is always selectable. There is no unlock order: attrition is
 // the gate, so walking into Lance at level 20 is allowed and simply loses.
+// reaction test (trains SPEED)
+bool spdOpen = false;
+uint32_t spdUntil = 0, spdOverUntil = 0, spdBorn = 0;
+int16_t spdX = 0, spdY = 0;
+uint16_t spdHits = 0, spdMisses = 0;
+uint8_t spdGain = 0;
+bool spdNewHi = false;
+
 bool gymOpen = false;
 bool playerOpen = false;
 uint8_t playerPage = 0;   // 0 badges, 1 medals
@@ -420,7 +428,7 @@ void loop() {
   // 85 ms en juego/saco: margen seguro para que el redibujado no pise el envio
   // DMA del frame anterior (a 40-65 ms solapaba y causaba flashes negros; con
   // sprites grandes el dibujo tarda mas, asi que se deja colchon)
-  if (now - lastRender >= (uint32_t)((gameOpen || sackOpen) ? 85 : 100)) {
+  if (now - lastRender >= (uint32_t)((gameOpen || sackOpen || spdOpen) ? 85 : 100)) {
     lastRender = now;
     render();
   }
@@ -706,6 +714,7 @@ void onSwipeV(int dir) {
   // longer can now that the ball is hittable up there.
   if (gameOpen) { gameOpen = false; return; }
   if (sackOpen) { sackOpen = false; return; }
+  if (spdOpen) { spdOpen = false; return; }
   if (galleryOpen || kbOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
@@ -767,6 +776,7 @@ void onSwipe(int dir) {
     return;
   }
   if (gameOpen) { gameOpen = false; return; }   // swipe out of the minigame
+  if (spdOpen) { spdOpen = false; return; }
   if (kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
@@ -881,7 +891,7 @@ void onTap(int16_t x, int16_t y) {
       sfxPlay(SFX_TAP);
       trainOpen = false;
       if (i == 0) startSack();
-      else startGame();
+      else startSpeedGame();
       return;
     }
     return;
@@ -942,6 +952,10 @@ void onTap(int16_t x, int16_t y) {
     } else {
       cardOpen = false;
     }
+    return;
+  }
+  if (spdOpen) {
+    spdTap(x, y);
     return;
   }
   if (gameOpen) {
@@ -1189,6 +1203,10 @@ void render() {
   }
   if (sackOpen) {
     renderSack();
+    return;
+  }
+  if (spdOpen) {
+    renderSpeed();
     return;
   }
   if (trainOpen) {
@@ -2320,6 +2338,129 @@ void renderPlayer() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 356);
   gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
+// ---------- reaction test (trains SPEED) ----------
+// The third training verb. The bag is a masher and the ball is a juggler, so
+// this one is a reaction: a target appears somewhere on the panel and you tap
+// it before it expires. The window shrinks as you go, which is what makes it
+// read as speed rather than as endurance.
+#define SPD_MS 15000UL       // session length
+#define SPD_LIFE0 1100       // first target's window, ms
+#define SPD_LIFE_MIN 380
+#define SPD_R 46             // target radius
+
+void spdSpawn() {
+  // Keep the whole target inside the bezel: pick an angle and a radius that
+  // leave SPD_R of margin, rather than a square that clips at the corners.
+  int ang = random(360);
+  int rad = random(150);
+  float a = ang * 3.14159f / 180.0f;
+  spdX = CX + (int)(cosf(a) * rad);
+  spdY = CY + (int)(sinf(a) * rad);
+  spdBorn = millis();
+}
+
+void startSpeedGame() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  spdOpen = true;
+  spdUntil = millis() + SPD_MS;
+  spdOverUntil = 0;
+  spdHits = 0;
+  spdMisses = 0;
+  spdGain = 0;
+  spdNewHi = false;
+  spdSpawn();
+}
+
+static uint16_t spdLife() {
+  int life = SPD_LIFE0 - spdHits * 32;
+  return life < SPD_LIFE_MIN ? SPD_LIFE_MIN : life;
+}
+
+void spdTap(int16_t x, int16_t y) {
+  if (spdOverUntil) return;
+  int dx = x - spdX, dy = y - spdY;
+  if (dx * dx + dy * dy <= (SPD_R + 14) * (SPD_R + 14)) {
+    spdHits++;
+    sfxPlay(SFX_TAP);
+    spdSpawn();
+  }
+}
+
+void renderSpeed() {
+  uint32_t now = millis();
+  drawGameScene();
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
+
+  if (spdOverUntil) {
+    if (now > spdOverUntil) { spdOpen = false; return; }
+    char b[24];
+    snprintf(b, sizeof(b), T(S_SCORE_FMT), spdHits);
+    gfx->setTextColor(ink);
+    gfx->setTextSize(4);
+    gfx->setCursor(CX - strlen(b) * 12, 150);
+    gfx->print(b);
+    char g[20];
+    snprintf(g, sizeof(g), T(S_SPD_GAIN_FMT), spdGain);
+    gfx->setTextColor(UI_BAR_WARN);
+    gfx->setTextSize(3);
+    gfx->setCursor(CX - strlen(g) * 9, 210);
+    gfx->print(g);
+    gfx->setTextSize(2);
+    if (spdNewHi && spdHits > 0) {
+      gfx->setTextColor(UI_BAR_WARN);
+      gfx->setCursor(CX - strlen(T(S_NEW_RECORD)) * 6, 256);
+      gfx->print(T(S_NEW_RECORD));
+    } else {
+      char r[20];
+      snprintf(r, sizeof(r), T(S_RECORD_FMT), pet.spdHi);
+      gfx->setTextColor(ink);
+      gfx->setCursor(CX - strlen(r) * 6, 256);
+      gfx->print(r);
+    }
+    gfx->flush();
+    return;
+  }
+
+  // session over?
+  if (now >= spdUntil) {
+    spdNewHi = (spdHits > pet.spdHi);
+    spdGain = pet.trainSpeed(spdHits);
+    sfxPlay(spdNewHi ? SFX_MEDAL : SFX_PLAY);
+    spdOverUntil = now + 3500;
+    gfx->flush();
+    return;
+  }
+  // target expired?
+  if (now - spdBorn > spdLife()) {
+    spdMisses++;
+    spdSpawn();
+  }
+
+  // the target, shrinking as its window runs out so the urgency is visible
+  uint32_t age = now - spdBorn;
+  int life = spdLife();
+  int r = SPD_R - (int)((uint32_t)SPD_R * age / (life ? life : 1) / 2);
+  if (r < 8) r = 8;
+  gfx->fillCircle(spdX, spdY, r, UI_BAR_BAD);
+  gfx->fillCircle(spdX, spdY, r * 2 / 3, UI_WHITE);
+  gfx->fillCircle(spdX, spdY, r / 3, UI_BAR_BAD);
+
+  char b[12];
+  snprintf(b, sizeof(b), "%u", spdHits);
+  gfx->setTextColor(ink);
+  gfx->setTextSize(4);
+  gfx->setCursor(CX - strlen(b) * 12, 30);
+  gfx->print(b);
+  // seconds left
+  uint32_t left = (spdUntil > now) ? (spdUntil - now + 999) / 1000 : 0;
+  snprintf(b, sizeof(b), "%us", (unsigned)left);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(b) * 6, 76);
+  gfx->print(b);
   gfx->flush();
 }
 

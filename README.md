@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.1-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.2-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -64,7 +64,10 @@ While **awake**, per minute:
 - 🍎 **Berry** (3 flavors): +25 FOOD. Each species has a **hidden favorite flavor**
   → +35 FOOD, +10 JOY, ♥, bond, and it gets revealed.
 - 🍬 **Candy:** +10 FOOD, +12 JOY, but **+12 weight** (fattening).
-- ⚽ **Play / minigame:** +JOY, −ENE; the minigame trains **SPEED** and burns weight.
+- ⚽ **Play / minigame:** +JOY, −ENE, burns weight. Pure happiness — it trains
+  nothing, so playing with your pet is never a stat grind.
+- 🎯 **Reaction test:** a target appears, tap it before it shrinks away. Trains
+  **SPEED**; the window tightens as you go.
 - 🥊 **Training bag:** trains **STRENGTH** (~4 hits = 1 pt, cap +18/session), tires it.
 - 🫧 **Bath:** clears poops, HYG → 100.
 - 👆 **Pet it:** +5 JOY + bond.
@@ -252,7 +255,7 @@ If one bottoms out it counts as a *slip-up*.
 **Buttons (bottom arc, icons):**
 - 🍎 **Feed** → food menu: 3 berries (each species has a hidden favourite that
   gives a bonus) and a candy (+happiness but it fattens; weight makes it sluggish).
-- ⚽ **Play** → the pokeball minigame (trains SPEED).
+- ⚽ **Play** → the pokeball minigame (joy only).
 - 🌙 **Light** → sleep/wake (recovers energy, dims the screen). While asleep,
   needs decay much slower (rest).
 - 🫧 **Bath** → a foam scene that cleans up the poops.
@@ -341,7 +344,7 @@ Typing is shown on the Battle page of the stat card. *(Battles: on the roadmap.)
 
 Each creature has ATK/DEF/SPD/VIT = **base stat** + level + **IV** (0–31, rolled
 at hatch, `IV × level/100` exactly as in the real games) + **training**:
-- SPEED ← the minigame (**score/2**, cap +18 per game, same as the bag)
+- SPEED ← the **reaction test** (~2 reactions = 1 pt, cap +18 per session)
 - DEFENSE ← accumulated wellbeing (1 h resting or well-cared = +1)
 - STRENGTH ← the training bag (~4 hits = 1 pt, cap +18 per session)
 - VIT (vitality, from the base HP stat) — not trainable

@@ -141,13 +141,9 @@ Working state, so it survives a closed session. Tick items off as they land.
 
 ### Fix list (reported, in progress)
 
-- [ ] **Split JOY from SPEED.** The ball game is the joy activity AND the speed
-      trainer, which conflates two things: playing for happiness and training a
-      combat stat. Speed wants its own minigame so the training submenu has three
-      distinct trainers, and so playing for joy stops being a stat grind. The
-      bag is a masher and the ball is a juggler, so a speed game should be a
-      third verb -- a reaction test reads best: targets appear, tap them before
-      they expire, score = reactions landed.
+- [x] **Split JOY from SPEED.** The ball game trains nothing now; SPEED has its
+      own reaction test (15 s, target shrinks, window tightens with each hit).
+      Three distinct verbs: the bag mashes, the ball juggles, the test reacts.
 
 - [ ] **Battle animations.** The battle screen is static: sprites do not move on
       a hit, there is no damage flash, no HP-bar tween, no faint. `PmdMon` already

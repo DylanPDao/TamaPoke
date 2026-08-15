@@ -93,6 +93,7 @@ enum StrId : uint8_t {
   S_GYMS,           // gym list title
   S_BADGES_FMT,     // "BADGES %u/8"
   S_TRAINER,        // player card title
+  S_SPD_GAIN_FMT,   // "SPEED +%u" after the reaction test
   STR_COUNT
 };
 
