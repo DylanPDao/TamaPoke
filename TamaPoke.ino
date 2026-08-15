@@ -163,6 +163,7 @@ bool btlWon = false;
 // Every trainer is always selectable. There is no unlock order: attrition is
 // the gate, so walking into Lance at level 20 is allowed and simply loses.
 bool gymOpen = false;
+bool playerOpen = false;
 uint8_t gymPage = 0;
 #define GYM_ROWS 5
 #define GYM_ROW_Y(i) (92 + (i) * 52)
@@ -690,6 +691,7 @@ void onSwipeV(int dir) {
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (gymOpen) { gymOpen = false; return; }
+  if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -703,8 +705,11 @@ void onSwipeV(int dir) {
     if (dir < 0) cardOpen = false;  // arriba cierra la ficha
     return;
   }
-  if (dir > 0) {                    // deslizar abajo: ajustar hora
-    if (!confirmUntil && !feedMenuUntil) openClock();
+  // Swipe down is the PLAYER card, up is the creature's. The clock lost this
+  // gesture on purpose -- the menu's SETTINGS row already opens it, and the
+  // player card is the thing you reach for far more often.
+  if (dir > 0) {
+    if (!confirmUntil && !feedMenuUntil) playerOpen = true;
   } else if (!pet.isEgg() && !confirmUntil && !feedMenuUntil) {
     cardOpen = true;                // deslizar arriba: ficha
     cardPage = 0;
@@ -746,6 +751,7 @@ void onSwipe(int dir) {
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (gymOpen) { gymOpen = false; return; }
+  if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
@@ -760,11 +766,12 @@ void onSwipe(int dir) {
     return;
   }
   if (!galleryOpen) {
-    if (!pet.ceremony && !confirmUntil) {
-      galleryOpen = true;
-      galleryPage = 0;
-      galleryDetail = 0;
-      galleryDirty = true;
+    // Swipe LEFT opens the gym ladder; right is deliberately unassigned for now.
+    // The Pokedex lost this gesture: it has a menu row, and the gestures are
+    // worth more spent on the things without one.
+    if (!pet.ceremony && !confirmUntil && dir < 0) {
+      gymOpen = true;
+      gymPage = 0;
     }
     return;
   }
@@ -804,6 +811,7 @@ void onTap(int16_t x, int16_t y) {
     battleTap(x, y);
     return;
   }
+  if (playerOpen) { playerOpen = false; return; }   // tap anywhere: back
   if (gymOpen) {
     for (int i = 0; i < GYM_ROWS; i++) {
       uint8_t idx = gymPage * GYM_ROWS + i;
@@ -912,10 +920,7 @@ void onTap(int16_t x, int16_t y) {
   if (pet.ceremony) return;  // durante la despedida no hay botones
   if (cardOpen) {
     if (cardPage == 0 && y < 84) openKeyboard();  // tocar el nombre = renombrar
-    else if (cardPage == 1 && y >= 300 && y <= 340 && x >= 96 && x <= 370) {
-      cardOpen = false;            // boton ENTRENAR FUERZA
-      startSack();
-    } else if (cardPage == 4) {
+    else if (cardPage == 2) {
       for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a slot to change it
         int ry = MOVE_ROW_Y(i);
         if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
@@ -1200,6 +1205,10 @@ void render() {
   }
   if (gymOpen) {
     renderGyms();
+    return;
+  }
+  if (playerOpen) {
+    renderPlayer();
     return;
   }
   if (pet.hasLearnOffer()) {
@@ -1645,11 +1654,15 @@ void drawCardStat(int y, const char *label, uint16_t val, uint16_t maxBar,
   gfx->setTextSize(2);
   gfx->setCursor(70, y);
   gfx->print(label);
-  int bw = 150;
+  // The bar used to start at 112, which leaves 42px for a label drawn at size 2
+  // -- three characters. BOND (EN), LIEN (FR) and LACO (PT) are four, so the
+  // label ran under the bar. 132 fits five, with the bar narrowed to keep the
+  // number clear of it.
+  int bw = 130;
   int fw = (int)val * bw / maxBar;
   if (fw > bw) fw = bw;
-  gfx->fillRoundRect(112, y + 2, bw, 11, 3, UI_TRACK);
-  if (fw > 2) gfx->fillRoundRect(112, y + 2, fw, 11, 3, color);
+  gfx->fillRoundRect(132, y + 2, bw, 11, 3, UI_TRACK);
+  if (fw > 2) gfx->fillRoundRect(132, y + 2, fw, 11, 3, color);
   char num[8];
   snprintf(num, sizeof(num), "%u", val);
   gfx->setCursor(272, y);
@@ -1917,12 +1930,6 @@ void renderCardStats() {
   drawCardStat(224, T(S_STAT_VIT), pet.vitStat(), 360, UI_BAR_OK, pet.ivHp);
   drawCardStat(264, T(S_STAT_WGT), pet.weight, 100, 0xB3C8, IV_NONE);
 
-  // boton: saco de entrenamiento de fuerza
-  gfx->fillRoundRect(96, 300, 274, 40, 12, UI_BAR_BAD);
-  gfx->setTextColor(UI_BG_DAY);
-  gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_TRAIN_STR)) * 6, 311);
-  gfx->print(T(S_TRAIN_STR));
 }
 
 // Draws one move as a row: name, its type in the type's own colour, and either
@@ -2246,6 +2253,63 @@ void battleTap(int16_t x, int16_t y) {
   }
 }
 
+// ---------- player card (swipe down) ----------
+// Everything here is player-wide and outlives the creature: badges, the daily
+// streak, the Pokedex and the party. No player sprite yet -- the SD carries
+// PMD creature sprites only, so a trainer portrait needs new art.
+void renderPlayer() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - strlen(T(S_TRAINER)) * 9, 44);
+  gfx->print(T(S_TRAINER));
+
+  // the eight gym badges as a row of discs, filled once earned
+  for (int i = 0; i < TRAINER_GYMS; i++) {
+    int bx = 82 + i * 38, by = 104;
+    bool got = pet.hasBadge(i, false);
+    // There is no per-type palette, so take the colour from the leader's lead
+    // creature -- DexEntry.accent is already derived from its primary type,
+    // which for a gym is the gym's type.
+    if (got) gfx->fillCircle(bx, by, 15, DEX_TBL[TRAINERS[i].team[0].dex].accent);
+    gfx->drawCircle(bx, by, 15, UI_INK);
+    gfx->setTextColor(got ? UI_BG_DAY : UI_TRACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(bx - 3, by - 3);
+    gfx->printf("%d", i + 1);
+  }
+  char l[32];
+  snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCount(false));
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 140);
+  gfx->print(l);
+
+  snprintf(l, sizeof(l), T(S_STREAK_FMT), pet.streak, pet.bestStreak);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 186);
+  gfx->print(l);
+
+  snprintf(l, sizeof(l), T(S_POKEDEX_FMT), pet.registeredCount());
+  gfx->setCursor(CX - (int)strlen(l) * 6, 220);
+  gfx->print(l);
+
+  snprintf(l, sizeof(l), T(S_PARTY_FMT), party.count());
+  gfx->setCursor(CX - (int)strlen(l) * 6, 254);
+  gfx->print(l);
+
+  snprintf(l, sizeof(l), T(S_MEDALS_FMT), pet.totalMedals, MED_COUNT);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 288);
+  gfx->print(l);
+
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 356);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
 // ---------- gym list ----------
 void renderGyms() {
   gfx->fillScreen(RGB565_BLACK);
@@ -2427,9 +2491,9 @@ void renderCard() {
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
   if (cardPage == 0) renderCardProfile();
   else if (cardPage == 1) renderCardStats();
-  else if (cardPage == 2) renderCardMedals();
-  else if (cardPage == 3) renderCardProgress();
-  else renderCardMoves();
+  else if (cardPage == 2) renderCardMoves();
+  else if (cardPage == 3) renderCardMedals();
+  else renderCardProgress();
 
   // indicador de paginas + ayuda
   for (int i = 0; i < CARD_PAGES; i++) {

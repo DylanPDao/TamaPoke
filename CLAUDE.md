@@ -139,6 +139,31 @@ Working state, so it survives a closed session. Tick items off as they land.
 - [ ] Optional: move the emulator touch/i18n test harnesses out of the scratchpad
       into `tools/emu/` as regression tests.
 
+### Fix list (reported, in progress)
+
+- [x] Profile card: BOND collided with its bar. drawCardStat drew the label at
+      x=70 size 2 (12px/char) but started the bar at 112 -- room for three
+      characters. BOND (EN), LIEN (FR) and LACO (PT) are four. Bar moved to 132.
+- [x] Stats card: dropped the TRAIN STRENGTH button -- the 5th icon's training
+      submenu owns training now, and it covers both STRENGTH and SPEED.
+- [x] Card page order: moves before medals -> profile, stats, moves, medals,
+      progress.
+- [x] Main-screen gestures, final layout:
+      swipe **up** = current creature's card (already the case),
+      swipe **down** = player card (new screen; currently opens the clock),
+      swipe **left** = gym leaders,
+      swipe **right** = unassigned for now.
+      The clock loses its gesture -- the menu's SETTINGS row already opens it.
+- [~] Player card BUILT (swipe down): the 8 badges as discs tinted by each
+      leader's lead creature, plus badges/streak/Pokedex/party/medals. Still NO
+      player sprite -- the SD carries PMD *creature* sprites only, so a trainer
+      portrait needs new art from somewhere. Decide the source before adding it.
+- [ ] Party box grows 6 -> 18 (3 pages of 6). **Fix `Party::begin()` first**: it
+      infers the old record size as `stored / PARTY_SLOTS`, which is right when
+      the stride grows and wrong when the slot count does -- 180 bytes over 18
+      slots would infer a 10-byte record and shred the party. Key it off
+      `sizeof(PartyMon)`.
+
 ### Battle system — decided, not started
 
 **Turn-based and move-based, like the real games.** This is not a fresh choice:

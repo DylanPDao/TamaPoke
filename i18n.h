@@ -92,6 +92,7 @@ enum StrId : uint8_t {
   S_BTL_GO,         // "Go, %s!"
   S_GYMS,           // gym list title
   S_BADGES_FMT,     // "BADGES %u/8"
+  S_TRAINER,        // player card title
   STR_COUNT
 };
 

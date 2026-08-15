@@ -85,7 +85,7 @@ void nvsSave(const char *path) {
 void emuSetSpriteDir(const char *);
 void startBattle(int16_t dex, uint8_t lvl);
 void startTrainerBattle(uint8_t idx, bool hard);
-extern bool gymOpen;
+extern bool gymOpen, playerOpen;
 void setup();
 void loop();
 void render();
@@ -131,16 +131,17 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   menuOpen = partyOpen = partyPick = trainOpen = movePickOpen = false;
   if (!strcmp(screen, "battle"))      { cardOpen = true; cardPage = 1; }
   else if (!strcmp(screen, "profile")){ cardOpen = true; cardPage = 0; }
-  else if (!strcmp(screen, "medals")) { cardOpen = true; cardPage = 2; }
-  else if (!strcmp(screen, "progress")){cardOpen = true; cardPage = 3; }
+  else if (!strcmp(screen, "medals")) { cardOpen = true; cardPage = 3; }
+  else if (!strcmp(screen, "progress")){cardOpen = true; cardPage = 4; }
   else if (!strcmp(screen, "gallery")) galleryOpen = true;
   else if (!strcmp(screen, "clock"))   clockOpen = true;
   else if (!strcmp(screen, "menu"))    menuOpen = true;
   else if (!strcmp(screen, "train"))   trainOpen = true;
-  else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 4; }
+  else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 2; }
   else if (!strcmp(screen, "movepick")) { movePickOpen = true; }
   else if (!strcmp(screen, "battle2")) { startBattle(9, 50); }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
+  else if (!strcmp(screen, "player")) { pet.badges = 0x2B; pet.streak = 5; playerOpen = true; }
   else if (!strcmp(screen, "gymfight")) { startTrainerBattle(0, false); }
   else if (!strcmp(screen, "learn")) {
     // fill the four slots, then cross a gate so the offer has to be answered
