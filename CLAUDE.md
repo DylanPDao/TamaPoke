@@ -204,16 +204,17 @@ stubs `sfxPlay` to nothing. Nobody has heard the music loop, the six cues, or
 the volume curve. The amplitude scale in particular (`500 * vol`) is a guess at
 what sounds linear. This is part of what the soak test is for.
 
-**B. Storage and the box.**
-- **Box system** for more than the six party slots. `sizeof(PartyMon)` is 30 B
-  and the NVS partition is 20 KB, so ~100 fits in a single blob; 151 (4530 B)
-  exceeds the ~4000 B single-blob limit and needs splitting.
-  **`Party::begin()` must be re-keyed off `sizeof(PartyMon)` FIRST** -- it infers
-  the old record size as `stored / PARTY_SLOTS`, which is right when the stride
-  grows and wrong when the slot count does, so 180 bytes over 18 slots would
-  infer a 10-byte record and shred the party.
-- **Move creatures between the box and the active party**, which is the point of
-  having a box.
+**B. Storage and the box -- DONE.**
+- The box is 18 slots (3 pages of 6) under its OWN NVS key, not a bigger party
+  blob. That was deliberate: growing the party blob changes its stride, and the
+  length-based migration in `begin()` cannot tell a stride change from a
+  slot-count change, so an existing party would have been read back misaligned.
+  A separate key is purely additive and cannot corrupt anything -- `box_test`
+  checks a pre-box save keeps its whole party and comes up with an empty box.
+- `swapPartyBox()` is one call for deposit, withdraw and exchange, since any of
+  the two slots may be empty. Reached by tapping a party slot then BOX.
+- Room to grow: 6 + 18 records is 720 B against a ~4000 B single-blob limit, so
+  the box could reach ~120 before it would need splitting.
 
 **B2. Multi-region, once the Gen 2/3 expansion is untabled.** These four hang
 together and should be designed as one thing, not bolted on separately:

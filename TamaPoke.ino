@@ -98,6 +98,12 @@ bool menuOpen = false;
 bool partyOpen = false;
 bool partyPick = false;
 uint8_t partyDetail = 0;   // 0 = the grid, else slot + 1
+// The box, reached from the party screen. `boxSwapFrom` is the party slot
+// waiting for something to trade with, 0 when nothing is pending.
+bool boxOpen = false;
+uint8_t boxPage = 0;
+uint8_t boxSwapFrom = 0;   // party slot + 1
+#define BOX_PER_PAGE 6
 uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
 char partyBannerName[14] = "";
 #define PARTY_CELL_W 150
@@ -831,6 +837,14 @@ void renderPartyDetail() {
 }
 
 void partyTap(int16_t x, int16_t y) {
+  if (boxOpen) { boxTap(x, y); return; }
+  if (!partyPick && y >= 322 && y <= 360 && x >= 150 && x <= 316) {
+    boxOpen = true;                  // open the box, nothing picked yet
+    boxPage = 0;
+    boxSwapFrom = 0;
+    sfxPlay(SFX_TAP);
+    return;
+  }
   if (partyDetail) {
     for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a move to change it
       int ry = 84 + i * 54;
@@ -860,9 +874,16 @@ void partyTap(int16_t x, int16_t y) {
     int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
     int cy0 = PARTY_GRID_Y + (i / 2) * (PARTY_CELL_H + 8);
     if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
-    if (!partyPick) {                // browsing: open its sheet
-      if (party.slots[i].empty()) return;
+    if (!partyPick) {
+      if (boxSwapFrom == i + 1) {    // tapped again: take it to the box
+        boxOpen = true;
+        boxPage = 0;
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      if (party.slots[i].empty()) { boxSwapFrom = i + 1; sfxPlay(SFX_TAP); return; }
       partyDetail = i + 1;
+      boxSwapFrom = i + 1;           // armed, in case the box is opened next
       sfxPlay(SFX_TAP);
       return;
     }
@@ -1366,7 +1387,8 @@ void render() {
     return;
   }
   if (partyOpen) {
-    if (partyDetail) renderPartyDetail();
+    if (boxOpen) renderBox();
+    else if (partyDetail) renderPartyDetail();
     else renderParty();
     return;
   }
@@ -3563,6 +3585,93 @@ void renderTrain() {
   gfx->flush();   // without this the panel never updates and the screen freezes
 }
 
+// ---------- the box ----------
+// Storage past the six that fight. A creature is moved by picking a party slot
+// and then a box slot, which swaps them -- so one gesture covers deposit,
+// withdraw and exchange rather than needing three.
+void renderBox() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  char head[32];
+  snprintf(head, sizeof(head), T(S_BOX_FMT), party.boxCount(), BOX_SLOTS);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(head) * 6, 40);
+  gfx->print(head);
+  if (boxSwapFrom) {
+    const PartyMon &p = party.slots[boxSwapFrom - 1];
+    char sub[40];
+    snprintf(sub, sizeof(sub), T(S_BOX_SWAP),
+             p.empty() ? "-" : (p.nick[0] ? p.nick : DEX_TBL[p.dex].name));
+    gfx->setTextColor(UI_BAR_WARN);
+    gfx->setTextSize(1);
+    gfx->setCursor(CX - (int)strlen(sub) * 3, 64);
+    gfx->print(sub);
+  }
+  for (uint8_t i = 0; i < BOX_PER_PAGE; i++) {
+    uint8_t idx = boxPage * BOX_PER_PAGE + i;
+    if (idx >= BOX_SLOTS) break;
+    const PartyMon &m = party.box[idx];
+    int x = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
+    int y = 84 + (i / 2) * (PARTY_CELL_H + 8);
+    gfx->fillRoundRect(x, y, PARTY_CELL_W, PARTY_CELL_H, 10,
+                       m.empty() ? UI_TRACK : UI_WHITE);
+    gfx->drawRoundRect(x, y, PARTY_CELL_W, PARTY_CELL_H, 10, UI_INK);
+    if (m.empty()) {
+      gfx->setTextColor(0x8410);
+      gfx->setTextSize(1);
+      gfx->setCursor(x + PARTY_CELL_W / 2 - 18, y + PARTY_CELL_H / 2 - 4);
+      gfx->print(T(S_PARTY_EMPTY));
+      continue;
+    }
+    const uint8_t *th = thumbs.get(m.dex);
+    if (th) drawThumb(th, x - 14, y - 4, 2, false);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(1);
+    gfx->setCursor(x + 52, y + 16);
+    gfx->print(m.nick[0] ? m.nick : DEX_TBL[m.dex].name);
+    char l[16];
+    snprintf(l, sizeof(l), "Lv.%u%s", (unsigned)m.level, m.shiny ? " *" : "");
+    gfx->setCursor(x + 52, y + 34);
+    gfx->print(l);
+  }
+  uint8_t pages = BOX_SLOTS / BOX_PER_PAGE;
+  for (uint8_t i = 0; i < pages; i++) {
+    int dx = CX - (pages - 1) * 13 + i * 26;
+    if (i == boxPage) gfx->fillCircle(dx, 366, 5, UI_INK);
+    else gfx->drawCircle(dx, 366, 4, UI_INK);
+  }
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
+void boxTap(int16_t x, int16_t y) {
+  for (uint8_t i = 0; i < BOX_PER_PAGE; i++) {
+    uint8_t idx = boxPage * BOX_PER_PAGE + i;
+    if (idx >= BOX_SLOTS) break;
+    int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
+    int cy0 = 84 + (i / 2) * (PARTY_CELL_H + 8);
+    if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
+    if (!boxSwapFrom) {          // nothing picked yet: nothing to trade with
+      sfxPlay(SFX_DENY);
+      return;
+    }
+    if (party.slots[boxSwapFrom - 1].empty() && party.box[idx].empty()) {
+      sfxPlay(SFX_DENY);         // swapping two empties does nothing
+      return;
+    }
+    party.swapPartyBox(boxSwapFrom - 1, idx);
+    boxSwapFrom = 0;
+    sfxPlay(SFX_MEDAL);
+    return;
+  }
+  boxOpen = false;               // anywhere else backs out
+  boxSwapFrom = 0;
+}
+
 // ---------- party ----------
 
 void drawPartySlot(int i, int x, int y) {
@@ -3609,6 +3718,20 @@ void renderParty() {
   gfx->setTextSize(3);
   gfx->setCursor(CX - (int)strlen(head) * 9, 42);
   gfx->print(head);
+
+  // the box lives behind this button; it also shows how full it is, so the
+  // player knows there is anything in there without opening it
+  if (!partyPick) {
+    char bl[24];
+    snprintf(bl, sizeof(bl), T(S_BOX_FMT), party.boxCount(), BOX_SLOTS);
+    bool armed = boxSwapFrom != 0;
+    gfx->fillRoundRect(150, 322, 166, 38, 10, armed ? UI_BAR_WARN : UI_BG_DAY);
+    gfx->drawRoundRect(150, 322, 166, 38, 10, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(233 - (int)strlen(bl) * 6, 333);
+    gfx->print(bl);
+  }
 
   // when a newcomer is waiting, say so instead of the usual hint
   if (partyPick) {

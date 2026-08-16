@@ -104,6 +104,9 @@ enum StrId : uint8_t {
   S_BTL_BEAT,       // "%s defeated!" on the win screen
   S_BTL_NEWBADGE,   // a badge earned for the first time
   S_VOL_FMT,        // volume level, e.g. "VOL 7"
+  S_BOX_FMT,        // "BOX %u/%u"
+  S_BOX_SWAP,       // "swap with %s: pick a slot"
+  S_BOX_BTN,        // the button on the party screen
   STR_COUNT
 };
 

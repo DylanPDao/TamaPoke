@@ -35,10 +35,59 @@ void Party::begin() {
     if (s.dex < 1 || s.dex > DEX_COUNT) s.dex = 0;
     s.nick[sizeof(s.nick) - 1] = 0;
   }
+  // The box is a separate key and simply absent on an older save, which leaves
+  // it zeroed -- exactly what an empty box is.
+  for (auto &s : box) s = PartyMon();
+  if (prefs.getBytesLength("box") == sizeof(box))
+    prefs.getBytes("box", box, sizeof(box));
+  for (auto &s : box) {
+    if (s.dex < 1 || s.dex > DEX_COUNT) s.dex = 0;
+    s.nick[sizeof(s.nick) - 1] = 0;
+  }
 }
 
 void Party::save() {
   prefs.putBytes("party", slots, sizeof(slots));
+}
+
+void Party::boxSave() {
+  prefs.putBytes("box", box, sizeof(box));
+}
+
+uint8_t Party::boxCount() const {
+  uint8_t n = 0;
+  for (auto &s : box)
+    if (!s.empty()) n++;
+  return n;
+}
+
+int Party::boxFirstFree() const {
+  for (int i = 0; i < BOX_SLOTS; i++)
+    if (box[i].empty()) return i;
+  return -1;
+}
+
+bool Party::boxAdd(const PartyMon &m) {
+  int i = boxFirstFree();
+  if (i < 0) return false;
+  box[i] = m;
+  boxSave();
+  return true;
+}
+
+void Party::boxReleaseAt(uint8_t i) {
+  if (i >= BOX_SLOTS) return;
+  box[i] = PartyMon();
+  boxSave();
+}
+
+void Party::swapPartyBox(uint8_t partyIdx, uint8_t boxIdx) {
+  if (partyIdx >= PARTY_SLOTS || boxIdx >= BOX_SLOTS) return;
+  PartyMon t = slots[partyIdx];
+  slots[partyIdx] = box[boxIdx];
+  box[boxIdx] = t;
+  save();
+  boxSave();
 }
 
 uint8_t Party::count() const {

@@ -93,6 +93,7 @@ extern bool gymOpen, playerOpen;
 extern uint8_t playerPage;
 extern bool gymHard, pickOpen;
 extern uint8_t partyDetail;
+extern bool boxOpen; extern uint8_t boxSwapFrom;
 extern bool btlNewBadge; extern uint32_t btlWinUntil;
 extern uint8_t pickTrainer, pickPage;
 void pickDefault(uint8_t cap);
@@ -161,6 +162,17 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     btlHitUntil[1] = millis() + 300;   // foe flinching
   }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
+  else if (!strcmp(screen, "box")) {
+    static const int f[]={9,25,143,94,131,3};
+    for(int i=0;i<6;i++){ PartyMon m; m.dex=f[i]; m.level=40+i*5;
+      m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=25; party.replaceAt(i,m); }
+    static const int b[]={6,65,68,143,12,131,94,25};
+    for(int i=0;i<8;i++){ PartyMon m; m.dex=b[i]; m.level=30+i*4;
+      m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=20; m.shiny=(i==3);
+      party.box[i]=m; }
+    party.boxSave();
+    partyOpen=true; boxOpen=true; boxSwapFrom=1;
+  }
   else if (!strcmp(screen, "win")) {
     startTrainerBattle(2, true);
     btlNewBadge = true; btlWinUntil = 60000; pet.badgesHard = 0x07;
