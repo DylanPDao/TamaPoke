@@ -97,6 +97,7 @@ bool menuOpen = false;
 // either taps someone to replace or lets it go.
 bool partyOpen = false;
 bool partyPick = false;
+uint8_t partyDetail = 0;   // 0 = the grid, else slot + 1
 uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
 char partyBannerName[14] = "";
 #define PARTY_CELL_W 150
@@ -756,6 +757,7 @@ void onSwipeV(int dir) {
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
   if (partyOpen) {
+    if (partyDetail) { partyDetail = 0; return; }
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
     return;
@@ -784,7 +786,49 @@ void onSwipeV(int dir) {
 }
 
 // party screen: pick a slot (when a newcomer is waiting) or just leave
+// A banked creature's sheet: its moves above all, since typing alone does not
+// tell you whether that Lapras still has ICE BEAM -- and in hard mode that is
+// what decides the fight.
+void renderPartyDetail() {
+  const PartyMon &m = party.slots[partyDetail - 1];
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  if (m.empty()) { partyDetail = 0; return; }
+  const DexEntry &d = DEX_TBL[m.dex];
+  char head[36];
+  snprintf(head, sizeof(head), "%s%s Lv.%u", m.shiny ? "*" : "",
+           m.nick[0] ? m.nick : d.name, (unsigned)m.level);
+  gfx->setTextColor(d.accent);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(head) * 6, 40);
+  gfx->print(head);
+  char ty[24];
+  if (d.type2 == T_NONE) snprintf(ty, sizeof(ty), "%s", typeName(d.type1));
+  else snprintf(ty, sizeof(ty), "%s/%s", typeName(d.type1), typeName(d.type2));
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(ty) * 3, 64);
+  gfx->print(ty);
+
+  for (int i = 0; i < MOVE_SLOTS; i++)
+    drawMoveRow(84 + i * 54, m.moves[i], false, m.dex);
+
+  char st[40];
+  snprintf(st, sizeof(st), "ATK %u  DEF %u  SPD %u  HP %u",
+           party.atkOf(m), party.defOf(m), party.speOf(m), party.vitOf(m));
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(st) * 3, 316);
+  gfx->print(st);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 352);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
 void partyTap(int16_t x, int16_t y) {
+  if (partyDetail) { partyDetail = 0; sfxPlay(SFX_TAP); return; }
   // exit button, and the top band, both always work
   if ((y >= 372 && y <= 416 && x >= 133 && x <= 333) || y < 34) {
     if (partyPick) {                 // declined the swap: the pet is let go
@@ -795,11 +839,16 @@ void partyTap(int16_t x, int16_t y) {
     sfxPlay(SFX_TAP);
     return;
   }
-  if (!partyPick) return;            // browsing only; nothing else to tap yet
   for (int i = 0; i < PARTY_SLOTS; i++) {
     int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
     int cy0 = PARTY_GRID_Y + (i / 2) * (PARTY_CELL_H + 8);
     if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
+    if (!partyPick) {                // browsing: open its sheet
+      if (party.slots[i].empty()) return;
+      partyDetail = i + 1;
+      sfxPlay(SFX_TAP);
+      return;
+    }
     party.replaceAt(i, pet.endedMon);
     snprintf(partyBannerName, sizeof(partyBannerName), "%s",
              pet.endedMon.nick[0] ? pet.endedMon.nick : DEX_TBL[pet.endedMon.dex].name);
@@ -849,6 +898,7 @@ void onSwipe(int dir) {
     return;
   }
   if (partyOpen) {
+    if (partyDetail) { partyDetail = 0; return; }
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
     partyOpen = false;
     return;
@@ -1294,7 +1344,8 @@ void render() {
     return;
   }
   if (partyOpen) {
-    renderParty();
+    if (partyDetail) renderPartyDetail();
+    else renderParty();
     return;
   }
   if (gameOpen) {
@@ -2088,7 +2139,7 @@ void renderCardStats() {
 // Draws one move as a row: name, its type in the type's own colour, and either
 // power or a STATUS marker. Shared by the moves page and the picker so a move
 // looks the same wherever you meet it.
-static void drawMoveRow(int y, uint8_t mv, bool highlight) {
+void drawMoveRow(int y, uint8_t mv, bool highlight, int16_t dex) {
   gfx->fillRoundRect(70, y, 326, 50, 12, highlight ? UI_BAR_WARN : UI_BG_DAY);
   gfx->drawRoundRect(70, y, 326, 50, 12, UI_INK);
   if (!mv) {
@@ -2107,8 +2158,8 @@ static void drawMoveRow(int y, uint8_t mv, bool highlight) {
   // one by hand would duplicate what gen_dex.py generates. Colouring same-type
   // moves in the species accent is more useful anyway: STAB is a 1.5x damage
   // bonus, so this marks the moves that actually hit hardest for this creature.
-  bool stab = hasStab(pet.speciesId, m.type) && m.cat != MC_STATUS;
-  gfx->setTextColor(stab ? DEX_TBL[pet.speciesId].accent : UI_TRACK);
+  bool stab = hasStab(dex, m.type) && m.cat != MC_STATUS;
+  gfx->setTextColor(stab ? DEX_TBL[dex].accent : UI_TRACK);
   gfx->setTextSize(1);
   gfx->setCursor(82, y + 32);
   gfx->print(typeName(m.type));
@@ -2126,7 +2177,7 @@ void renderCardMoves() {
   gfx->setTextSize(3);
   gfx->setCursor(CX - strlen(T(S_MOVES)) * 9, 44);
   gfx->print(T(S_MOVES));
-  for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(MOVE_ROW_Y(i), pet.moves[i], false);
+  for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(MOVE_ROW_Y(i), pet.moves[i], false, pet.speciesId);
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(1);
   gfx->setCursor(CX - (int)strlen(T(S_MOVE_TAP)) * 3, 340);
@@ -2167,7 +2218,7 @@ void renderMovePick() {
     if (idx >= n) break;
     // the move already in this slot is highlighted, so replacing like for like
     // is obvious rather than a guess
-    drawMoveRow(MOVE_PICK_Y(i), all[idx], all[idx] == pet.moves[movePickSlot]);
+    drawMoveRow(MOVE_PICK_Y(i), all[idx], all[idx] == pet.moves[movePickSlot], pet.speciesId);
   }
   for (uint8_t i = 0; i < pages && pages > 1; i++) {
     if (i == movePickPage) gfx->fillCircle(CX - (pages - 1) * 13 + i * 26, 380, 5, UI_INK);
@@ -3143,7 +3194,7 @@ void renderLearn() {
   gfx->setCursor(CX - (int)strlen(MOVE_TBL[mv].name) * 9, 66);
   gfx->print(MOVE_TBL[mv].name);
 
-  for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(LEARN_ROW_Y(i), pet.moves[i], false);
+  for (int i = 0; i < MOVE_SLOTS; i++) drawMoveRow(LEARN_ROW_Y(i), pet.moves[i], false, pet.speciesId);
 
   gfx->fillRoundRect(70, LEARN_SKIP_Y, 326, 44, 12, UI_TRACK);
   gfx->drawRoundRect(70, LEARN_SKIP_Y, 326, 44, 12, UI_INK);

@@ -170,10 +170,10 @@ done from here.
   every move learnable at the current level, level-gated ones included, so the
   moves picker recovers a declined move. Verified by declining EMBER/GROWL/LEER
   and finding FLAMETHROWER and WING ATTACK still listed.
-- **See a banked creature's moves.** Team select shows typing, which is most of
-  the decision, but in hard mode whether your Lapras still has ICE BEAM decides
-  the fight and there is no way to check. The moves card only works on the live
-  pet.
+- ~~See a banked creature's moves~~ **done** -- tapping a party slot opens its
+  sheet: moves with type and power, typing, and the four combat stats.
+  `drawMoveRow()` takes a dex now rather than assuming the live pet, so STAB is
+  coloured against the creature you are actually looking at.
 - **A reason to rematch.** Beating a leader gives a badge and nothing else.
   Berries, or a training/IV reward, would make the ladder replayable instead of
   a checklist.

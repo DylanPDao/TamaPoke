@@ -92,6 +92,7 @@ void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern uint8_t playerPage;
 extern bool gymHard, pickOpen;
+extern uint8_t partyDetail;
 extern uint8_t pickTrainer, pickPage;
 void pickDefault(uint8_t cap);
 extern bool pickHard;
@@ -159,6 +160,16 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     btlHitUntil[1] = millis() + 300;   // foe flinching
   }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
+  else if (!strcmp(screen, "pmon")) {
+    Pet t; t.dbgHatchAs(131,false); t.ivAtk=t.ivDef=t.ivSpe=t.ivHp=27;
+    t.ageMinutes=53UL*MINUTES_PER_LEVEL; t.relearnFromLevel();
+    PartyMon m; m.dex=131; m.level=54; m.shiny=1;
+    m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=27; m.trAtk=m.trDef=m.trSpe=40;
+    for(int k=0;k<MOVE_SLOTS;k++) m.moves[k]=t.moves[k];
+    snprintf(m.nick,sizeof(m.nick),"NESSIE");
+    party.replaceAt(0,m);
+    partyOpen = true; partyDetail = 1;
+  }
   else if (!strcmp(screen, "pick")) {
     static const int fill[]={9,25,143,94,131,3};
     static const int fill6[]={9,25,143,94,131,3};
