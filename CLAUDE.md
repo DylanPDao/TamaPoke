@@ -157,6 +157,29 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
+**0. Soak test -- the one item that can INVALIDATE work rather than add to it.**
+24-48 h on hardware with `HEALTH`. Everything built this session is verified in
+the emulator only, and the emulator explicitly cannot see timing, DMA tearing,
+PSRAM pressure, audio or battery. Since anything last ran on a board this branch
+added two streamed battle sprites (~270 KB PSRAM), 315 KB of backgrounds, and a
+full-screen background redraw every frame at 10 fps. Needs the board; cannot be
+done from here.
+
+**A2. Smaller gaps worth closing.**
+- ~~Move relearner~~ **not needed** -- checked: `learnableList()` already lists
+  every move learnable at the current level, level-gated ones included, so the
+  moves picker recovers a declined move. Verified by declining EMBER/GROWL/LEER
+  and finding FLAMETHROWER and WING ATTACK still listed.
+- **See a banked creature's moves.** Team select shows typing, which is most of
+  the decision, but in hard mode whether your Lapras still has ICE BEAM decides
+  the fight and there is no way to check. The moves card only works on the live
+  pet.
+- **A reason to rematch.** Beating a leader gives a badge and nothing else.
+  Berries, or a training/IV reward, would make the ladder replayable instead of
+  a checklist.
+- **Save backup.** A run is weeks of real time in one NVS partition. `LS`/`PUT`
+  already move files over USB, so an export/import command would be small.
+
 **A. Audio.**
 - **Battle music**, with **volume and mute**. `audio.cpp` drives an ES8311 over
   I2S and `SFX_*` one-shots exist, but there is no music path and no volume
