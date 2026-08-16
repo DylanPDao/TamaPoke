@@ -1932,6 +1932,11 @@ void drawClockBtn(int x, int y, const char *l) {
 #define LANG_PILL_H 30
 #define LANG_PILL_X 336          // pildora de idioma (cicla los 6 al tocar)
 #define LANG_PILL_W 96
+// the volume mixer sits in the gap between the sound switch and the language
+// pill: minus, the level, plus
+#define VOL_MINUS_X 146
+#define VOL_PLUS_X 276
+#define VOL_BTN_W 48
 static const char *const LANG_CODES[LANG_COUNT] = { "ES", "EN", "FR", "DE", "IT", "PT" };
 
 void renderClock() {
@@ -1968,6 +1973,32 @@ void renderClock() {
   gfx->setTextSize(2);
   gfx->setCursor(34 + (96 - (int)strlen(sl) * 12) / 2, LANG_PILL_Y + 8);
   gfx->print(sl);
+
+  // volume: a level, not a toggle. The sound switch beside it is still the
+  // master -- this is how loud it is when it is on, and 0 is silent.
+  {
+    uint8_t v = audioVolume();
+    for (int i = 0; i < 2; i++) {
+      int bx = i ? VOL_PLUS_X : VOL_MINUS_X;
+      bool live = i ? (v < 10) : (v > 0);
+      gfx->fillRoundRect(bx, LANG_PILL_Y, VOL_BTN_W, LANG_PILL_H, 8,
+                         live ? UI_WHITE : UI_TRACK);
+      gfx->drawRoundRect(bx, LANG_PILL_Y, VOL_BTN_W, LANG_PILL_H, 8, UI_INK);
+      gfx->setTextColor(live ? UI_INK : 0x8410);
+      gfx->setTextSize(2);
+      gfx->setCursor(bx + VOL_BTN_W / 2 - 6, LANG_PILL_Y + 8);
+      gfx->print(i ? "+" : "-");
+    }
+    char vl[12];
+    snprintf(vl, sizeof(vl), T(S_VOL_FMT), v);
+    gfx->setTextColor(v ? UI_INK : UI_TRACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(210 + (56 - (int)strlen(vl) * 6) / 2, LANG_PILL_Y + 4);
+    gfx->print(vl);
+    // a small bar under the number, so the level reads at a glance
+    gfx->fillRoundRect(210, LANG_PILL_Y + 18, 56, 8, 3, UI_TRACK);
+    if (v) gfx->fillRoundRect(210, LANG_PILL_Y + 18, 56 * v / 10, 8, 3, UI_BAR_OK);
+  }
 
   // selector de idioma: una pildora que cicla los 6 idiomas al tocar
   gfx->fillRoundRect(LANG_PILL_X, LANG_PILL_Y, LANG_PILL_W, LANG_PILL_H, 8, UI_WHITE);
@@ -2011,6 +2042,16 @@ void clockTap(int16_t x, int16_t y) {
     if (x >= 34 && x < 130) {                  // interruptor de sonido
       audioSetEnabled(!audioEnabled());
       if (audioEnabled()) sfxPlay(SFX_TAP);    // confirma al encender
+      return;
+    }
+    if (x >= VOL_MINUS_X && x < VOL_MINUS_X + VOL_BTN_W) {
+      if (audioVolume() > 0) audioSetVolume(audioVolume() - 1);
+      sfxPlay(SFX_TAP);                        // so the new level is audible
+      return;
+    }
+    if (x >= VOL_PLUS_X && x < VOL_PLUS_X + VOL_BTN_W) {
+      if (audioVolume() < 10) audioSetVolume(audioVolume() + 1);
+      sfxPlay(SFX_TAP);
       return;
     }
     if (x >= LANG_PILL_X && x < LANG_PILL_X + LANG_PILL_W) {  // cicla idioma

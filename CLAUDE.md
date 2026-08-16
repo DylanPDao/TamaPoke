@@ -192,11 +192,17 @@ done from here.
   music is NOT mixed with effects -- the task plays the tune a note at a time and
   hands the voice to any effect that arrives. Effects therefore cut through,
   which is the right priority anyway.
-- ~~Volume~~ **backend done**: `audioSetVolume(0..10)` / `audioVolume()`, stored
-  under `"vol"`, applied as the square wave's amplitude, 0 = silent without
-  disabling the system.
-- **STILL TO DO: a volume mixer in the settings screen.** Settings has only
-  SND ON/OFF; it needs a 0-10 slider or +/- row calling `audioSetVolume()`.
+- ~~Volume~~ **done**, backend and UI. `audioSetVolume(0..10)` stored under
+  `"vol"` and applied as the square wave's amplitude; the settings row is
+  `SND ON | - | VOL n | + | EN >`, with a level bar and both ends clamped. The
+  sound switch stays the master; volume is how loud it is when on, and 0 is
+  silence without disabling the system.
+
+**A3. Audio is UNHEARD.** All of the above is verified only by compiling and by
+clicking through the emulator, which has no audio at all -- `host_impl.cpp`
+stubs `sfxPlay` to nothing. Nobody has heard the music loop, the six cues, or
+the volume curve. The amplitude scale in particular (`500 * vol`) is a guess at
+what sounds linear. This is part of what the soak test is for.
 
 **B. Storage and the box.**
 - **Box system** for more than the six party slots. `sizeof(PartyMon)` is 30 B

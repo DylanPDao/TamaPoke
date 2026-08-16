@@ -103,6 +103,7 @@ enum StrId : uint8_t {
   S_BTL_SWITCH,     // battle menu: bring on another creature
   S_BTL_BEAT,       // "%s defeated!" on the win screen
   S_BTL_NEWBADGE,   // a badge earned for the first time
+  S_VOL_FMT,        // volume level, e.g. "VOL 7"
   STR_COUNT
 };
 
