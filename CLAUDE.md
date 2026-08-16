@@ -246,8 +246,27 @@ together and should be designed as one thing, not bolted on separately:
   region -> leader. That replaces today's flat list and is what makes multiple
   regions navigable at all.
 
-**C. Multiplayer.** See the peer-to-peer section below -- ESP-NOW, one
-authoritative device, forced by the 11 `random()` calls a turn.
+**C. Multiplayer -- PROTOCOL DONE, RADIO NOT STARTED.**
+
+`link.h`/`link.cpp` hold the whole state machine: hello with a version check,
+squad exchange, a guest move, a host result, an end. The transport is a function
+pointer, NOT a direct ESP-NOW call, so `link_test` cross-wires two `Link`s in one
+process and exercises the entire handshake without a radio. That paid for itself
+immediately -- see below.
+
+Still to do:
+- **The ESP-NOW transport itself.** Nothing brings up the radio yet. This is the
+  part that CANNOT be tested here and needs two boards.
+- **Pairing UX** on a touch-only screen, and the LAN battle screen.
+- **Wiring `Link` to the battle**: the host feeds `pendingMove` into
+  `btlResolve()` and ships the resulting `TurnLog`s; the guest renders them.
+
+**The synchronous test transport caught a real re-entrancy bug.** `start()` and
+the hello handler both SENT before updating their state, so a reply that arrived
+during the call found the sender still `LISTENING` and it answered again --
+forever. A real radio is asynchronous and might have hidden this until two
+devices with a fast link met. State is now set before sending, and that ordering
+matters anywhere `put()` can re-enter.
 
 **D. Licensing, before this repo goes public.** `CREDITS.md` records that the
 twelve battle backgrounds in `tools/backs/` have **no established provenance**.
