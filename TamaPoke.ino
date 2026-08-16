@@ -160,6 +160,8 @@ bool battleOpen = false;
 Combatant btlYou, btlFoe;
 bool btlOver = false;
 bool btlWon = false;
+bool btlNewBadge = false;
+uint32_t btlWinUntil = 0;   // the win screen is up
 // A trainer fight is a run of 1v1s: both sides queue their squad and the next
 // one steps up when the current one faints. This is the whole difficulty curve
 // -- no gating, just attrition, so one strong creature sweeps Brock and dies
@@ -2324,8 +2326,22 @@ static void btlSay(const char *fmt, ...) {
 
 // Turns a TurnLog into narration. Everything here was already decided by the
 // engine -- nothing is recomputed, so the text can never disagree with the maths.
+// Picks the cue for an action from the TurnLog, so the sound can never
+// disagree with what actually happened.
+static void btlSfxFor(const TurnLog &lg) {
+  if (lg.targetFainted) { sfxPlay(SFX_FAINT); return; }
+  if (lg.inflicted) { sfxPlay(SFX_STATUS); return; }
+  if (lg.damage && lg.effPct > 100) { sfxPlay(SFX_SUPER); return; }
+  if (lg.damage) {
+    sfxPlay(lg.move && MOVE_TBL[lg.move].cat == MC_SPEC ? SFX_BEAM : SFX_HIT);
+    return;
+  }
+  if (lg.move && MOVE_TBL[lg.move].cat == MC_STATUS && !lg.missed) sfxPlay(SFX_STATUS);
+}
+
 static void btlNarrate(const Combatant &actor, const Combatant &target, const TurnLog &lg) {
   if (lg.skipped) return;
+  btlSfxFor(lg);
   if (lg.hurtSelf) { btlSay(T(S_BTL_HURTSELF)); return; }
   if (lg.charged) { btlSay(T(S_BTL_USED), actor.name, MOVE_TBL[lg.move].name); return; }
   if (lg.move) btlSay(T(S_BTL_USED), actor.name, MOVE_TBL[lg.move].name);
@@ -2406,6 +2422,7 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   btlOver = false;
   btlWon = false;
   btlMenu = 0;
+  btlWinUntil = 0;
   btlSwapWho = -1;
   btlFaintUntil[0] = btlFaintUntil[1] = 0;
   btlEnterUntil[0] = btlEnterUntil[1] = 0;
@@ -2413,6 +2430,7 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   btlHpShown[1] = btlFoe.maxHp;
   btlSyncSprite(0, btlYou);
   btlSyncSprite(1, btlFoe);
+  audioMusic(MUS_BATTLE);
   btlLungeUntil[0] = btlLungeUntil[1] = 0;
   btlHitUntil[0] = btlHitUntil[1] = 0;
   battleOpen = true;
@@ -2436,6 +2454,7 @@ void startBattle(int16_t dex, uint8_t lvl) {
   btlOver = false;
   btlWon = false;
   btlMenu = 0;
+  btlWinUntil = 0;
   btlSwapWho = -1;
   btlFaintUntil[0] = btlFaintUntil[1] = 0;
   btlEnterUntil[0] = btlEnterUntil[1] = 0;
@@ -2443,6 +2462,7 @@ void startBattle(int16_t dex, uint8_t lvl) {
   btlHpShown[1] = btlFoe.maxHp;
   btlSyncSprite(0, btlYou);
   btlSyncSprite(1, btlFoe);
+  audioMusic(MUS_BATTLE);
   btlLungeUntil[0] = btlLungeUntil[1] = 0;
   btlHitUntil[0] = btlHitUntil[1] = 0;
   battleOpen = true;
@@ -2495,9 +2515,15 @@ static void btlResolve(uint8_t yourMove) {
   if (btlFoe.fainted() || btlYou.fainted()) {
     btlOver = true;
     btlWon = btlFoe.fainted();
-    if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlTrainer, btlHard))
+    btlNewBadge = false;
+    if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlTrainer, btlHard)) {
       pet.winBadge(btlTrainer, btlHard);
-    btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE));
+      btlNewBadge = true;
+    }
+    audioMusic(btlWon ? MUS_VICTORY : MUS_NONE);
+    if (btlWon) sfxPlay(SFX_VICTORY);
+    if (btlWon && btlTrainer >= 0) { btlWinUntil = millis() + 60000; return; }
+    btlSay("%s", T(S_BTL_LOSE));
   }
 }
 
@@ -2601,7 +2627,60 @@ static void btlEaseBars() {
   }
 }
 
+// The moment the ladder builds toward. It used to be one more line in the same
+// message box as "It's super effective!", with the badge awarded silently.
+void renderWin() {
+  const Trainer &t = TRAINERS[btlTrainer];
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+
+  gfx->setTextColor(UI_BAR_WARN);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - strlen(T(S_BTL_WIN)) * 9, 54);
+  gfx->print(T(S_BTL_WIN));
+
+  char l[40];
+  snprintf(l, sizeof(l), T(S_BTL_BEAT), t.name);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 96);
+  gfx->print(l);
+
+  // the badge, large, with the hard-mode halo if that is how it was won
+  if (btlTrainer < TRAINER_GYMS) {
+    int by = 190;
+    if (btlHard) {
+      for (int r = 62; r >= 56; r--) gfx->drawCircle(CX, by, r, r % 2 ? 0xFEA0 : 0xFF60);
+    }
+    const BadgeArt &a = BADGES_ART[btlTrainer];
+    for (int r = 0; r < BADGE_PX; r++)
+      for (int c = 0; c < BADGE_PX; c++) {
+        uint8_t v = a.idx[r * BADGE_PX + c];
+        if (v == 0xFF) continue;
+        // 3x, so it reads as a prize rather than a list entry
+        gfx->fillRect(CX - BADGE_PX * 3 / 2 + c * 3, by - BADGE_PX * 3 / 2 + r * 3,
+                      3, 3, a.pal[v]);
+      }
+    if (btlNewBadge) {
+      gfx->setTextColor(UI_BAR_OK);
+      gfx->setTextSize(2);
+      gfx->setCursor(CX - strlen(T(S_BTL_NEWBADGE)) * 6, 286);
+      gfx->print(T(S_BTL_NEWBADGE));
+    }
+  }
+  snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCount(btlHard));
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 322);
+  gfx->print(l);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 372);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
 void renderBattle() {
+  if (btlWinUntil) { renderWin(); return; }
   btlEaseBars();
   gfx->fillScreen(RGB565_BLACK);
   drawBattleBack();
@@ -2720,6 +2799,13 @@ static void btlSwitchTo(uint8_t i) {
 }
 
 void battleTap(int16_t x, int16_t y) {
+  if (btlWinUntil) {          // dismiss the win screen and leave the fight
+    btlWinUntil = 0;
+    btlFreeSprites();
+    audioMusic(MUS_NONE);
+    battleOpen = false;
+    return;
+  }
   if (btlMsgCount) {          // a tap clears the narration and returns the menu
     btlMsgCount = 0;
     if (btlOver) { btlFreeSprites(); battleOpen = false; return; }

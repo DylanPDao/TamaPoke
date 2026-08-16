@@ -90,18 +90,49 @@ static const Note N_BYE[]    = {{784, 150}, {659, 150}, {523, 280}};
 static const Note N_LEVEL[]  = {{784, 70}, {1047, 130}};
 
 struct SfxDef { const Note *n; uint8_t len; };
+// battle cues, deliberately short: they land between turns, not over them
+static const Note N_HIT[]    = { {180, 40}, {120, 50} };
+static const Note N_BEAM[]   = { {880, 30}, {1180, 30}, {1560, 60} };
+static const Note N_STATUS[] = { {440, 60}, {370, 60}, {330, 90} };
+static const Note N_SUPER[]  = { {1200, 40}, {1600, 40}, {2000, 80} };
+static const Note N_FAINT[]  = { {520, 90}, {400, 110}, {300, 140}, {200, 200} };
+static const Note N_VICTORY[] = { {784, 120}, {784, 120}, {784, 120}, {1047, 320},
+                                  {880, 140}, {1047, 420} };
+
 static const SfxDef SFX[SFX_COUNT] = {
   {N_TAP, 1}, {N_EAT, 3}, {N_PLAY, 2}, {N_HEART, 2}, {N_HATCH, 4},
   {N_EVOLVE, 5}, {N_MEDAL, 5}, {N_DENY, 2}, {N_BYE, 3}, {N_LEVEL, 2},
+  {N_HIT, 2}, {N_BEAM, 3}, {N_STATUS, 3}, {N_SUPER, 3}, {N_FAINT, 4},
+  {N_VICTORY, 6},
 };
+
+// A loop, not a one-shot: the task walks it and starts over.
+static const Note M_BATTLE[] = {
+  {392, 150}, {523, 150}, {659, 150}, {523, 150},
+  {440, 150}, {587, 150}, {698, 150}, {587, 150},
+  {392, 150}, {523, 150}, {659, 200}, {0, 100},
+  {659, 120}, {587, 120}, {523, 120}, {440, 240}, {0, 160},
+};
+static const Note M_VICTORY[] = {
+  {784, 140}, {880, 140}, {988, 140}, {1047, 420}, {0, 200},
+};
+struct TuneDef { const Note *n; uint8_t len; bool loop; };
+static const TuneDef MUSIC[] = {
+  { nullptr, 0, false },
+  { M_BATTLE, 17, true },
+  { M_VICTORY, 5, false },
+};
+static volatile uint8_t gMusic = MUS_NONE;
+static volatile uint8_t gVol = 7;
 
 static int16_t buf[256 * 2];  // estéreo intercalado (L=R)
 
 // reproduce un tono (o silencio si f==0) con rampa de ataque/caida anti-click
 static void playTone(uint16_t f, uint16_t ms) {
+  if (!gVol) { delay(ms); return; }   // muted: keep the timing, make no sound
   int total = SAMPLE_RATE * ms / 1000;
   int half = f ? (SAMPLE_RATE / (2 * f)) : 0;  // medio periodo en muestras
-  const int16_t amp = 5000;
+  const int16_t amp = (int16_t)(500 * (gVol > 10 ? 10 : gVol));  // 0..5000
   int phase = 0, done = 0;
   bool high = true;
   while (done < total) {
@@ -124,17 +155,48 @@ static void playTone(uint16_t f, uint16_t ms) {
 
 static void audioTask(void *) {
   uint8_t id;
+  uint8_t mi = 0;              // where the tune has got to
   for (;;) {
-    if (xQueueReceive(gQ, &id, portMAX_DELAY) && gOn && gReady && id < SFX_COUNT) {
-      digitalWrite(PA, HIGH);  // enciende el amplificador
-      delay(8);                // deja que arranque
-      const SfxDef &d = SFX[id];
-      for (uint8_t i = 0; i < d.len; i++) playTone(d.n[i].f, d.n[i].ms);
-      delay(60);               // deja salir la cola del DMA antes de cortar
-      digitalWrite(PA, LOW);   // apaga el amp entre sonidos (evita siseo)
+    // Wait briefly rather than forever, so the tune can advance between
+    // effects. An effect that arrives mid-note simply plays after it -- with
+    // one voice, cutting through cleanly beats mixing badly.
+    TickType_t wait = (gMusic != MUS_NONE) ? pdMS_TO_TICKS(5) : portMAX_DELAY;
+    if (xQueueReceive(gQ, &id, wait) == pdTRUE) {
+      if (gOn && gReady && id < SFX_COUNT) {
+        digitalWrite(PA, HIGH);
+        delay(8);
+        const SfxDef &d = SFX[id];
+        for (uint8_t i = 0; i < d.len; i++) playTone(d.n[i].f, d.n[i].ms);
+        delay(60);
+        digitalWrite(PA, LOW);
+      }
+      continue;
     }
+    uint8_t m = gMusic;
+    if (m == MUS_NONE || !gOn || !gReady) { mi = 0; continue; }
+    const TuneDef &t = MUSIC[m];
+    if (!t.n || mi >= t.len) {
+      if (!t.loop) { gMusic = MUS_NONE; mi = 0; continue; }
+      mi = 0;
+    }
+    digitalWrite(PA, HIGH);
+    delay(4);
+    playTone(t.n[mi].f, t.n[mi].ms);
+    digitalWrite(PA, LOW);
+    mi++;
   }
 }
+
+void audioMusic(uint8_t id) { gMusic = (id < 3) ? id : MUS_NONE; }
+
+void audioSetVolume(uint8_t v) {
+  gVol = v > 10 ? 10 : v;
+  Preferences p;
+  p.begin("tamapoke", false);
+  p.putUChar("vol", gVol);
+  p.end();
+}
+uint8_t audioVolume() { return gVol; }
 
 void audioBegin() {
   // I2S primero: arranca el MCLK que necesita el códec para engancharse
@@ -152,6 +214,8 @@ void audioBegin() {
   Preferences p;
   p.begin("tamapoke", true);
   gOn = p.getBool("snd", true);
+  gVol = p.getUChar("vol", 7);
+  if (gVol > 10) gVol = 7;
   p.end();
 
   gReady = true;

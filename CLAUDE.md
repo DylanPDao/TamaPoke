@@ -180,21 +180,23 @@ done from here.
 - **Save backup.** A run is weeks of real time in one NVS partition. `LS`/`PUT`
   already move files over USB, so an export/import command would be small.
 
-**A0. A win screen.** Beating a leader currently prints "You win!" as one more
-line in the same message box as everything else, and the badge is awarded
-silently in `btlResolve()` -- so the moment the whole ladder builds toward has
-no more weight than "It's super effective!". Wants the badge presented (the art
-is in `badges.h` already), the leader named, and a fanfare once `SFX_*` grows a
-victory cue. The medal banner in `renderMain` is the closest existing pattern.
+**A. Audio and the win screen -- BACKEND DONE, one UI piece left.**
 
-**A. Audio.**
-- **Battle music**, with **volume and mute**. `audio.cpp` drives an ES8311 over
-  I2S and `SFX_*` one-shots exist, but there is no music path and no volume
-  control at all -- settings has only SND ON/OFF. Volume wants to be a stored
-  0-10, not a toggle.
-- **Attack sound effects.** Every move currently lands in silence, which is what
-  makes a fight feel flat. A handful keyed off `MoveEntry` -- physical hit,
-  special/beam, status, super-effective, faint -- goes further than one per move.
+- ~~Win screen~~ **done**: the badge at 3x with its hard-mode halo, the leader
+  named, NEW BADGE! when it is the first time, and the running count.
+- ~~Attack sound effects~~ **done**: `SFX_HIT`/`BEAM`/`STATUS`/`SUPER`/`FAINT`/
+  `VICTORY`, chosen from the `TurnLog` so the cue can never disagree with what
+  happened.
+- ~~Battle music~~ **done**: `MUS_BATTLE` loops during a fight, `MUS_VICTORY`
+  plays on a win. There is one square-wave voice and one blocking audio task, so
+  music is NOT mixed with effects -- the task plays the tune a note at a time and
+  hands the voice to any effect that arrives. Effects therefore cut through,
+  which is the right priority anyway.
+- ~~Volume~~ **backend done**: `audioSetVolume(0..10)` / `audioVolume()`, stored
+  under `"vol"`, applied as the square wave's amplitude, 0 = silent without
+  disabling the system.
+- **STILL TO DO: a volume mixer in the settings screen.** Settings has only
+  SND ON/OFF; it needs a 0-10 slider or +/- row calling `audioSetVolume()`.
 
 **B. Storage and the box.**
 - **Box system** for more than the six party slots. `sizeof(PartyMon)` is 30 B

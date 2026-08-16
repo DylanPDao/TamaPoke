@@ -101,6 +101,8 @@ enum StrId : uint8_t {
   S_FIGHT,          // start the battle
   S_LOCKED,         // a gym not yet unlocked
   S_BTL_SWITCH,     // battle menu: bring on another creature
+  S_BTL_BEAT,       // "%s defeated!" on the win screen
+  S_BTL_NEWBADGE,   // a badge earned for the first time
   STR_COUNT
 };
 
