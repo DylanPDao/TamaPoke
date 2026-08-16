@@ -141,6 +141,7 @@ bool trainOpen = false;
 // is edited on demand instead.
 bool movePickOpen = false;
 uint8_t movePickSlot = 0;   // which of the 4 slots is being replaced
+uint8_t movePickParty = 0;  // 0 = the live pet, else the party slot + 1
 uint8_t movePickPage = 0;
 #define MOVE_ROW_Y(i) (96 + (i) * 58)
 #define MOVE_PICK_PER_PAGE 5
@@ -828,7 +829,21 @@ void renderPartyDetail() {
 }
 
 void partyTap(int16_t x, int16_t y) {
-  if (partyDetail) { partyDetail = 0; sfxPlay(SFX_TAP); return; }
+  if (partyDetail) {
+    for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a move to change it
+      int ry = 84 + i * 54;
+      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+      movePickParty = partyDetail;
+      movePickSlot = i;
+      movePickPage = 0;
+      movePickOpen = true;
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    partyDetail = 0;
+    sfxPlay(SFX_TAP);
+    return;
+  }
   // exit button, and the top band, both always work
   if ((y >= 372 && y <= 416 && x >= 133 && x <= 333) || y < 34) {
     if (partyPick) {                 // declined the swap: the pet is let go
@@ -1010,28 +1025,6 @@ void onTap(int16_t x, int16_t y) {
     }
     return;   // modal: nothing else on screen responds until it is answered
   }
-  if (movePickOpen) {
-    uint8_t all[64];
-    uint8_t n = learnableList(all, sizeof(all));
-    for (uint8_t i = 0; i < MOVE_PICK_PER_PAGE; i++) {
-      uint8_t idx = movePickPage * MOVE_PICK_PER_PAGE + i;
-      if (idx >= n) break;
-      int ry = MOVE_PICK_Y(i);
-      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
-      sfxPlay(SFX_TAP);
-      // Swapping for a move already in another slot would silently duplicate
-      // it, so trade the two slots instead of overwriting.
-      for (int s = 0; s < MOVE_SLOTS; s++)
-        if (pet.moves[s] == all[idx] && s != movePickSlot)
-          pet.moves[s] = pet.moves[movePickSlot];
-      pet.moves[movePickSlot] = all[idx];
-      pet.flushSave();
-      movePickOpen = false;
-      return;
-    }
-    movePickOpen = false;   // tap anywhere else = back to the moves page
-    return;
-  }
   if (trainOpen) {
     bool inPanel = (x >= TRAIN_X && x <= TRAIN_X + TRAIN_W &&
                     y >= TRAIN_Y && y <= TRAIN_Y + TRAIN_H);
@@ -1069,6 +1062,28 @@ void onTap(int16_t x, int16_t y) {
     }
     return;
   }
+  if (movePickOpen) {
+    uint8_t all[64];
+    uint8_t n = learnableList(all, sizeof(all));
+    for (uint8_t i = 0; i < MOVE_PICK_PER_PAGE; i++) {
+      uint8_t idx = movePickPage * MOVE_PICK_PER_PAGE + i;
+      if (idx >= n) break;
+      int ry = MOVE_PICK_Y(i);
+      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+      sfxPlay(SFX_TAP);
+      // Swapping for a move already in another slot would silently duplicate
+      // it, so trade the two slots instead of overwriting.
+      uint8_t *tgt = pickTargetMoves();
+      for (int s = 0; s < MOVE_SLOTS; s++)
+        if (tgt[s] == all[idx] && s != movePickSlot) tgt[s] = tgt[movePickSlot];
+      tgt[movePickSlot] = all[idx];
+      if (movePickParty) party.save(); else pet.flushSave();
+      movePickOpen = false;
+      return;
+    }
+    movePickOpen = false;   // tap anywhere else = back to the moves page
+    return;
+  }
   if (partyOpen) {
     partyTap(x, y);
     return;
@@ -1093,6 +1108,7 @@ void onTap(int16_t x, int16_t y) {
         int ry = MOVE_ROW_Y(i);
         if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
         sfxPlay(SFX_TAP);
+        movePickParty = 0;      // the live pet
         movePickSlot = i;
         movePickPage = 0;
         movePickOpen = true;
@@ -1343,6 +1359,10 @@ void render() {
     renderGallery();
     return;
   }
+  if (movePickOpen) {
+    renderMovePick();
+    return;
+  }
   if (partyOpen) {
     if (partyDetail) renderPartyDetail();
     else renderParty();
@@ -1362,10 +1382,6 @@ void render() {
   }
   if (trainOpen) {
     renderTrain();
-    return;
-  }
-  if (movePickOpen) {
-    renderMovePick();
     return;
   }
   if (kbOpen) {
@@ -2186,12 +2202,12 @@ void renderCardMoves() {
 
 // Every move the species can learn by this level, so a slot can be swapped for
 // anything legal -- not just the handful a level-up would have offered.
-uint8_t learnableList(uint8_t *out, uint8_t max) {
-  if (pet.isEgg()) return 0;
-  uint8_t lvl = pet.level(), n = learnCount(pet.speciesId), w = 0;
+uint8_t learnableFor(int16_t dex, uint8_t lvl, uint8_t *out, uint8_t max) {
+  if (dex < 1 || dex > DEX_COUNT) return 0;
+  uint8_t n = learnCount(dex), w = 0;
   for (uint8_t i = 0; i < n && w < max; i++) {
-    if (learnLevel(pet.speciesId, i) > lvl) continue;
-    uint8_t mv = learnMove(pet.speciesId, i);
+    if (learnLevel(dex, i) > lvl) continue;
+    uint8_t mv = learnMove(dex, i);
     if (!mv || mv >= MOVE_COUNT) continue;
     bool dup = false;
     for (uint8_t j = 0; j < w; j++)
@@ -2199,6 +2215,23 @@ uint8_t learnableList(uint8_t *out, uint8_t max) {
     if (!dup) out[w++] = mv;
   }
   return w;
+}
+
+// The picker targets either the live pet or a banked member. A banked one keeps
+// its frozen level, so it can only relearn what it could have known back then.
+uint8_t learnableList(uint8_t *out, uint8_t max) {
+  if (movePickParty) {
+    const PartyMon &m = party.slots[movePickParty - 1];
+    return learnableFor(m.dex, (uint8_t)m.level, out, max);
+  }
+  return pet.isEgg() ? 0 : learnableFor(pet.speciesId, pet.level(), out, max);
+}
+
+uint8_t *pickTargetMoves() {
+  return movePickParty ? party.slots[movePickParty - 1].moves : pet.moves;
+}
+int16_t pickTargetDex() {
+  return movePickParty ? party.slots[movePickParty - 1].dex : pet.speciesId;
 }
 
 void renderMovePick() {
@@ -2218,7 +2251,7 @@ void renderMovePick() {
     if (idx >= n) break;
     // the move already in this slot is highlighted, so replacing like for like
     // is obvious rather than a guess
-    drawMoveRow(MOVE_PICK_Y(i), all[idx], all[idx] == pet.moves[movePickSlot], pet.speciesId);
+    drawMoveRow(MOVE_PICK_Y(i), all[idx], all[idx] == pickTargetMoves()[movePickSlot], pickTargetDex());
   }
   for (uint8_t i = 0; i < pages && pages > 1; i++) {
     if (i == movePickPage) gfx->fillCircle(CX - (pages - 1) * 13 + i * 26, 380, 5, UI_INK);

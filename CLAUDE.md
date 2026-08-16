@@ -345,8 +345,12 @@ Settled:
 - **The party is the battle team.** `PartyMon` already carries full stats and
   `Party::atkOf/defOf/speOf/vitOf` exist. Retired pets are frozen at banking
   (level, training — and moves, once they exist), which is the level cap.
-- **Moves are player-chosen.** On level-up the player picks which of the 4 to
-  forget; it is never automatic. Frozen at banking, so the choice is permanent.
+- **Moves are player-chosen**, and editable on a banked creature too. On
+  level-up the player picks which of the 4 to forget; it is never automatic.
+  Moves were originally FROZEN at banking to give the farewell weight, but that
+  left a creature banked with a poor set useless forever -- which fights hard
+  mode, where coverage decides the run. A banked one is edited from its party
+  sheet, and is limited to what it could have learned at its frozen level.
 - **Status ailments are IN.** Requires a `MoveEntry` schema change: `effect` is
   a single slot already used by EF_RECOIL etc., so a damaging move cannot also
   carry a secondary status. Add `ailment` + `ailChance` fields, then author them
