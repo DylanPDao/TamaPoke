@@ -109,6 +109,9 @@ enum StrId : uint8_t {
   S_BOX_BTN,        // the button on the party screen
   S_REVIVE,         // bring a banked creature back as a companion
   S_REVIVE_EGG,     // why it is unavailable right now
+  // LAN battle
+  S_LAN, S_LAN_HOST, S_LAN_JOIN, S_LAN_WAIT, S_LAN_READY, S_LAN_REFUSED,
+  S_LAN_PICK, S_LAN_VS,
   STR_COUNT
 };
 

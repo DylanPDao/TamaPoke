@@ -90,6 +90,10 @@ extern uint32_t btlLungeUntil[2], btlHitUntil[2];
 extern uint8_t btlMenu;
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
+extern bool lanOpen;
+#include "link.h"
+extern Link lan;
+void startLinkBattle();
 extern uint8_t playerPage;
 extern bool gymHard, pickOpen;
 extern uint8_t partyDetail;
@@ -162,6 +166,38 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     btlHitUntil[1] = millis() + 300;   // foe flinching
   }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
+  else if (!strcmp(screen, "lan")) { lanOpen = true; lan.state = LINK_OFF; }
+  else if (!strcmp(screen, "lanready") || !strcmp(screen, "lanbattle")) {
+    // No radio here, so the pairing is faked at the point the radio would have
+    // finished it: both squads present, state READY. Everything past this --
+    // layout, the battle screen, the guest's restrictions -- is the real code.
+    pet.renameTrainer("DYLAN");
+    lan.begin(true, "DYLAN");
+    snprintf(lan.peerName, sizeof(lan.peerName), "%s", "MISTY");
+    static const int mineDex[] = {9, 25, 143}, theirDex[] = {6, 65, 131};
+    for (int i = 0; i < 3; i++) {
+      Pet t; t.dbgHatchAs(mineDex[i], false);
+      t.ivAtk = t.ivDef = t.ivSpe = t.ivHp = 25;
+      t.ageMinutes = 49UL * MINUTES_PER_LEVEL; t.relearnFromLevel();
+      PartyMon m; m.dex = mineDex[i]; m.level = 50;
+      m.ivAtk = m.ivDef = m.ivSpe = m.ivHp = 25;
+      for (int k = 0; k < MOVE_SLOTS; k++) m.moves[k] = t.moves[k];
+      party.replaceAt(i, m);
+      Combatant mc; combatantFromParty(mc, m);
+      LinkMon mine; linkMonFrom(mine, mc); lan.addMon(mine);
+
+      Pet u; u.dbgHatchAs(theirDex[i], false);
+      u.ivAtk = u.ivDef = u.ivSpe = u.ivHp = 25;
+      u.ageMinutes = 49UL * MINUTES_PER_LEVEL; u.relearnFromLevel();
+      Combatant c; combatantFromPet(c, u);
+      LinkMon lm; linkMonFrom(lm, c);
+      lan.theirs[i] = lm;
+    }
+    lan.theirsN = 3;
+    lan.state = LINK_READY;
+    if (!strcmp(screen, "lanbattle")) { startLinkBattle(); }
+    else lanOpen = true;
+  }
   else if (!strcmp(screen, "box")) {
     static const int f[]={9,25,143,94,131,3};
     for(int i=0;i<6;i++){ PartyMon m; m.dex=f[i]; m.level=40+i*5;

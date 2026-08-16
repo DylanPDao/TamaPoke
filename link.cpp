@@ -135,6 +135,9 @@ void Link::onPacket(const uint8_t *buf, uint8_t len) {
       return;
     case LM_RESULT:
       if (isHost) return;              // the host never receives results
+      memcpy(result, body, n);
+      resultN = n;
+      resultNew = true;
       state = LINK_READY;              // the guest may choose again
       return;
     case LM_END:

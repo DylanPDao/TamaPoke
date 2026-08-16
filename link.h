@@ -66,6 +66,12 @@ struct Link {
   uint8_t pendingMove = 0;   // host: the guest's chosen slot, 0 = none yet
   bool youWon = false;
 
+  // guest: the last turn the host resolved. `resultNew` is cleared by whoever
+  // renders it, so a dropped or duplicated frame cannot replay a turn twice.
+  uint8_t result[LINK_MAX_PAYLOAD];
+  uint8_t resultN = 0;
+  bool resultNew = false;
+
   // set by whoever owns the radio; ctx lets a test route two Links to each other
   void (*send)(void *ctx, const uint8_t *buf, uint8_t len) = nullptr;
   void *ctx = nullptr;
@@ -78,6 +84,18 @@ struct Link {
   void sendResult(const uint8_t *blob, uint8_t len);   // host -> guest
   void sendEnd(bool hostWon);
   bool ready() const { return state == LINK_READY; }
+};
+
+// What the host tells the guest happened. Everything the guest needs to render
+// a turn, and nothing it could use to resolve one -- it has no say in the
+// outcome, which is the whole point of one side being authoritative.
+struct LinkResult {
+  uint16_t hostHp, guestHp;
+  uint8_t hostAil, guestAil;
+  uint8_t hostMove, guestMove;
+  uint16_t hostDmg, guestDmg;
+  uint8_t hostIdx, guestIdx;   // which squad member is out on each side
+  uint8_t flags;               // bit0 crit, bit1 super, bit2 a faint happened
 };
 
 // Builds the wire form of a combatant, so both ends agree on what a creature is.

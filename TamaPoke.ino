@@ -20,6 +20,8 @@
 #include "moves.h"
 #include "battle.h"
 #include "trainers.h"
+#include "link.h"
+#include "linknow.h"
 #include "backs.h"
 #include "badges.h"
 #include <stdarg.h>
@@ -190,6 +192,14 @@ bool spdNewHi = false;
 
 bool gymOpen = false;
 bool gymHard = false;   // which ladder the list is showing
+
+// LAN battle. `lanOpen` is the pairing screen; once both squads are known the
+// normal battle screen takes over with btlLink set.
+bool lanOpen = false;
+Link lan;
+static void btlLinkPoll();   // defined with the battle code, called from render()
+bool btlLink = false;      // this fight is against another device
+bool btlLinkHost = false;
 static bool gymUnlocked(uint8_t idx, bool hard) {
   return idx == 0 || pet.hasBadge(idx - 1, hard);
 }
@@ -765,6 +775,7 @@ void onSwipeV(int dir) {
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (pickOpen) { pickOpen = false; return; }
+  if (lanOpen) { linkNowEnd(); lanOpen = false; return; }
   if (gymOpen) { gymOpen = false; return; }
   if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
@@ -1058,9 +1069,20 @@ void onTap(int16_t x, int16_t y) {
     pickTap(x, y);
     return;
   }
+  if (lanOpen) {
+    lanTap(x, y);
+    return;
+  }
   if (gymOpen) {
     if (y >= 76 && y <= 100) {          // the difficulty pill
       gymHard = !gymHard;
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    if (y >= 380 && y <= 412 && x >= 148 && x <= 318) {   // LAN battle
+      gymOpen = false;
+      lan.state = LINK_OFF;
+      lanOpen = true;
       sfxPlay(SFX_TAP);
       return;
     }
@@ -1465,11 +1487,16 @@ void render() {
     return;
   }
   if (battleOpen) {
+    btlLinkPoll();
     renderBattle();
     return;
   }
   if (pickOpen) {
     renderPick();
+    return;
+  }
+  if (lanOpen) {
+    renderLan();
     return;
   }
   if (gymOpen) {
@@ -2513,6 +2540,41 @@ uint8_t squadCap(uint8_t idx, bool hard) {
   return hard ? TRAINERS[idx].count : TRAINER_TEAM_MAX;
 }
 
+// A fight against another device. The squads are already exchanged; the host
+// owns resolution and the guest renders what it is sent.
+void startLinkBattle() {
+  if (!lan.mineN || !lan.theirsN) return;
+  // Rebuilt from lan.mine, NOT from squadMask. What we fight with has to be
+  // exactly what the peer was told we have -- rebuilding from the party would
+  // silently diverge if anything changed between offering and starting.
+  btlSquadN = 0;
+  btlSquadAt = 0;
+  for (uint8_t i = 0; i < lan.mineN && i < TRAINER_TEAM_MAX; i++)
+    linkMonTo(btlSquad[btlSquadN++], lan.mine[i]);
+  if (!btlSquadN) return;
+  btlYou = btlSquad[0];
+  btlLink = true;
+  btlLinkHost = lan.isHost;
+  btlTrainer = -1;
+  btlHard = false;
+  btlFoeAt = 0;
+  linkMonTo(btlFoe, lan.theirs[0]);
+  btlMsgCount = 0;
+  btlOver = false;
+  btlWon = false;
+  btlMenu = 0;
+  btlWinUntil = 0;
+  btlSwapWho = -1;
+  btlFaintUntil[0] = btlFaintUntil[1] = 0;
+  btlEnterUntil[0] = btlEnterUntil[1] = 0;
+  btlHpShown[0] = btlYou.maxHp;
+  btlHpShown[1] = btlFoe.maxHp;
+  btlSyncSprite(0, btlYou);
+  btlSyncSprite(1, btlFoe);
+  audioMusic(MUS_BATTLE);
+  battleOpen = true;
+}
+
 void startTrainerBattle(uint8_t idx, bool hard) {
   if (idx >= TRAINER_COUNT || pet.isEgg() || pet.ceremony != CER_NONE) return;
   const Trainer &tr = TRAINERS[idx];
@@ -2579,10 +2641,91 @@ void startBattle(int16_t dex, uint8_t lvl) {
   battleOpen = true;
 }
 
+// The guest's whole turn: copy in what the host resolved and play the same
+// animations the host is playing. It runs no battle logic at all -- that is the
+// entire point of one side being authoritative (see link.h).
+static void btlApplyResult() {
+  if (lan.resultN < sizeof(LinkResult)) { lan.resultNew = false; return; }
+  LinkResult r;
+  memcpy(&r, lan.result, sizeof(r));
+  lan.resultNew = false;
+
+  // The wire says "host"/"guest"; here we are always the guest, so their fields
+  // are the foe's and ours are ours.
+  uint32_t now = millis();
+  if (r.guestIdx < btlSquadN && r.guestIdx != btlSquadAt) {
+    btlSquad[btlSquadAt] = btlYou;
+    btlSquadAt = r.guestIdx;
+    btlYou = btlSquad[btlSquadAt];
+    btlSyncSprite(0, btlYou);
+    btlLungeUntil[0] = btlHitUntil[0] = btlFaintUntil[0] = 0;
+    btlEnterUntil[0] = now + BTL_ENTER_MS;
+  }
+  if (r.hostIdx != btlFoeAt && r.hostIdx < lan.theirsN) {
+    btlFoeAt = r.hostIdx;
+    linkMonTo(btlFoe, lan.theirs[btlFoeAt]);
+    btlHpShown[1] = btlFoe.maxHp;
+    btlSyncSprite(1, btlFoe);
+    btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
+    btlEnterUntil[1] = now + BTL_ENTER_MS;
+  }
+  btlYou.hp = r.guestHp > btlYou.maxHp ? btlYou.maxHp : r.guestHp;
+  btlFoe.hp = r.hostHp > btlFoe.maxHp ? btlFoe.maxHp : r.hostHp;
+  btlYou.ailment = r.guestAil;
+  btlFoe.ailment = r.hostAil;
+
+  btlMsgCount = 0;
+  if (r.hostMove) btlSay(T(S_BTL_USED), btlFoe.name, MOVE_TBL[r.hostMove].name);
+  if (r.guestMove) btlSay(T(S_BTL_USED), btlYou.name, MOVE_TBL[r.guestMove].name);
+  if (r.guestDmg) { btlHitUntil[0] = now + BTL_HIT_MS; sfxPlay(SFX_HIT); }
+  if (r.hostDmg) { btlHitUntil[1] = now + BTL_HIT_MS; sfxPlay(SFX_HIT); }
+  if (btlYou.fainted()) {
+    btlFaintUntil[0] = now + BTL_FAINT_MS;
+    btlSay(T(S_BTL_FAINT), btlYou.name);
+  }
+  if (btlFoe.fainted()) {
+    btlFaintUntil[1] = now + BTL_FAINT_MS;
+    btlSay(T(S_BTL_FAINT), btlFoe.name);
+  }
+}
+
+// Radio packets land on another task, so the guest picks them up here, once a
+// frame, rather than rendering from inside an interrupt.
+static void btlLinkPoll() {
+  if (!btlLink || btlLinkHost) return;
+  if (lan.resultNew) btlApplyResult();
+  if (lan.state == LINK_DONE && !btlOver) {
+    btlOver = true;
+    btlWon = lan.youWon;
+    audioMusic(btlWon ? MUS_VICTORY : MUS_NONE);
+    if (btlWon) sfxPlay(SFX_VICTORY);
+    btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE));
+  }
+}
+
+// Packs the outcome for the guest. Only the host ever calls this.
+static void btlShipResult(uint8_t yourMove, uint8_t theirMove,
+                          uint16_t hp0You, uint16_t hp0Foe) {
+  LinkResult r = {};
+  r.hostHp = btlYou.hp;   r.guestHp = btlFoe.hp;
+  r.hostAil = btlYou.ailment; r.guestAil = btlFoe.ailment;
+  r.hostMove = yourMove;  r.guestMove = theirMove;
+  r.hostDmg = (hp0You > btlYou.hp) ? hp0You - btlYou.hp : 0;
+  r.guestDmg = (hp0Foe > btlFoe.hp) ? hp0Foe - btlFoe.hp : 0;
+  r.hostIdx = btlSquadAt; r.guestIdx = btlFoeAt;
+  if (btlYou.fainted() || btlFoe.fainted()) r.flags |= 0x04;
+  lan.sendResult((const uint8_t *)&r, (uint8_t)sizeof(r));
+}
+
 // One exchange: both sides act in speed order, then burn/poison chip.
 static void btlResolve(uint8_t yourMove) {
   TurnLog lg;
-  uint8_t foeMove = aiChooseMove(btlFoe, btlYou, btlHard);
+  // Against another device the opponent's move comes off the wire, never from
+  // the AI -- and the host is the only side that runs this at all.
+  uint8_t foeMove = btlLink
+      ? (lan.pendingMove ? btlFoe.moves[(lan.pendingMove - 1) % MOVE_SLOTS] : btlFoe.moves[0])
+      : aiChooseMove(btlFoe, btlYou, btlHard);
+  if (btlLink) lan.pendingMove = 0;
 
   bool youFirst = battleMovesFirst(btlYou, yourMove, btlFoe, foeMove);
   Combatant *a = youFirst ? &btlYou : &btlFoe;
@@ -2604,6 +2747,7 @@ static void btlResolve(uint8_t yourMove) {
   // whoever actually lost health flinches, whichever side dealt it
   if (btlYou.hp < hp0You) btlHitUntil[0] = now + BTL_HIT_MS;
   if (btlFoe.hp < hp0Foe) btlHitUntil[1] = now + BTL_HIT_MS;
+  if (btlLink && btlLinkHost) btlShipResult(yourMove, foeMove, hp0You, hp0Foe);
   if (!btlYou.fainted() && !btlFoe.fainted()) {
     battleEndTurn(btlYou, lg);
     if (lg.damage) btlNarrate(btlYou, btlYou, lg);
@@ -2613,6 +2757,11 @@ static void btlResolve(uint8_t yourMove) {
   // Someone went down. The replacement is NOT swapped in here -- that made the
   // change instant and read as a jump cut. Flag it, let the sprite drop out of
   // frame, and swap when the player dismisses the message.
+  if (btlFoe.fainted() && btlLink && btlFoeAt + 1 < lan.theirsN) {
+    btlFaintUntil[1] = millis() + BTL_FAINT_MS;
+    btlSwapWho = 1;
+    return;
+  }
   if (btlFoe.fainted() && btlTrainer >= 0 && btlFoeAt + 1 < TRAINERS[btlTrainer].count) {
     btlFaintUntil[1] = millis() + BTL_FAINT_MS;
     btlSwapWho = 1;
@@ -2633,6 +2782,9 @@ static void btlResolve(uint8_t yourMove) {
     }
     audioMusic(btlWon ? MUS_VICTORY : MUS_NONE);
     if (btlWon) sfxPlay(SFX_VICTORY);
+    // Tell the peer before anything else: if we stop here without sending, the
+    // other device sits on a battle that will never take another turn.
+    if (btlLink && btlLinkHost) lan.sendEnd(btlWon);
     if (btlWon && btlTrainer >= 0) { btlWinUntil = millis() + 60000; return; }
     btlSay("%s", T(S_BTL_LOSE));
   }
@@ -2870,7 +3022,16 @@ void renderBattle() {
 // Brings on the flagged replacement and starts its entrance.
 static void btlDoSwap() {
   uint32_t now = millis();
-  if (btlSwapWho == 1) {
+  if (btlSwapWho == 1 && btlLink) {
+    btlFoeAt++;
+    if (btlFoeAt >= lan.theirsN) { btlSwapWho = -1; return; }
+    linkMonTo(btlFoe, lan.theirs[btlFoeAt]);
+    btlHpShown[1] = btlFoe.maxHp;
+    btlSyncSprite(1, btlFoe);
+    btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
+    btlEnterUntil[1] = now + BTL_ENTER_MS;
+    btlSay(T(S_BTL_SENDS), lan.peerName, btlFoe.name);
+  } else if (btlSwapWho == 1) {
     const Trainer &t = TRAINERS[btlTrainer];
     btlFoeAt++;
     foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
@@ -2938,7 +3099,12 @@ void battleTap(int16_t x, int16_t y) {
       int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
       if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
       const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
-      if (i == btlSquadAt || m.fainted()) { sfxPlay(SFX_DENY); return; }
+      // A linked battle carries a move slot and nothing else, so the guest has
+      // no way to tell the host it switched. Refused rather than desynced.
+      if (i == btlSquadAt || m.fainted() || (btlLink && !btlLinkHost)) {
+        sfxPlay(SFX_DENY);
+        return;
+      }
       sfxPlay(SFX_TAP);
       btlSwitchTo(i);
       return;
@@ -2952,6 +3118,11 @@ void battleTap(int16_t x, int16_t y) {
     if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
     sfxPlay(SFX_TAP);
     btlMenu = 0;
+    if (btlLink && !btlLinkHost) {
+      lan.sendMove(i);        // the guest asks; the host decides
+      return;
+    }
+    if (btlLink && !lan.pendingMove) return;   // host waits for their choice
     btlResolve(btlYou.moves[i]);
     return;
   }
@@ -3342,6 +3513,106 @@ void pickTap(int16_t x, int16_t y) {
   }
 }
 
+// ---------- LAN battle ----------
+// Pairing on a touch-only screen: one device hosts, the other joins, and the
+// protocol does the rest. There is no MAC entry because there is no keyboard
+// worth typing one on.
+void renderLan() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_LAN)) * 6, 44);
+  gfx->print(T(S_LAN));
+
+  const char *msg = T(S_LAN_PICK);
+  switch (lan.state) {
+    case LINK_HANDSHAKE:
+    case LINK_LISTENING: msg = T(S_LAN_WAIT); break;
+    case LINK_SQUADS:    msg = T(S_LAN_WAIT); break;
+    case LINK_READY:     msg = T(S_LAN_READY); break;
+    case LINK_REFUSED:   msg = T(S_LAN_REFUSED); break;
+    default: break;
+  }
+  gfx->setTextColor(lan.state == LINK_REFUSED ? UI_BAR_BAD : UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(msg) * 3, 76);
+  gfx->print(msg);
+
+  if (lan.state == LINK_OFF || lan.state == LINK_REFUSED) {
+    const char *lab[2] = { T(S_LAN_HOST), T(S_LAN_JOIN) };
+    for (int i = 0; i < 2; i++) {
+      int y = 120 + i * 70;
+      gfx->fillRoundRect(90, y, 286, 56, 12, UI_BG_DAY);
+      gfx->drawRoundRect(90, y, 286, 56, 12, UI_INK);
+      gfx->setTextColor(UI_INK);
+      gfx->setTextSize(2);
+      gfx->setCursor(CX - (int)strlen(lab[i]) * 6, y + 20);
+      gfx->print(lab[i]);
+    }
+  } else if (lan.state == LINK_READY) {
+    char l[40];
+    if (lan.peerName[0]) {
+      gfx->setTextColor(UI_INK);
+      gfx->setTextSize(2);
+      gfx->setCursor(CX - (int)strlen(lan.peerName) * 6, 130);
+      gfx->print(lan.peerName);
+    }
+    snprintf(l, sizeof(l), T(S_LAN_VS), lan.theirsN);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - (int)strlen(l) * 6, 150);
+    gfx->print(l);
+    gfx->fillRoundRect(120, 220, 226, 56, 12, UI_BAR_OK);
+    gfx->drawRoundRect(120, 220, 226, 56, 12, UI_INK);
+    gfx->setTextColor(UI_BG_DAY);
+    gfx->setCursor(CX - strlen(T(S_FIGHT)) * 6, 240);
+    gfx->print(T(S_FIGHT));
+  }
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
+// Hands our chosen squad to the link, then announces.
+static void lanOffer(bool host) {
+  if (!linkNowBegin(&lan)) {          // no radio: say so rather than hanging
+    lan.state = LINK_REFUSED;
+    return;
+  }
+  lan.begin(host, pet.trainerName);
+  snprintf(lan.peerName, sizeof(lan.peerName), "%s", pet.trainerName);
+  buildSquad(0, TRAINER_TEAM_MAX, squadMask);
+  for (uint8_t i = 0; i < btlSquadN; i++) {
+    LinkMon m;
+    linkMonFrom(m, btlSquad[i]);
+    lan.addMon(m);
+  }
+  if (host) lan.start();              // the guest waits to be greeted
+}
+
+void lanTap(int16_t x, int16_t y) {
+  if (lan.state == LINK_OFF || lan.state == LINK_REFUSED) {
+    for (int i = 0; i < 2; i++) {
+      int by = 120 + i * 70;
+      if (x < 90 || x > 376 || y < by || y > by + 56) continue;
+      sfxPlay(SFX_TAP);
+      lanOffer(i == 0);
+      return;
+    }
+  } else if (lan.state == LINK_READY) {
+    if (x >= 120 && x <= 346 && y >= 220 && y <= 276) {
+      sfxPlay(SFX_TAP);
+      lanOpen = false;
+      startLinkBattle();
+      return;
+    }
+  }
+  if (y > 370) { linkNowEnd(); lanOpen = false; }   // back
+}
+
 // ---------- gym list ----------
 void renderGyms() {
   gfx->fillScreen(RGB565_BLACK);
@@ -3403,10 +3674,13 @@ void renderGyms() {
     if (i == gymPage) gfx->fillCircle(dx, 366, 5, UI_INK);
     else gfx->drawCircle(dx, 366, 4, UI_INK);
   }
-  gfx->setTextColor(UI_TRACK);
+  // the other kind of battle lives here too
+  gfx->fillRoundRect(148, 380, 170, 32, 9, UI_BG_DAY);
+  gfx->drawRoundRect(148, 380, 170, 32, 9, UI_INK);
+  gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
-  gfx->print(T(S_BACK));
+  gfx->setCursor(CX - strlen(T(S_LAN)) * 6, 388);
+  gfx->print(T(S_LAN));
   gfx->flush();
 }
 

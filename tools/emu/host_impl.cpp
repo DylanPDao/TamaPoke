@@ -125,6 +125,11 @@ bool pwrShortPressed() { return false; }
 // --- audio (silent) ---
 void audioBegin() {}
 void sfxPlay(uint8_t) {}
+// no radio here; the protocol itself is exercised by tests/link_test.cpp
+struct Link;
+bool linkNowBegin(Link *) { return false; }
+void linkNowEnd() {}
+bool linkNowUp() { return false; }
 // audio is silent here, but the sketch calls these, so they have to exist
 static uint8_t g_emuVol = 7, g_emuMusic = 0;
 void audioMusic(uint8_t id) { g_emuMusic = id; }

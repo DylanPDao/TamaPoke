@@ -57,6 +57,26 @@ int main(){
   uint8_t blob[4]={1,2,3,4};
   A.sendResult(blob,4);
   ck(B.state==LINK_READY, "a result returns the guest to choosing");
+  ck(B.resultNew && B.resultN==4 && B.result[0]==1, "and carries the payload");
+
+  // the real payload: what the guest actually renders a turn from
+  ck(sizeof(LinkResult) <= LINK_MAX_PAYLOAD, "a result fits in one packet");
+  LinkResult r{}; 
+  r.hostHp=111; r.guestHp=222; r.hostMove=33; r.guestMove=44;
+  r.hostDmg=9; r.guestDmg=8; r.hostIdx=1; r.guestIdx=0; r.guestAil=AIL_BURN;
+  B.resultNew=false;
+  A.sendResult((const uint8_t*)&r,(uint8_t)sizeof(r));
+  LinkResult got{}; memcpy(&got,B.result,sizeof(got));
+  ck(B.resultNew && B.resultN==sizeof(r), "a full result arrives whole");
+  ck(got.hostHp==111 && got.guestHp==222 && got.guestAil==AIL_BURN,
+     "health and ailments survive the wire");
+  ck(got.hostIdx==1 && got.guestIdx==0, "so does which creature is out");
+
+  // the guest never resolves anything: a result it did not ask for is still
+  // applied, but a MOVE aimed at it is not -- only the host acts on moves
+  B.pendingMove=0;
+  B.onPacket((const uint8_t[]){LM_MOVE,1,2},3);
+  ck(B.pendingMove==0, "the guest ignores MOVE packets");
 
   // the host's own results are never accepted back
   A.state=LINK_READY; A.onPacket((const uint8_t[]){LM_RESULT,0},2);

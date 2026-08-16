@@ -246,7 +246,7 @@ together and should be designed as one thing, not bolted on separately:
   region -> leader. That replaces today's flat list and is what makes multiple
   regions navigable at all.
 
-**C. Multiplayer -- PROTOCOL DONE, RADIO NOT STARTED.**
+**C. Multiplayer -- WRITTEN END TO END, RADIO NEVER RUN.**
 
 `link.h`/`link.cpp` hold the whole state machine: hello with a version check,
 squad exchange, a guest move, a host result, an end. The transport is a function
@@ -254,12 +254,29 @@ pointer, NOT a direct ESP-NOW call, so `link_test` cross-wires two `Link`s in on
 process and exercises the entire handshake without a radio. That paid for itself
 immediately -- see below.
 
+Everything around the radio is now built and tested: `linknow.cpp` (ESP-NOW
+broadcast), the LAN screen (`renderLan`/`lanOffer`/`lanTap`, reached from a
+button on the gym list), and the battle wiring. `btlResolve()` takes the foe's
+move from `lan.pendingMove` instead of the AI when `btlLink` is set, ships a
+`LinkResult` to the guest, and `btlLinkPoll()` applies it on the guest's side
+once a frame. `lan_test` covers that half; `link_test` covers the protocol.
+
+Two design points worth not undoing:
+- **The squad is rebuilt from `lan.mine`, not from `squadMask`.** What you fight
+  with must be exactly what the peer was told you have. Rebuilding from the
+  party would silently diverge if anything changed between offering and
+  starting -- `lan_test` fails if you switch it back.
+- **The guest cannot switch creatures.** The wire carries a move slot and
+  nothing else, so a guest switch would desync. It is refused, not ignored.
+  Lifting this needs a new message type and a `LINK_PROTO` bump.
+
 Still to do:
-- **The ESP-NOW transport itself.** Nothing brings up the radio yet. This is the
-  part that CANNOT be tested here and needs two boards.
-- **Pairing UX** on a touch-only screen, and the LAN battle screen.
-- **Wiring `Link` to the battle**: the host feeds `pendingMove` into
-  `btlResolve()` and ships the resulting `TurnLog`s; the guest renders them.
+- **Run it on two boards.** `linknow.cpp` has never executed. Channel choice,
+  broadcast delivery, the WiFi/PSRAM interaction and the current draw are all
+  unverified. Treat first bring-up as debugging, not as confirmation.
+- **Pairing is by broadcast**, so two pairs of devices in one room will collide.
+  Real addressing is the fix if that ever happens.
+- **Guest switching** and a rematch without re-pairing.
 
 **The synchronous test transport caught a real re-entrancy bug.** `start()` and
 the hello handler both SENT before updating their state, so a reply that arrived
