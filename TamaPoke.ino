@@ -102,7 +102,8 @@ uint8_t partyDetail = 0;   // 0 = the grid, else slot + 1
 // waiting for something to trade with, 0 when nothing is pending.
 bool boxOpen = false;
 uint8_t boxPage = 0;
-uint8_t boxSwapFrom = 0;   // party slot + 1
+uint8_t boxSwapFrom = 0;   // party slot + 1, armed from the party side
+uint8_t boxSel = 0;        // box slot + 1, armed from the box side
 #define BOX_PER_PAGE 6
 uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
 char partyBannerName[14] = "";
@@ -766,6 +767,7 @@ void onSwipeV(int dir) {
   if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
+  if (boxOpen) { boxOpen = false; boxSel = 0; return; }   // vertical backs out
   if (partyOpen) {
     if (partyDetail) { partyDetail = 0; return; }
     if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
@@ -900,6 +902,12 @@ void partyTap(int16_t x, int16_t y) {
     int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
     int cy0 = PARTY_GRID_Y + (i / 2) * (PARTY_CELL_H + 8);
     if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
+    if (boxSel) {                    // a box creature is waiting for a slot
+      party.swapPartyBox(i, boxSel - 1);
+      boxSel = 0;
+      sfxPlay(SFX_MEDAL);
+      return;
+    }
     if (!partyPick) {
       if (boxSwapFrom == i + 1) {    // tapped again: take it to the box
         boxOpen = true;
@@ -959,6 +967,13 @@ void onSwipe(int dir) {
     int p = (int)movePickPage + (dir > 0 ? -1 : 1);
     if (p < 0 || p >= pages) movePickOpen = false;
     else movePickPage = (uint8_t)p;
+    return;
+  }
+  if (boxOpen) {   // horizontal pages the box, as every other paged screen
+    uint8_t pages = BOX_SLOTS / BOX_PER_PAGE;
+    int p = (int)boxPage + (dir > 0 ? -1 : 1);
+    if (p < 0 || p >= pages) { boxOpen = false; boxSel = 0; }
+    else boxPage = (uint8_t)p;
     return;
   }
   if (partyOpen) {
@@ -3681,17 +3696,30 @@ void boxTap(int16_t x, int16_t y) {
     int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
     int cy0 = 88 + (i / 2) * (PARTY_CELL_H + 8);
     if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
-    if (!boxSwapFrom) {          // nothing picked yet: nothing to trade with
-      sfxPlay(SFX_DENY);
+    if (boxSwapFrom) {           // a party slot is waiting: complete the trade
+      if (party.slots[boxSwapFrom - 1].empty() && party.box[idx].empty()) {
+        sfxPlay(SFX_DENY);
+        return;
+      }
+      party.swapPartyBox(boxSwapFrom - 1, idx);
+      boxSwapFrom = 0;
+      boxSel = 0;
+      sfxPlay(SFX_MEDAL);
       return;
     }
-    if (party.slots[boxSwapFrom - 1].empty() && party.box[idx].empty()) {
-      sfxPlay(SFX_DENY);         // swapping two empties does nothing
+    // otherwise arm from THIS side: if the party has room, send it straight
+    // over; if not, remember it and let the player pick who it replaces
+    if (party.box[idx].empty()) { sfxPlay(SFX_DENY); return; }
+    int free = party.firstFree();
+    if (free >= 0) {
+      party.swapPartyBox((uint8_t)free, idx);
+      boxSel = 0;
+      sfxPlay(SFX_MEDAL);
       return;
     }
-    party.swapPartyBox(boxSwapFrom - 1, idx);
-    boxSwapFrom = 0;
-    sfxPlay(SFX_MEDAL);
+    boxSel = idx + 1;            // party is full: go choose who steps out
+    boxOpen = false;
+    sfxPlay(SFX_TAP);
     return;
   }
   boxOpen = false;               // anywhere else backs out
@@ -3757,6 +3785,17 @@ void renderParty() {
     gfx->setTextSize(2);
     gfx->setCursor(233 - (int)strlen(bl) * 6, 344);
     gfx->print(bl);
+  }
+
+  if (boxSel) {
+    const PartyMon &b = party.box[boxSel - 1];
+    char sw[44];
+    snprintf(sw, sizeof(sw), T(S_BOX_SWAP),
+             b.nick[0] ? b.nick : DEX_TBL[b.dex].name);
+    gfx->setTextColor(UI_BAR_WARN);
+    gfx->setTextSize(1);
+    gfx->setCursor(CX - (int)strlen(sw) * 3, 72);
+    gfx->print(sw);
   }
 
   // when a newcomer is waiting, say so instead of the usual hint

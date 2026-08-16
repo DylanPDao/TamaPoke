@@ -68,6 +68,19 @@ int main(){
        "only a full party AND a full box refuses, which is when the player picks");
   }
 
+  // withdrawing into a party that has room must not need a party slot picked
+  { Party r; r.begin();
+    for (int i=0;i<PARTY_SLOTS;i++) r.slots[i]=PartyMon();
+    for (int i=0;i<BOX_SLOTS;i++) r.box[i]=PartyMon();
+    r.slots[0]=mk(6,50); r.box[0]=mk(9,40);
+    r.save(); r.boxSave();
+    int free = r.firstFree();
+    ck(free==1, "the first free party slot is found");
+    r.swapPartyBox((uint8_t)free, 0);
+    ck(r.slots[1].dex==9 && r.box[0].empty(),
+       "withdrawing into a free slot moves it without displacing anyone");
+  }
+
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
 }

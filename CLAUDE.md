@@ -357,6 +357,13 @@ because nothing else can catch what they catch:
 
 Run them after touching `pet.cpp`, `battle.cpp`, `i18n.cpp` or any render path.
 
+**`swipe_test` exists because the same bug was shipped four times** -- the move
+picker, the player card, the gym list and the box each closed on a horizontal
+swipe instead of paging, and each was found by hand rather than by a test. It
+now drives `onSwipe(-1)` against every paged screen and asserts the page
+advanced AND the screen stayed open. **Any new paged screen must be added to
+it**, or this will happen a fifth time.
+
 ### Battle system — decided, not started
 
 **Turn-based and move-based, like the real games.** This is not a fresh choice:

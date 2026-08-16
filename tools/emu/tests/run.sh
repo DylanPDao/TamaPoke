@@ -35,7 +35,7 @@ OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
 # these drive setup()/loop()/render(), so they need the sketch itself
-needs_sketch() { case "$1" in touch_test|flush_test|joy_test|anim_test) return 0;; *) return 1;; esac; }
+needs_sketch() { case "$1" in touch_test|flush_test|joy_test|anim_test|swipe_test) return 0;; *) return 1;; esac; }
 
 pass=0; fail=0
 for src in "$HERE"/*_test.cpp; do
