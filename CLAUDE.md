@@ -271,12 +271,10 @@ confirm their licence or replace them.
    action, falling back to idle and then to the flat thumbnail with no SD.
    The player's slot is NOT the global `pmd`: the active creature may be a
    banked party member rather than the live pet.
-2. **Trainer name.** There is no player name -- the player card is titled with
-   the generic `S_TRAINER`. Needs `char trainerName[12]` on `Pet` (player-wide,
-   so `newEgg()` must not clear it, like `badges` and the streak) plus save/load.
-   The keyboard exists and is reached by tapping the pet's name on card page 0,
-   but commit hardcodes `pet.rename(nameBuf)` (`TamaPoke.ino:3156`), so it needs
-   a target flag before a second caller can share it. Entry: tap TRAINER.
+2. ~~Trainer name~~ **done**. `Pet::trainerName` is player-wide and outlives
+   every ending; tap the title on the player card to set it. The keyboard now
+   takes a target (`KB_PET` / `KB_TRAINER`) rather than hardcoding
+   `pet.rename()` on commit, so two callers can share it.
 3. **Box 6 -> 18** (3 pages of 6). `S_PARTY_FMT` hardcodes "%u/6" in all six
    languages, the party screen needs paging, and **`Party::begin()` must be
    re-keyed off `sizeof(PartyMon)` first** -- it infers the old record size as

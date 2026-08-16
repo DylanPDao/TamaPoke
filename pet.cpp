@@ -893,6 +893,7 @@ void Pet::save() {
   prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putUChar("mvlv", lastLearnLevel);
   prefs.putUChar("avtr", avatar);
+  prefs.putString("tnam", trainerName);
   prefs.putBool("froz", frozen);
   prefs.putUShort("badg", badges);
   prefs.putUShort("badh", badgesHard);
@@ -994,6 +995,7 @@ void Pet::load() {
   lastLearnLevel = prefs.getUChar("mvlv", 0);
   frozen = prefs.getBool("froz", false);
   avatar = prefs.getUChar("avtr", 0);
+  prefs.getString("tnam", trainerName, sizeof(trainerName));
   if (avatar > 3) avatar = 0;
   badges = prefs.getUShort("badg", 0);
   badgesHard = prefs.getUShort("badh", 0);

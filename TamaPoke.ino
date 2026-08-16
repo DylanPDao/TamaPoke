@@ -70,7 +70,9 @@ int16_t galleryDetail = 0;  // dex en vista detalle, 0 = rejilla
 
 bool screenOff = false;       // pulsacion corta del boton PWR
 bool cardOpen = false;        // ficha del bicho (deslizar vertical)
-bool kbOpen = false;          // teclado para renombrar al bicho
+bool kbOpen = false;
+enum : uint8_t { KB_PET = 0, KB_TRAINER };
+uint8_t kbTarget = KB_PET;          // teclado para renombrar al bicho
 char nameBuf[12] = "";
 uint8_t nameLen = 0;
 #define CARD_PAGES 4   // profile, stats, moves, progress -- medals moved to
@@ -1037,7 +1039,12 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (playerOpen) {
-    // the avatar is the only live target; everything else backs out
+    if (playerPage == 0 && y >= 32 && y < 68) {   // the name: rename yourself
+      openKeyboardFor(KB_TRAINER);
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    // the avatar is the only other live target; everything else backs out
     if (playerPage == 0 && x > CX - 40 && x < CX + 40 && y > 70 && y < 146) {
       pet.avatar = (pet.avatar + 1) & 3;
       pet.flushSave();
@@ -2959,10 +2966,13 @@ void battleTap(int16_t x, int16_t y) {
 // the four sprites are hand-drawn (see species.h) because SpriteCollab has no
 // trainer art and ripped sprites would be unlicensed.
 static void renderPlayerBadges() {
+  // the player's name if they have set one, the generic title if not; either
+  // way tapping it opens the keyboard
+  const char *tn = pet.trainerName[0] ? pet.trainerName : T(S_TRAINER);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(3);
-  gfx->setCursor(CX - strlen(T(S_TRAINER)) * 9, 40);
-  gfx->print(T(S_TRAINER));
+  gfx->setCursor(CX - (int)strlen(tn) * 9, 40);
+  gfx->print(tn);
 
   static const char *const *AV[4] = { SPR_PLAYER_A, SPR_PLAYER_B, SPR_PLAYER_C, SPR_PLAYER_D };
   drawMap(AV[pet.avatar & 3], 16, CX - 32, 72, 4, false);
@@ -3832,12 +3842,17 @@ static const char KB_KEYS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ.-";  // 28 + DEL + OK 
 #define KB_W 64
 #define KB_H 52
 
-void openKeyboard() {
+// The keyboard is shared, so it has to be told what it is naming. It used to
+// hardcode pet.rename() on commit, which is why a second caller needed this.
+void openKeyboardFor(uint8_t target) {
+  kbTarget = target;
   kbOpen = true;
-  strncpy(nameBuf, pet.nick, sizeof(nameBuf) - 1);
+  const char *cur = (target == KB_TRAINER) ? pet.trainerName : pet.nick;
+  strncpy(nameBuf, cur, sizeof(nameBuf) - 1);
   nameBuf[sizeof(nameBuf) - 1] = 0;
   nameLen = strlen(nameBuf);
 }
+void openKeyboard() { openKeyboardFor(KB_PET); }
 
 void renderKeyboard() {
   gfx->fillScreen(RGB565_BLACK);
@@ -3880,7 +3895,8 @@ void keyboardTap(int16_t x, int16_t y) {
   if (i == 28) {  // borrar
     if (nameLen) nameBuf[--nameLen] = 0;
   } else if (i == 29) {  // OK
-    pet.rename(nameBuf);
+    if (kbTarget == KB_TRAINER) pet.renameTrainer(nameBuf);
+    else pet.rename(nameBuf);
     kbOpen = false;
   } else if (nameLen < sizeof(nameBuf) - 1) {
     nameBuf[nameLen++] = KB_KEYS[i];

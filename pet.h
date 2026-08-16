@@ -128,6 +128,15 @@ public:
   bool frozen = false;
   void reviveFrom(const PartyMon &m);
 
+  // The player's own name, alongside the badges and the streak: it belongs to
+  // whoever is playing, not to the creature, so newEgg() must never clear it.
+  char trainerName[12] = "";
+  void renameTrainer(const char *n) {
+    strncpy(trainerName, n, sizeof(trainerName) - 1);
+    trainerName[sizeof(trainerName) - 1] = 0;
+    save();
+  }
+
   uint8_t avatar = 0;       // which player sprite, 0..3
   uint16_t badges = 0;      // bit n = trainer n beaten on easy
   uint16_t badgesHard = 0;  // ... and on hard
