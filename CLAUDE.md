@@ -180,6 +180,13 @@ done from here.
 - **Save backup.** A run is weeks of real time in one NVS partition. `LS`/`PUT`
   already move files over USB, so an export/import command would be small.
 
+**A0. A win screen.** Beating a leader currently prints "You win!" as one more
+line in the same message box as everything else, and the badge is awarded
+silently in `btlResolve()` -- so the moment the whole ladder builds toward has
+no more weight than "It's super effective!". Wants the badge presented (the art
+is in `badges.h` already), the leader named, and a fanfare once `SFX_*` grows a
+victory cue. The medal banner in `renderMain` is the closest existing pattern.
+
 **A. Audio.**
 - **Battle music**, with **volume and mute**. `audio.cpp` drives an ES8311 over
   I2S and `SFX_*` one-shots exist, but there is no music path and no volume
