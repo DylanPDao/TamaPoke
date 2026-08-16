@@ -52,6 +52,22 @@ int main(){
   for (int i=0;i<BOX_SLOTS;i++) p.box[i]=mk(19,5);
   ck(p.boxFirstFree()==-1 && !p.boxAdd(mk(1,1)), "a full box refuses more");
 
+  // a farewell with a full party must reach the box rather than being stuck
+  { Party r; r.begin();
+    for (int i=0;i<PARTY_SLOTS;i++) r.slots[i]=mk(1+i,40);
+    for (int i=0;i<BOX_SLOTS;i++) r.box[i]=PartyMon();
+    r.save(); r.boxSave();
+    PartyMon newcomer = mk(150, 73);
+    bool toParty = r.add(newcomer);
+    bool toBox = toParty ? false : r.boxAdd(newcomer);
+    ck(!toParty && toBox, "a full party sends the newcomer to the box");
+    ck(r.box[0].dex==150, "and it is really there");
+    // a full party AND a full box is the only case that should refuse
+    for (int i=0;i<BOX_SLOTS;i++) r.box[i]=mk(19,5);
+    ck(!r.add(newcomer) && !r.boxAdd(newcomer),
+       "only a full party AND a full box refuses, which is when the player picks");
+  }
+
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
 }

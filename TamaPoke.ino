@@ -107,9 +107,9 @@ uint8_t boxSwapFrom = 0;   // party slot + 1
 uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
 char partyBannerName[14] = "";
 #define PARTY_CELL_W 150
-#define PARTY_CELL_H 74
+#define PARTY_CELL_H 70
 #define PARTY_GRID_X 78
-#define PARTY_GRID_Y 92
+#define PARTY_GRID_Y 88
 
 bool clockOpen = false;       // pantalla de ajuste de hora (deslizar abajo)
 int clockH = 12, clockM = 0;  // hora en edicion
@@ -435,7 +435,8 @@ void loop() {
   // With room it simply joins; with a full party the player is taken straight
   // to the party screen to choose who it replaces, or to let it go.
   if (pet.endedKind != CER_NONE && !partyPick) {
-    if (party.add(pet.endedMon)) {
+    // party first, then the box; only a full box makes it your choice
+    if (party.add(pet.endedMon) || party.boxAdd(pet.endedMon)) {
       snprintf(partyBannerName, sizeof(partyBannerName), "%s",
                pet.endedMon.nick[0] ? pet.endedMon.nick : DEX_TBL[pet.endedMon.dex].name);
       partyBannerUntil = now + 3500;
@@ -838,7 +839,7 @@ void renderPartyDetail() {
 
 void partyTap(int16_t x, int16_t y) {
   if (boxOpen) { boxTap(x, y); return; }
-  if (!partyPick && y >= 322 && y <= 360 && x >= 150 && x <= 316) {
+  if (!partyPick && y >= 336 && y <= 368 && x >= 158 && x <= 308) {
     boxOpen = true;                  // open the box, nothing picked yet
     boxPage = 0;
     boxSwapFrom = 0;
@@ -3613,7 +3614,7 @@ void renderBox() {
     if (idx >= BOX_SLOTS) break;
     const PartyMon &m = party.box[idx];
     int x = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
-    int y = 84 + (i / 2) * (PARTY_CELL_H + 8);
+    int y = 88 + (i / 2) * (PARTY_CELL_H + 8);
     gfx->fillRoundRect(x, y, PARTY_CELL_W, PARTY_CELL_H, 10,
                        m.empty() ? UI_TRACK : UI_WHITE);
     gfx->drawRoundRect(x, y, PARTY_CELL_W, PARTY_CELL_H, 10, UI_INK);
@@ -3653,7 +3654,7 @@ void boxTap(int16_t x, int16_t y) {
     uint8_t idx = boxPage * BOX_PER_PAGE + i;
     if (idx >= BOX_SLOTS) break;
     int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
-    int cy0 = 84 + (i / 2) * (PARTY_CELL_H + 8);
+    int cy0 = 88 + (i / 2) * (PARTY_CELL_H + 8);
     if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
     if (!boxSwapFrom) {          // nothing picked yet: nothing to trade with
       sfxPlay(SFX_DENY);
@@ -3725,11 +3726,11 @@ void renderParty() {
     char bl[24];
     snprintf(bl, sizeof(bl), T(S_BOX_FMT), party.boxCount(), BOX_SLOTS);
     bool armed = boxSwapFrom != 0;
-    gfx->fillRoundRect(150, 322, 166, 38, 10, armed ? UI_BAR_WARN : UI_BG_DAY);
-    gfx->drawRoundRect(150, 322, 166, 38, 10, UI_INK);
+    gfx->fillRoundRect(158, 336, 150, 32, 9, armed ? UI_BAR_WARN : UI_BG_DAY);
+    gfx->drawRoundRect(158, 336, 150, 32, 9, UI_INK);
     gfx->setTextColor(UI_INK);
     gfx->setTextSize(2);
-    gfx->setCursor(233 - (int)strlen(bl) * 6, 333);
+    gfx->setCursor(233 - (int)strlen(bl) * 6, 344);
     gfx->print(bl);
   }
 

@@ -215,6 +215,20 @@ what sounds linear. This is part of what the soak test is for.
   the two slots may be empty. Reached by tapping a party slot then BOX.
 - Room to grow: 6 + 18 records is 720 B against a ~4000 B single-blob limit, so
   the box could reach ~120 before it would need splitting.
+- A farewell now falls through party -> box, and only a full party AND a full
+  box makes the player choose who to replace. That is what the box is for.
+
+**B3. Endless mode / reviving a banked creature (DESIGN, undecided).** Two
+different ideas that got asked as one:
+- *Never having to say goodbye* mostly exists already -- farewell is only
+  OFFERED at 3 days and can be declined forever, and level caps at 100. A real
+  "endless" switch would only suppress the prompt.
+- *Bringing one back* -- promoting a banked creature to be the live pet again --
+  is the interesting one, and the harder one: a banked creature is FROZEN
+  (`level`, no ageing, no training), while the live pet's level IS its age. So
+  reviving means inventing `ageMinutes` from a frozen level, and deciding
+  whether it resumes ageing (and can therefore die again) or stays frozen (and
+  is immortal but untrainable). Worth deciding before building.
 
 **B2. Multi-region, once the Gen 2/3 expansion is untabled.** These four hang
 together and should be designed as one thing, not bolted on separately:
