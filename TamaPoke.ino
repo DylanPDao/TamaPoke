@@ -821,18 +821,34 @@ void renderPartyDetail() {
   gfx->print(ty);
 
   for (int i = 0; i < MOVE_SLOTS; i++)
-    drawMoveRow(84 + i * 54, m.moves[i], false, m.dex);
+    drawMoveRow(78 + i * 52, m.moves[i], false, m.dex);
 
   char st[40];
   snprintf(st, sizeof(st), "ATK %u  DEF %u  SPD %u  HP %u",
            party.atkOf(m), party.defOf(m), party.speOf(m), party.vitOf(m));
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(1);
-  gfx->setCursor(CX - (int)strlen(st) * 3, 316);
+  gfx->setCursor(CX - (int)strlen(st) * 3, 300);
   gfx->print(st);
+  // Bringing one back is only offered while an egg is waiting. Otherwise it
+  // would silently destroy whatever creature is currently alive, and a rule the
+  // player cannot see is worse than a button they cannot press.
+  bool canRevive = pet.isEgg() && !pet.awaitingStarter();
+  gfx->fillRoundRect(126, 340, 214, 38, 10, canRevive ? UI_BAR_OK : UI_TRACK);
+  gfx->drawRoundRect(126, 340, 214, 38, 10, UI_INK);
+  gfx->setTextColor(canRevive ? UI_BG_DAY : 0x8410);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_REVIVE)) * 6, 351);
+  gfx->print(T(S_REVIVE));
+  if (!canRevive) {
+    gfx->setTextColor(UI_TRACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(CX - (int)strlen(T(S_REVIVE_EGG)) * 3, 384);
+    gfx->print(T(S_REVIVE_EGG));
+  }
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 352);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 404);
   gfx->print(T(S_BACK));
   gfx->flush();
 }
@@ -847,8 +863,17 @@ void partyTap(int16_t x, int16_t y) {
     return;
   }
   if (partyDetail) {
+    if (y >= 340 && y <= 378 && x >= 126 && x <= 340) {   // BRING BACK
+      if (!pet.isEgg() || pet.awaitingStarter()) { sfxPlay(SFX_DENY); return; }
+      pet.reviveFrom(party.slots[partyDetail - 1]);
+      party.releaseAt(partyDetail - 1);      // it is alive now, not banked
+      partyDetail = 0;
+      partyOpen = false;
+      sfxPlay(SFX_HATCH);
+      return;
+    }
     for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a move to change it
-      int ry = 84 + i * 54;
+      int ry = 78 + i * 52;
       if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
       movePickParty = partyDetail;
       movePickSlot = i;

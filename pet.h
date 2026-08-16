@@ -120,6 +120,14 @@ public:
 
   // Player-wide, like the streak and the Pokedex: badges outlive the creature
   // that earned them, so newEgg() must never clear this.
+  // A creature brought back out of the party or box. It is FROZEN: it does not
+  // age, cannot evolve, and cannot be lost -- a companion rather than a
+  // contender. The cost is that its level never rises again, so it stops
+  // improving; ageMinutes is simply set to match its banked level, which keeps
+  // level() working untouched rather than needing a second source of truth.
+  bool frozen = false;
+  void reviveFrom(const PartyMon &m);
+
   uint8_t avatar = 0;       // which player sprite, 0..3
   uint16_t badges = 0;      // bit n = trainer n beaten on easy
   uint16_t badgesHard = 0;  // ... and on hard

@@ -36,6 +36,7 @@ void Pet::newEgg() {
   careMistakes = 0;
   mistakeCooldown = 0;
   sleeping = false;
+  frozen = false;
   save();
 }
 
@@ -114,7 +115,7 @@ void Pet::tick() {
                             // tiempo corriera aqui, el huevo eclosionaria solo a
                             // los 3 min con la especie sorteada y se perderia la
                             // eleccion del jugador
-  ageMinutes++;
+  if (!frozen) ageMinutes++;   // a revived companion does not age
 
   if (isEgg()) {
     if (ageMinutes >= 3) hatch();  // si no lo tocas, eclosiona solo a los 3 min
@@ -191,6 +192,41 @@ void Pet::tick() {
 // newEgg() is about to wipe every field. Only the two endings the player CHOSE
 // qualify: a runaway ran off after an hour of total neglect, and letting it
 // come back on the team would remove the cost from the one ending that has any.
+// Brings a banked creature back as the live pet, frozen.
+void Pet::reviveFrom(const PartyMon &m) {
+  if (m.empty()) return;
+  ceremony = CER_NONE;
+  neglectTicks = 0;
+  speciesId = m.dex;
+  prevSpeciesId = -1;
+  eggTaps = 0;
+  starterPick = false;
+  shiny = m.shiny != 0;
+  ivAtk = m.ivAtk; ivDef = m.ivDef; ivSpe = m.ivSpe; ivHp = m.ivHp;
+  trAtk = m.trAtk; trDef = m.trDef; trSpe = m.trSpe;
+  for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = m.moves[i];
+  // its banked level expressed as an age, so level() needs no special case
+  ageMinutes = (uint32_t)(m.level ? m.level - 1 : 0) * MINUTES_PER_LEVEL;
+  lastLearnLevel = level();     // do not replay every gate it already passed
+  learnQCount = 0;
+  medals = m.medals;
+  careMistakes = 0;
+  mistakeCooldown = 0;
+  sleeping = false;
+  bond = 0;
+  bondToday = 0;
+  berryKnown = false;
+  weight = 0;
+  fullness = joy = energy = 80;
+  hygiene = 100;
+  poops = 0;
+  frozen = true;
+  strncpy(nick, m.nick, sizeof(nick) - 1);
+  nick[sizeof(nick) - 1] = 0;
+  registerSpecies(speciesId);
+  save();
+}
+
 void Pet::snapshotForParty() {
   endedKind = CER_NONE;
   if (isEgg()) return;
@@ -597,6 +633,7 @@ uint16_t Pet::registeredCount() const {
 // forma final que ya cumplio su ciclo (7 dias): lista para despedirse. La
 // despedida la dispara el usuario con el boton (no salta sola, para que la vea)
 bool Pet::canFarewellNow() const {
+  if (frozen) return false;     // a companion cannot be lost; that is the point
   return !isEgg() && !sleeping && ceremony == CER_NONE &&
          DEX_TBL[speciesId].evolvesTo == 0 && ageMinutes >= FAREWELL_AGE_MIN;
 }
@@ -604,6 +641,7 @@ bool Pet::canFarewellNow() const {
 // abandono total durante 1h: lista para escaparse. La dispara el usuario con el
 // boton (final triste); cuidarla un solo tick la salva (neglectTicks se resetea)
 bool Pet::canRunawayNow() const {
+  if (frozen) return false;
   return !isEgg() && !sleeping && ceremony == CER_NONE && neglectTicks >= RUNAWAY_TICKS;
 }
 
@@ -667,6 +705,7 @@ void Pet::hatch() {
 // (ninguna estadistica por debajo de 40). NO evoluciona sola: la dispara el
 // usuario tocando al bicho (evolve()), para que vea la transformacion.
 bool Pet::canEvolveNow() const {
+  if (frozen) return false;     // frozen at the form it was banked in
   if (isEgg() || sleeping || ceremony != CER_NONE) return false;
   const DexEntry &d = DEX_TBL[speciesId];
   if (d.evolvesTo == 0) return false;
@@ -854,6 +893,7 @@ void Pet::save() {
   prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putUChar("mvlv", lastLearnLevel);
   prefs.putUChar("avtr", avatar);
+  prefs.putBool("froz", frozen);
   prefs.putUShort("badg", badges);
   prefs.putUShort("badh", badgesHard);
   prefs.putBool("bk", berryKnown);
@@ -952,6 +992,7 @@ void Pet::load() {
   for (int i = 0; i < MOVE_SLOTS; i++)
     if (moves[i] >= MOVE_COUNT) moves[i] = 0;   // never index MOVE_TBL with junk
   lastLearnLevel = prefs.getUChar("mvlv", 0);
+  frozen = prefs.getBool("froz", false);
   avatar = prefs.getUChar("avtr", 0);
   if (avatar > 3) avatar = 0;
   badges = prefs.getUShort("badg", 0);

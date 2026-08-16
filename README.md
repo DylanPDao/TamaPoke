@@ -42,7 +42,8 @@ A quick reference to how the game really works (values straight from the code).
   of real time. Leveling is purely time-based — caring well doesn't speed it up,
   but neglect *delays evolution*.
 - **Level caps at 100**, reached at 4 days 3 hours. Farewell is only *offered* at
-  3 days (level 73), so declining it to raise a stronger battler is a real choice.
+  3 days (level 73) — **not a deadline**: your Pokémon is still growing, and
+  declining it to reach 100 is a real choice. Declining re-offers a day later.
 - It keeps **aging while powered off** (the RTC runs), catching up to **2 weeks** max.
 
 ### The four stats (0–100)

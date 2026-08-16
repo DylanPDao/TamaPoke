@@ -218,17 +218,19 @@ what sounds linear. This is part of what the soak test is for.
 - A farewell now falls through party -> box, and only a full party AND a full
   box makes the player choose who to replace. That is what the box is for.
 
-**B3. Endless mode / reviving a banked creature (DESIGN, undecided).** Two
-different ideas that got asked as one:
-- *Never having to say goodbye* mostly exists already -- farewell is only
-  OFFERED at 3 days and can be declined forever, and level caps at 100. A real
-  "endless" switch would only suppress the prompt.
-- *Bringing one back* -- promoting a banked creature to be the live pet again --
-  is the interesting one, and the harder one: a banked creature is FROZEN
-  (`level`, no ageing, no training), while the live pet's level IS its age. So
-  reviving means inventing `ageMinutes` from a frozen level, and deciding
-  whether it resumes ageing (and can therefore die again) or stays frozen (and
-  is immortal but untrainable). Worth deciding before building.
+**B3. Bringing a banked creature back -- DONE, frozen.** `Pet::reviveFrom()`
+makes a banked creature the live pet as a permanent companion: it does not age,
+cannot evolve, and is never offered a farewell or able to run away. Its cost is
+that its level never rises again.
+
+`ageMinutes` is simply set to match the banked level rather than adding a second
+source of truth, so `level()` needs no special case. Offered ONLY while an egg
+is waiting -- otherwise it would silently destroy whatever creature is alive,
+and the button says why when it is greyed.
+
+Note for anyone reading the farewell timing: 3 days is when it is first OFFERED
+(level 73), not when the creature is finished -- 100 comes at 4d 3h, and
+declining re-offers a day later.
 
 **B2. Multi-region, once the Gen 2/3 expansion is untabled.** These four hang
 together and should be designed as one thing, not bolted on separately:

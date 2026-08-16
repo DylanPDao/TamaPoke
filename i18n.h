@@ -107,6 +107,8 @@ enum StrId : uint8_t {
   S_BOX_FMT,        // "BOX %u/%u"
   S_BOX_SWAP,       // "swap with %s: pick a slot"
   S_BOX_BTN,        // the button on the party screen
+  S_REVIVE,         // bring a banked creature back as a companion
+  S_REVIVE_EGG,     // why it is unavailable right now
   STR_COUNT
 };
 
