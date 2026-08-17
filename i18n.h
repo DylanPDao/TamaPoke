@@ -113,6 +113,7 @@ enum StrId : uint8_t {
   S_LAN, S_LAN_HOST, S_LAN_JOIN, S_LAN_WAIT, S_LAN_READY, S_LAN_REFUSED,
   S_LAN_PICK, S_LAN_VS,
   S_LAN_GONE, S_LAN_WAITFOE, S_LAN_REMATCH,
+  S_EGG_REGION,     // hint under the egg's region pill
   S_WIN_TRAIN_FMT,  // "%s +%u" -- the training a gym win is worth
   S_WIN_MAXED,      // ... or that there is nowhere left to train
   STR_COUNT

@@ -204,6 +204,8 @@ bool gymHard = false;   // which ladder the list is showing
 // normal battle screen takes over with btlLink set.
 bool lanOpen = false;
 Link lan;
+static void drawEggRegion();          // defined with the egg screen helpers
+static bool eggRegionTap(int16_t x, int16_t y);
 static void btlLinkPoll();   // defined with the battle code, called from render()
 static void btlSwitchTo(uint8_t i);
 static void btlResolve(uint8_t yourMove);
@@ -1332,6 +1334,8 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (pet.isEgg()) {
+    // the region pill first, or choosing a region would also crack the egg
+    if (eggRegionTap(x, y)) return;
     pet.eggTap();
     sfxPlay(SFX_TAP);
     return;
@@ -1632,8 +1636,14 @@ void render() {
     gfx->fillRect(0, 312, 466, 154, gNight ? UI_BG_NIGHT : UI_BG_DAY);
     gfx->setTextColor(inkColor());
     gfx->setTextSize(2);
-    gfx->setCursor(CX - strlen(reg) * 6, 348);
+    gfx->setCursor(CX - strlen(reg) * 6, 344);
     gfx->print(reg);
+
+    // Which generation this egg comes from. It lives HERE rather than in the
+    // settings screen because this is the only moment it does anything: the
+    // species is decided when the egg appears, so choosing the region is
+    // something you do to the egg in front of you.
+    drawEggRegion();
   } else {
     const DexEntry &d = DEX_TBL[pet.speciesId];
     char name[28];
@@ -3960,6 +3970,38 @@ void renderGyms() {
   gfx->setCursor(CX - strlen(T(S_LAN)) * 6, 388);
   gfx->print(T(S_LAN));
   gfx->flush();
+}
+
+// The region pill under a waiting egg. Tapping it cycles; Pet::setRegion swaps
+// the egg to that region's creature, keeping the rarity it was granted and
+// remembering each region's answer so flipping back and forth is not a re-roll.
+#define EGGREG_X 133
+#define EGGREG_Y 374
+#define EGGREG_W 200
+#define EGGREG_H 34
+
+static void drawEggRegion() {
+  char l[24];
+  snprintf(l, sizeof(l), "%s >", pet.regionName());
+  gfx->fillRoundRect(EGGREG_X, EGGREG_Y, EGGREG_W, EGGREG_H, 10, UI_WHITE);
+  gfx->drawRoundRect(EGGREG_X, EGGREG_Y, EGGREG_W, EGGREG_H, 10, UI_INK);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(EGGREG_X + (EGGREG_W - (int)strlen(l) * 12) / 2, EGGREG_Y + 9);
+  gfx->print(l);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(1);
+  gfx->setCursor(CX - (int)strlen(T(S_EGG_REGION)) * 3, EGGREG_Y + EGGREG_H + 6);
+  gfx->print(T(S_EGG_REGION));
+}
+
+// True if the tap was on the region pill, so the egg does not also get cracked.
+static bool eggRegionTap(int16_t x, int16_t y) {
+  if (!pet.isEgg() || x < EGGREG_X || x > EGGREG_X + EGGREG_W ||
+      y < EGGREG_Y || y > EGGREG_Y + EGGREG_H) return false;
+  pet.setRegion((pet.region + 1) % REGION_COUNT);
+  sfxPlay(SFX_TAP);
+  return true;
 }
 
 // ---------- level-up learn prompt ----------

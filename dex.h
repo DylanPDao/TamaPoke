@@ -447,3 +447,24 @@ static const DexEntry DEX_TBL[DEX_COUNT + 1] = {
 // el primer huevo de la partida: iniciales clasicos
 static const int16_t CLASSIC_DEX[] = { 1, 4, 7, 25, 133 };
 #define NUM_CLASSIC_DEX 5
+
+// Which generation an egg may come from. A region is decided by the BASE
+// species, and evolutions follow wherever they lead.
+struct RegionInfo {
+  const char *name;
+  uint16_t lo, hi;
+  const int16_t *starters;
+  uint8_t starterCount;
+};
+static const int16_t REGION_START_KANTO[] = { 1, 4, 7, 25, 133 };
+static const int16_t REGION_START_JOHTO[] = { 152, 155, 158 };
+static const int16_t REGION_START_HOENN[] = { 252, 255, 258 };
+static const int16_t REGION_START_ALL[] = { 1, 4, 7, 25, 133, 152, 155, 158, 252, 255, 258 };
+#define REGION_COUNT 4
+#define REGION_ALL 3
+static const RegionInfo REGIONS[REGION_COUNT] = {
+  { "KANTO", 1, 151, REGION_START_KANTO, 5 },
+  { "JOHTO", 152, 251, REGION_START_JOHTO, 3 },
+  { "HOENN", 252, 386, REGION_START_HOENN, 3 },
+  { "ALL", 1, 386, REGION_START_ALL, 11 },
+};

@@ -6,6 +6,15 @@
 
 void Pet::begin() {
   prefs.begin("tamapoke", false);
+  // Zeroed BEFORE the branch below, not inside load(): getBytes() leaves its
+  // destination untouched when the key is missing, and the fresh-install path
+  // returns without ever calling load(). Without this a begin() after a factory
+  // reset keeps the old Pokedex alive in RAM -- the firmware reboots on WIPE so
+  // it never showed there, but anything calling begin() twice would see it, and
+  // Party::begin() already guards the same way for the same reason.
+  memset(dexReg, 0, sizeof(dexReg));
+  memset(dexShinyReg, 0, sizeof(dexShinyReg));
+  for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = 0;
   if (!prefs.getBool("init", false)) {
     prefs.putBool("init", true);
     newEgg();
@@ -21,7 +30,9 @@ void Pet::newEgg() {
   weight = 0;
   speciesId = -1;
   prevSpeciesId = -1;
+  for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = 0;
   eggTarget = pickEggSpecies();  // especie oculta segun rareza y pokedex
+  eggByRegion[region % REGION_COUNT] = eggTarget;
   starterPick = (registeredCount() == 0);  // primera partida: el jugador elige inicial
   // sorteo shiny: 1/48 base, mejor con despedida y con racha/vinculo altos
   int shinyBase = (lastEnd == CER_FAREWELL ? 24 : 48) - careBonus();
@@ -300,9 +311,11 @@ uint8_t Pet::eggRarity() const {
 #define CAND_MAX 260
 
 int16_t Pet::pickEggSpecies() {
-  // primera partida: inicial clasico
+  const RegionInfo &rg = REGIONS[region % REGION_COUNT];
+  // primera partida: inicial clasico -- del region elegida, so a Johto run
+  // starts with a Johto starter rather than a Kanto one
   if (registeredCount() == 0) {
-    return CLASSIC_DEX[random(NUM_CLASSIC_DEX)];
+    return rg.starters[random(rg.starterCount)];
   }
 
   uint8_t tier = R_COMUN;
@@ -321,7 +334,7 @@ int16_t Pet::pickEggSpecies() {
     for (int t = tier; t >= R_COMUN; t--) {
       int16_t cand[CAND_MAX];
       int n = 0;
-      for (int16_t d = 1; d <= DEX_COUNT && n < CAND_MAX; d++) {
+      for (int16_t d = rg.lo; d <= rg.hi && n < CAND_MAX; d++) {
         if (DEX_TBL[d].rarity != t) continue;
         if (pass == 0 && !lineHasUnregistered(d)) continue;
         cand[n++] = d;
@@ -329,7 +342,48 @@ int16_t Pet::pickEggSpecies() {
       if (n > 0) return cand[random(n)];
     }
   }
-  return CLASSIC_DEX[random(NUM_CLASSIC_DEX)];  // inalcanzable, por si acaso
+  return rg.starters[random(rg.starterCount)];  // inalcanzable, por si acaso
+}
+
+// Rolls a species of a GIVEN tier inside a region. Used when the player changes
+// region while an egg is waiting: the rarity they were granted is kept and only
+// the region changes, so switching cannot be farmed for a legendary.
+int16_t Pet::rollInRegion(uint8_t r, uint8_t tier) {
+  const RegionInfo &rg = REGIONS[r % REGION_COUNT];
+  for (int t = tier; t >= R_COMUN; t--) {
+    int16_t cand[CAND_MAX];
+    int n = 0;
+    for (int16_t d = rg.lo; d <= rg.hi && n < CAND_MAX; d++)
+      if (DEX_TBL[d].rarity == t) cand[n++] = d;
+    if (n) return cand[random(n)];
+  }
+  return rg.starters[0];      // a region with nothing in it cannot happen
+}
+
+// Changing region swaps the WAITING egg to that region's creature.
+//
+// Without this the setting would look broken: you would pick Johto and still
+// hatch a Rattata, because the species is rolled when the egg appears and not
+// when it cracks. Two rules stop it becoming a re-roll button:
+//
+//   1. The rarity tier is kept. Only which species of that tier changes, so
+//      toggling can never be farmed for a legendary.
+//   2. Each region's answer is REMEMBERED for this egg. Switching back shows
+//      the same creature again, so there is nothing to gain by flipping.
+//
+// A hatched creature is untouched -- this only ever moves an egg.
+void Pet::setRegion(uint8_t r) {
+  r %= REGION_COUNT;
+  if (r == region) return;
+  uint8_t old = region;
+  region = r;
+  if (isEgg() && eggTarget >= 1) {
+    if (old < REGION_COUNT) eggByRegion[old] = eggTarget;
+    int16_t known = eggByRegion[r];
+    eggTarget = known >= 1 ? known : rollInRegion(r, eggRarity());
+    eggByRegion[r] = eggTarget;
+  }
+  save();
 }
 
 void Pet::registerSpecies(int16_t dex) {
@@ -920,6 +974,8 @@ void Pet::save() {
   prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putUChar("mvlv", lastLearnLevel);
   prefs.putUChar("avtr", avatar);
+  prefs.putUChar("reg", region);
+  prefs.putBytes("eggR", eggByRegion, sizeof(eggByRegion));
   prefs.putString("tnam", trainerName);
   prefs.putBool("froz", frozen);
   prefs.putUShort("badg", badges);
@@ -1022,6 +1078,11 @@ void Pet::load() {
   lastLearnLevel = prefs.getUChar("mvlv", 0);
   frozen = prefs.getBool("froz", false);
   avatar = prefs.getUChar("avtr", 0);
+  region = prefs.getUChar("reg", REGION_ALL);
+  if (region >= REGION_COUNT) region = REGION_ALL;
+  // A save from the Kanto-only build has neither key; getBytes leaves the
+  // array at its zeroed initialiser, which is exactly "nothing remembered".
+  prefs.getBytes("eggR", eggByRegion, sizeof(eggByRegion));
   prefs.getString("tnam", trainerName, sizeof(trainerName));
   if (avatar >= AVATAR_COUNT) avatar = 0;   // a save from when there were four
   badges = prefs.getUShort("badg", 0);

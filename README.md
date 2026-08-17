@@ -132,6 +132,8 @@ After any ending, a **new egg** appears.
 - **8 medals** (Lv10/25/50, favorite berry found, 7-day streak, max bond, final form,
   "fit" = weight 0 & no slip-ups), per-pet + a global counter.
 - **Pokédex:** raising a species registers it; **386 + shinies** to complete.
+- **Region:** the pill under a waiting egg picks which generation it comes from —
+  **Kanto / Johto / Hoenn / All**. A first egg gives that region's starter.
 
 ### Battle stats & IVs
 Every pet rolls four **IVs** (individual values, 0–31) at hatch — ATK / DEF / SPD /
@@ -166,6 +168,19 @@ wellbeing (resting, or awake with every need ≥ 40). **VIT** can't be trained.
 
 **Gym wins train too**, which is what makes the ladder worth replaying rather than
 a checklist you tick once:
+
+### Choosing your egg's region
+
+The species is decided when the egg **appears**, not when it cracks, so changing
+region moves the egg you are holding. Two rules stop that being a re-roll button:
+
+| | Rule |
+|---|---|
+| Rarity | the tier the egg was granted is **kept** — only which species of that tier changes, so flipping can never fish for a legendary |
+| Memory | each region's answer is **remembered** for the current egg, so switching back shows the same creature |
+
+A region is decided by the **base** species, and evolutions follow wherever they
+lead — a Kanto run still reaches Crobat and Blissey.
 
 | | Training a win is worth |
 |---|---|

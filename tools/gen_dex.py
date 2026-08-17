@@ -7,7 +7,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from dex_data import DEX, TYPE_ACCENTS, CLASSIC, RARE, LEGENDARY
+from dex_data import DEX, TYPE_ACCENTS, CLASSIC, RARE, LEGENDARY, REGIONS
 from dex_stats import BASE_STATS
 from dex_types import TYPES, TYPE_ORDER, CHART
 
@@ -109,6 +109,28 @@ def main():
     out.append("// el primer huevo de la partida: iniciales clasicos\n")
     out.append("static const int16_t CLASSIC_DEX[] = { %s };\n" % ", ".join(map(str, CLASSIC)))
     out.append(f"#define NUM_CLASSIC_DEX {len(CLASSIC)}\n")
+
+    # Regions. The last entry is ALL: the union, generated rather than written,
+    # so it cannot drift out of step with the others.
+    allstart = sorted({d for _n, _lo, _hi, st in REGIONS for d in st})
+    out.append("\n// Which generation an egg may come from. A region is decided by the BASE\n"
+               "// species, and evolutions follow wherever they lead.\n")
+    out.append("struct RegionInfo {\n  const char *name;\n  uint16_t lo, hi;\n"
+               "  const int16_t *starters;\n  uint8_t starterCount;\n};\n")
+    for name, lo, hi, st in REGIONS:
+        out.append("static const int16_t REGION_START_%s[] = { %s };\n"
+                   % (name, ", ".join(map(str, st))))
+    out.append("static const int16_t REGION_START_ALL[] = { %s };\n"
+               % ", ".join(map(str, allstart)))
+    out.append("#define REGION_COUNT %d\n" % (len(REGIONS) + 1))
+    out.append("#define REGION_ALL %d\n" % len(REGIONS))
+    out.append("static const RegionInfo REGIONS[REGION_COUNT] = {\n")
+    for name, lo, hi, st in REGIONS:
+        out.append('  { "%s", %d, %d, REGION_START_%s, %d },\n'
+                   % (name, lo, hi, name, len(st)))
+    out.append('  { "ALL", %d, %d, REGION_START_ALL, %d },\n'
+               % (min(r[1] for r in REGIONS), max(r[2] for r in REGIONS), len(allstart)))
+    out.append("};\n")
     from collections import Counter
     c = Counter(rarities)
     print(f"bases: {c['R_COMUN']} comunes, {c['R_RARO']} raras, {c['R_LEGENDARIO']} legendarias, {c['R_EVO']} solo-evolucion")

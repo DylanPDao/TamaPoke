@@ -426,6 +426,20 @@ DEX = [
 # el primer huevo de la partida siempre es un inicial clasico
 CLASSIC = [1, 4, 7, 25, 133]
 
+# National dex ranges, and the starters offered for a first egg in each.
+#
+# A region is decided by the BASE species number and evolutions follow wherever
+# they lead -- a Kanto run still reaches Crobat and Blissey, exactly as the real
+# games do. ALL is not a fourth region, it is the union, and it is generated
+# from the others rather than written out.
+#
+# Extending to a fourth generation means adding a row here and nothing else.
+REGIONS = [
+    ('KANTO', 1,   151, [1, 4, 7, 25, 133]),
+    ('JOHTO', 152, 251, [152, 155, 158]),
+    ('HOENN', 252, 386, [252, 255, 258]),
+]
+
 # rarezas de las formas base (lo que no este aqui y sea base = comun)
 RARE = {58, 77, 83, 88, 95, 106, 107, 108, 111, 113, 114, 115, 122, 123,
         124, 125, 126, 127, 128, 131, 132, 137, 138, 140, 142, 143, 147,

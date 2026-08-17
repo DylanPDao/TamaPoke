@@ -144,6 +144,12 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   setup();
   for (int i = 0; i < 4; i++) loop();          // let the sketch settle
   if (pet.awaitingStarter() && strcmp(screen, "starter")) pet.chooseStarter(4);
+  if (!strcmp(screen, "egg")) {
+    // a few species registered, so the lottery is past the starter case and the
+    // region pill has something to switch between
+    for (int d = 1; d <= 40; d++) pet.dbgHatchAs(d, false);
+    pet.newEgg();
+  }
   if (pet.isEgg() && strcmp(screen, "egg")) pet.dbgHatchAs(dex, false);
   if (lvl > 0) pet.ageMinutes = (uint32_t)(lvl - 1) * MINUTES_PER_LEVEL;
   if (iv >= 0) {

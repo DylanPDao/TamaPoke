@@ -149,6 +149,17 @@ public:
     save();
   }
 
+  // Which generation eggs come from. Player-wide, like the badges: it outlives
+  // every creature, so newEgg() must never reset it.
+  uint8_t region = REGION_ALL;
+  // The species this egg would be in each region. Filled in as the player
+  // looks, cleared by newEgg(). It exists so that switching region and back
+  // shows the SAME creature rather than rolling a fresh one -- without it,
+  // toggling would be a re-roll button.
+  int16_t eggByRegion[REGION_COUNT] = { 0 };
+  void setRegion(uint8_t r);
+  const char *regionName() const { return REGIONS[region % REGION_COUNT].name; }
+
   uint8_t avatar = 0;       // which player sprite, 0..3
   uint16_t badges = 0;      // bit n = trainer n beaten on easy
   uint16_t badgesHard = 0;  // ... and on hard
@@ -251,6 +262,11 @@ public:
   bool lineHasUnregistered(int16_t base) const;
   uint8_t eggRarity() const;       // rareza del huevo actual (sin revelar especie)
   int16_t pickEggSpecies();        // publica para poder simular tiradas (EGGS)
+  // What the waiting egg would hatch into. Hidden from the PLAYER, not from the
+  // code: the serial console already simulates rolls, and the region tests have
+  // to see which creature a switch landed on.
+  int16_t eggPeek() const { return eggTarget; }
+  int16_t rollInRegion(uint8_t r, uint8_t tier);
   uint8_t lowestStat() const { return min(min(fullness, joy), min(energy, hygiene)); }
   PetMood mood() const;
   // progreso de la ceremonia de despedida/escapada, 0..1 (para animarla)

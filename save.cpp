@@ -24,6 +24,7 @@ const SaveField SAVE_FIELDS[] = {
   { "stpk", SK_BOOL },
   // the player: outlives every creature, which is exactly why it must be here
   { "tnam", SK_STR },   { "avtr", SK_U8 },    { "badg", SK_U16 },
+  { "reg", SK_U8 },     { "eggR", SK_BYTES },
   { "badh", SK_U16 },   { "dexreg", SK_BYTES }, { "dexsh", SK_BYTES },
   { "strk", SK_U16 },   { "bstrk", SK_U16 },  { "cday", SK_U32 },
   { "medal", SK_U16 },  { "tmedal", SK_U16 }, { "mstone", SK_U16 },
