@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.2-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.3-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -161,9 +161,24 @@ the games: **they cap training.**
   pattern and a shiny was never mediocre.
 - IVs are shown on the Battle page of the stat card; a perfect 31 is highlighted.
 
-Training: **STRENGTH** ← the bag, **SPEED** ← the minigame, **DEFENSE** ← 1 h of
+Training: **STRENGTH** ← the bag, **SPEED** ← the reaction test, **DEFENSE** ← 1 h of
 wellbeing (resting, or awake with every need ≥ 40). **VIT** can't be trained.
-*(Battles: on the roadmap.)*
+
+**Gym wins train too**, which is what makes the ladder worth replaying rather than
+a checklist you tick once:
+
+| | Training a win is worth |
+|---|---|
+| Easy | **3–5** points, **+1 per 3 leaders** deeper into the ladder |
+| Hard | **6–10** points, same ladder bonus |
+| Which stat | **random**, but only among stats **not already at their ceiling** |
+| Who gets it | the **live pet**, and only if it was in the squad |
+
+A random stat that landed on a maxed one would silently evaporate, so it never
+picks one; and the IV-bound ceiling above still applies, so a win can never push a
+stat past what its IV allows. Banked members are frozen at what they were banked
+with, and battling already costs the live pet energy — that, not a cooldown, is
+what rate-limits rematching. A fully trained creature is told so.
 
 ## Hardware
 

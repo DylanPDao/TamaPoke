@@ -92,6 +92,7 @@ void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern bool lanOpen;
 extern uint8_t btlMyAct;
+extern uint8_t btlTrainGain, btlTrainWhich;
 extern bool lanWantHost;
 #define PICK_LAN 0xFF
 uint8_t squadCap(uint8_t, bool);
@@ -232,6 +233,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "win")) {
     startTrainerBattle(2, true);
     btlNewBadge = true; btlWinUntil = 60000; pet.badgesHard = 0x07;
+    btlTrainGain = 8; btlTrainWhich = 2;
   }
   else if (!strcmp(screen, "pmon")) {
     Pet t; t.dbgHatchAs(131,false); t.ivAtk=t.ivDef=t.ivSpe=t.ivHp=27;

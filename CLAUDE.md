@@ -183,9 +183,22 @@ done from here.
   sheet: moves with type and power, typing, and the four combat stats.
   `drawMoveRow()` takes a dex now rather than assuming the live pet, so STAB is
   coloured against the creature you are actually looking at.
-- **A reason to rematch.** Beating a leader gives a badge and nothing else.
-  Berries, or a training/IV reward, would make the ladder replayable instead of
-  a checklist.
+- ~~A reason to rematch~~ **done**. A gym win now trains the creature that
+  fought: 3-5 points on easy, 6-10 on hard, +1 per three leaders deeper into the
+  ladder. `Pet::rewardTraining()`.
+
+  Two rules make it work rather than annoy. The stat is random, but **only among
+  stats that still have headroom** -- a random grant landing on a maxed stat
+  would silently evaporate and read as a bug rather than as luck, and
+  `reward_test` fails if the choice is widened. And it never crosses the
+  IV-bound ceiling, since a mediocre individual not reaching as far is the point
+  of `trMaxFor()`.
+
+  It goes to the LIVE pet only, and only if it was in the squad (`btlPetIn`):
+  banked members are frozen at what they were banked with. No cooldown was added
+  -- battling already costs the live pet energy, which is the designed
+  rate-limit. A fully trained creature is told so instead of seeing nothing
+  happen. Balance change, so `README.md` and `FW_VERSION` moved to 2.3 with it.
 - ~~Save backup~~ **done**. `EXPORT` prints the whole save as a block of
   `IMPORT <hex>` lines, and pasting that block back is the restore -- there is
   no second format to get wrong and no 2000-character line for a terminal to

@@ -783,6 +783,28 @@ void Pet::playResult(uint8_t score) {
 }
 
 // saco de entrenamiento: los golpes entrenan la fuerza. Devuelve la subida.
+uint8_t Pet::rewardTraining(uint8_t amount, uint8_t &which) {
+  which = 0;
+  if (ceremony != CER_NONE || isEgg() || !amount) return 0;
+  // Only the stats with headroom are candidates.
+  uint8_t room[3], n = 0;
+  if (trAtk < trMaxAtk()) room[n++] = 0;
+  if (trDef < trMaxDef()) room[n++] = 1;
+  if (trSpe < trMaxSpe()) room[n++] = 2;
+  if (!n) return 0;                     // nothing left to train
+  which = room[random(n)];
+  uint8_t before, capped;
+  switch (which) {
+    case 0: before = trAtk; capped = trMaxAtk(); trAtk = (uint8_t)min<uint16_t>(before + amount, capped); amount = trAtk - before; break;
+    case 1: before = trDef; capped = trMaxDef(); trDef = (uint8_t)min<uint16_t>(before + amount, capped); amount = trDef - before; break;
+    default: before = trSpe; capped = trMaxSpe(); trSpe = (uint8_t)min<uint16_t>(before + amount, capped); amount = trSpe - before; break;
+  }
+  // The IV-bound ceiling is never crossed: a mediocre individual not reaching
+  // as far is the whole point of trMaxFor().
+  save();
+  return amount;
+}
+
 uint8_t Pet::trainSpeed(uint16_t hits) {
   if (ceremony != CER_NONE || isEgg()) return 0;
   uint8_t gain = hits / 2;          // ~2 reactions = 1 point

@@ -35,7 +35,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.2"
+#define FW_VERSION "2.3"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -208,6 +208,9 @@ static void btlResolve(uint8_t yourMove);
 Combatant btlFoeSquad[TRAINER_TEAM_MAX];
 uint8_t btlFoeSquadN = 0;
 uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
+bool btlPetIn = false;       // was the live pet in the squad?
+uint8_t btlTrainGain = 0;    // what the win trained, for the win screen
+uint8_t btlTrainWhich = 0;
 bool btlLink = false;      // this fight is against another device
 bool btlLinkHost = false;
 static bool gymUnlocked(uint8_t idx, bool hard) {
@@ -2588,12 +2591,14 @@ static void foeFromSpecies(Combatant &c, int16_t dex, uint8_t lvl, uint8_t iv) {
 static void buildSquad(uint8_t maxLvl, uint8_t maxCount, uint16_t mask) {
   btlSquadN = 0;
   btlSquadAt = 0;
+  btlPetIn = false;
   if (maxCount > TRAINER_TEAM_MAX) maxCount = TRAINER_TEAM_MAX;
   if (!pet.isEgg() && btlSquadN < maxCount && (mask & 1)) {
     Pet tmp = pet;                       // a copy: the real pet is untouched
     if (maxLvl && tmp.level() > maxLvl)
       tmp.ageMinutes = (uint32_t)(maxLvl - 1) * MINUTES_PER_LEVEL;
     combatantFromPet(btlSquad[btlSquadN++], tmp);
+    btlPetIn = true;      // the training reward goes to whoever fought for it
   }
   for (int i = 0; i < PARTY_SLOTS && btlSquadN < maxCount; i++) {
     if (party.slots[i].empty() || !(mask & (1 << (i + 1)))) continue;
@@ -2900,9 +2905,21 @@ static void btlResolve(uint8_t yourMove) {
     btlOver = true;
     btlWon = btlFoe.fainted();
     btlNewBadge = false;
+    btlTrainGain = 0;
     if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlTrainer, btlHard)) {
       pet.winBadge(btlTrainer, btlHard);
       btlNewBadge = true;
+    }
+    // A badge and nothing else made the ladder a one-way checklist. A win now
+    // trains the creature that fought for it -- so a leader you can already
+    // beat is worth returning to. It goes to the LIVE pet only: banked members
+    // are frozen at the level and training they were banked with, and battling
+    // already costs the live pet energy, which is what rate-limits the grind
+    // without needing a cooldown.
+    if (btlWon && btlTrainer >= 0 && btlPetIn) {
+      // Later leaders are worth more, and hard mode is worth roughly double.
+      uint8_t amt = (btlHard ? 6 + random(5) : 3 + random(3)) + btlTrainer / 3;
+      btlTrainGain = pet.rewardTraining(amt, btlTrainWhich);
     }
     audioMusic(btlWon ? MUS_VICTORY : MUS_NONE);
     if (btlWon) sfxPlay(SFX_VICTORY);
@@ -3059,10 +3076,28 @@ void renderWin() {
   snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCount(btlHard));
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - (int)strlen(l) * 6, 322);
+  gfx->setCursor(CX - (int)strlen(l) * 6, 316);
   gfx->print(l);
+
+  // what the win was worth beyond the badge
+  if (btlTrainGain) {
+    static const StrId NAMES[3] = { S_TR_ATK, S_TR_DEF, S_TR_SPE };
+    snprintf(l, sizeof(l), T(S_WIN_TRAIN_FMT),
+             T(NAMES[btlTrainWhich % 3]), btlTrainGain);
+    gfx->setTextColor(UI_BAR_OK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - (int)strlen(l) * 6, 344);
+    gfx->print(l);
+  } else if (btlPetIn && btlTrainer >= 0) {
+    gfx->setTextColor(UI_TRACK);
+    gfx->setTextSize(1);
+    gfx->setCursor(CX - (int)strlen(T(S_WIN_MAXED)) * 3, 348);
+    gfx->print(T(S_WIN_MAXED));
+  }
+
   gfx->setTextColor(UI_TRACK);
-  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 372);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 380);
   gfx->print(T(S_BACK));
   gfx->flush();
 }

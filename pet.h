@@ -92,6 +92,13 @@ public:
   // Reaction test: its own trainer, so the ball game can go back to being purely
   // about joy instead of doubling as a stat grind.
   uint8_t trainSpeed(uint16_t hits);
+  // What beating a gym leader is worth. Random WHICH stat, but only among the
+  // ones with room left -- a random grant that landed on an already-capped stat
+  // would silently evaporate, which reads as a bug rather than as luck. Writes
+  // the stat into `which` (0 ATK, 1 DEF, 2 SPE) and returns what was actually
+  // gained; 0 means every stat is at its ceiling. Costs nothing: the fight
+  // already spent the energy, and that is what rate-limits rematching.
+  uint8_t rewardTraining(uint8_t amount, uint8_t &which);
   uint16_t spdHi = 0;    // best reaction-test score
 
   // stats de combate: base real de gen 1 + nivel + IV + entrenamiento
