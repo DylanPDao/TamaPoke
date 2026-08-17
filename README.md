@@ -229,6 +229,9 @@ what rate-limits rematching. A fully trained creature is told so.
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB"
 arduino-cli compile --fqbn "$FQBN" .
 arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn "$FQBN" .
+
+# or just, which finds the port itself and can open the console:
+bash tools/flash.sh --monitor
 ```
 
 ### Run it on your computer
