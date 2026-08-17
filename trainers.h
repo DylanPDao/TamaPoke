@@ -2,8 +2,9 @@
 #include <stdint.h>
 #include "dex.h"
 
-// The gym ladder: 8 leaders, the Elite 4 and the Champion, with their Kanto
-// (FireRed/LeafGreen) teams and levels.
+// The gym ladders: 8 leaders, the Elite 4 and the Champion for each region,
+// with their real teams and levels -- Kanto from FireRed/LeafGreen, Johto from
+// Gold/Silver/Crystal, Hoenn from Ruby/Sapphire/Emerald.
 //
 // HAND-AUTHORED -- not generated. The levels are the real ones and they happen
 // to fit this game's curve almost exactly: level is age at 1/hour, a pet retires
@@ -15,9 +16,11 @@
 // can sweep Brock but will not survive five of Lance's in a row.
 
 #define TRAINER_TEAM_MAX 6
+// The ladders are levelled to this game's curve, where 100 is the ceiling.
+#define MAX_TRAINER_LEVEL 100
 
 struct TrainerMon {
-  uint8_t dex;
+  uint16_t dex;      // NOT uint8_t: Hoenn runs to 386
   uint8_t level;
 };
 
@@ -34,7 +37,7 @@ struct Trainer {
 #define TRAINER_GYMS 8
 #define TRAINER_ELITE4 4
 
-static const Trainer TRAINERS[TRAINER_COUNT] = {
+static const Trainer TRAINERS_KANTO[TRAINER_COUNT] = {
   { "BROCK",    "PEWTER",    T_ROCK,     2, { {74,12},{95,14} } },
   { "MISTY",    "CERULEAN",  T_WATER,    2, { {120,18},{121,21} } },
   { "LT SURGE", "VERMILION", T_ELECTRIC, 3, { {100,21},{25,18},{26,24} } },
@@ -48,6 +51,56 @@ static const Trainer TRAINERS[TRAINER_COUNT] = {
   { "AGATHA",   "ELITE 4",   T_GHOST,    5, { {94,54},{42,54},{93,53},{24,56},{94,58} } },
   { "LANCE",    "ELITE 4",   T_DRAGON,   5, { {130,56},{148,54},{148,54},{142,58},{149,60} } },
   { "RIVAL",    "CHAMPION",  T_NORMAL,   6, { {18,61},{65,59},{112,61},{59,63},{103,61},{9,65} } },
+};
+
+
+// Johto: Gold/Silver/Crystal. The levels run lower than Kanto's early on and
+// the Elite 4 sits at 40-50, which lands a Johto run comfortably inside a
+// three-day life the same way Kanto's does.
+static const Trainer TRAINERS_JOHTO[TRAINER_COUNT] = {
+  { "FALKNER",  "VIOLET",     T_FLYING,   2, { {16,7},{17,9} } },
+  { "BUGSY",    "AZALEA",     T_BUG,      3, { {11,14},{14,14},{123,16} } },
+  { "WHITNEY",  "GOLDENROD",  T_NORMAL,   2, { {35,18},{241,20} } },
+  { "MORTY",    "ECRUTEAK",   T_GHOST,    4, { {92,21},{93,21},{93,23},{94,25} } },
+  { "CHUCK",    "CIANWOOD",   T_FIGHTING, 2, { {57,27},{62,30} } },
+  { "JASMINE",  "OLIVINE",    T_STEEL,    3, { {81,30},{81,30},{208,35} } },
+  { "PRYCE",    "MAHOGANY",   T_ICE,      3, { {86,27},{87,29},{221,31} } },
+  { "CLAIR",    "BLACKTHORN", T_DRAGON,   4, { {148,37},{148,37},{148,37},{230,40} } },
+  { "WILL",     "ELITE 4",    T_PSYCHIC,  5, { {178,40},{124,41},{103,41},{80,41},{178,42} } },
+  { "KOGA",     "ELITE 4",    T_POISON,   5, { {168,40},{49,41},{205,43},{89,42},{169,44} } },
+  { "BRUNO",    "ELITE 4",    T_FIGHTING, 5, { {237,42},{106,42},{95,43},{107,42},{68,46} } },
+  { "KAREN",    "ELITE 4",    T_DARK,     5, { {197,42},{45,42},{198,44},{94,45},{229,47} } },
+  { "LANCE",    "CHAMPION",   T_DRAGON,   6, { {130,44},{148,47},{148,47},{142,46},{149,50},{149,50} } },
+};
+
+// Hoenn: Ruby/Sapphire/Emerald. Steven is the champion here (Emerald's Wallace
+// is the alternative; Steven is the one most people mean).
+static const Trainer TRAINERS_HOENN[TRAINER_COUNT] = {
+  { "ROXANNE",  "RUSTBORO",   T_ROCK,     3, { {74,14},{74,14},{299,15} } },
+  { "BRAWLY",   "DEWFORD",    T_FIGHTING, 3, { {66,16},{307,16},{296,19} } },
+  { "WATTSON",  "MAUVILLE",   T_ELECTRIC, 4, { {100,20},{309,20},{82,22},{310,24} } },
+  { "FLANNERY", "LAVARIDGE",  T_FIRE,     4, { {322,24},{218,24},{323,26},{324,29} } },
+  { "NORMAN",   "PETALBURG",  T_NORMAL,   3, { {289,28},{288,30},{289,31} } },
+  { "WINONA",   "FORTREE",    T_FLYING,   5, { {277,31},{278,30},{279,32},{333,33},{334,35} } },
+  { "TATE",     "MOSSDEEP",   T_PSYCHIC,  4, { {344,41},{178,41},{337,42},{338,42} } },
+  { "JUAN",     "SOOTOPOLIS", T_WATER,    5, { {370,41},{340,41},{364,43},{342,43},{230,46} } },
+  { "SIDNEY",   "ELITE 4",    T_DARK,     5, { {262,46},{275,48},{332,46},{342,48},{359,49} } },
+  { "PHOEBE",   "ELITE 4",    T_GHOST,    5, { {356,48},{354,49},{302,50},{354,49},{356,51} } },
+  { "GLACIA",   "ELITE 4",    T_ICE,      5, { {364,50},{362,50},{364,52},{362,52},{365,53} } },
+  { "DRAKE",    "ELITE 4",    T_DRAGON,   5, { {372,52},{334,54},{330,53},{230,53},{373,55} } },
+  { "STEVEN",   "CHAMPION",   T_STEEL,    6, { {227,57},{344,55},{306,56},{346,56},{348,56},{376,58} } },
+};
+
+// One ladder per region, in the same order as REGIONS in dex.h.
+struct TrainerSet {
+  const Trainer *list;
+  const char *region;
+};
+#define GYM_REGIONS 3
+static const TrainerSet TRAINER_SETS[GYM_REGIONS] = {
+  { TRAINERS_KANTO, "KANTO" },
+  { TRAINERS_JOHTO, "JOHTO" },
+  { TRAINERS_HOENN, "HOENN" },
 };
 
 // Hard mode reruns the same ladder with perfect IVs and a smarter AI, so the

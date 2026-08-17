@@ -272,7 +272,7 @@ int main(int argc, char **argv) {
   pet.ageMinutes = 100 * MINUTES_PER_LEVEL;   // strong enough to sweep Brock
   pet.relearnFromLevel();
   while (pet.hasLearnOffer()) pet.declineLearn();
-  bool hadBadge = pet.hasBadge(0, false);
+  bool hadBadge = pet.hasBadge(0, 0, false);
   startTrainerBattle(0, false);
   if (!battleOpen) { printf("FAIL: trainer battle did not start\n"); return 1; }
   printf("PASS: gym battle starts (squad of %u vs BROCK)\n", btlSquadN);
@@ -292,7 +292,7 @@ int main(int argc, char **argv) {
   if (sawFoeAt == 0) { printf("FAIL: the second gym creature never came out\n"); return 1; }
   printf("PASS: the trainer sends out its next creature on a faint\n");
   if (!btlWon) { printf("FAIL: a L100 creature lost to Brock\n"); return 1; }
-  if (!pet.hasBadge(0, false) || hadBadge) { printf("FAIL: no badge awarded\n"); return 1; }
+  if (!pet.hasBadge(0, 0, false) || hadBadge) { printf("FAIL: no badge awarded\n"); return 1; }
   printf("PASS: beating a leader awards its badge (%u/8)\n", pet.badgeCount(false));
 
   // ---- hard mode caps the team to the opponent's size AND level

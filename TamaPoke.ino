@@ -223,6 +223,12 @@ static void btlResolve(uint8_t yourMove);
 Combatant btlFoeSquad[TRAINER_TEAM_MAX];
 uint8_t btlFoeSquadN = 0;
 uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
+// Which ladder the gym screen and the current fight belong to. The battle keeps
+// its own copy so that leaving the gym list mid-fight cannot retarget the badge.
+uint8_t gymRegion = 0;
+uint8_t btlRegion = 0;
+#define TRAINERS (TRAINER_SETS[gymRegion % GYM_REGIONS].list)
+#define BTL_TRAINERS (TRAINER_SETS[btlRegion % GYM_REGIONS].list)
 bool gShowAllAvatars = false;  // emulator screenshot aid, never set on hardware
 bool btlPetIn = false;       // was the live pet in the squad?
 uint8_t btlTrainGain = 0;    // what the win trained, for the win screen
@@ -230,7 +236,7 @@ uint8_t btlTrainWhich = 0;
 bool btlLink = false;      // this fight is against another device
 bool btlLinkHost = false;
 static bool gymUnlocked(uint8_t idx, bool hard) {
-  return idx == 0 || pet.hasBadge(idx - 1, hard);
+  return idx == 0 || pet.hasBadge(gymRegion, idx - 1, hard);
 }
 
 // Team select. Candidate 0 is the live pet, 1..PARTY_SLOTS are the banked
@@ -865,7 +871,13 @@ void onSwipeV(int dir) {
   if (battleOpen) return;   // no swiping out of a fight
   if (pickOpen) { pickOpen = false; return; }
   if (lanOpen) { lanLeave(); lanOpen = false; return; }
-  if (gymOpen) { gymOpen = false; return; }
+  if (gymOpen) {
+    // Same gesture as the Pokedex: vertical changes region, horizontal pages.
+    gymRegion = (uint8_t)((gymRegion + (dir > 0 ? 1 : GYM_REGIONS - 1)) % GYM_REGIONS);
+    gymPage = 0;
+    sfxPlay(SFX_TAP);
+    return;
+  }
   if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
   if (movePickOpen) { movePickOpen = false; return; }
@@ -2923,7 +2935,7 @@ static void btlResolve(uint8_t yourMove) {
     btlSwapWho = 1;
     return;
   }
-  if (btlFoe.fainted() && btlTrainer >= 0 && btlFoeAt + 1 < TRAINERS[btlTrainer].count) {
+  if (btlFoe.fainted() && btlTrainer >= 0 && btlFoeAt + 1 < BTL_TRAINERS[btlTrainer].count) {
     btlFaintUntil[1] = millis() + BTL_FAINT_MS;
     btlSwapWho = 1;
     return;
@@ -2938,8 +2950,8 @@ static void btlResolve(uint8_t yourMove) {
     btlWon = btlFoe.fainted();
     btlNewBadge = false;
     btlTrainGain = 0;
-    if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlTrainer, btlHard)) {
-      pet.winBadge(btlTrainer, btlHard);
+    if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlRegion, btlTrainer, btlHard)) {
+      pet.winBadge(btlRegion, btlTrainer, btlHard);
       btlNewBadge = true;
     }
     // A badge and nothing else made the ladder a one-way checklist. A win now
@@ -3067,7 +3079,7 @@ static void btlEaseBars() {
 // The moment the ladder builds toward. It used to be one more line in the same
 // message box as "It's super effective!", with the badge awarded silently.
 void renderWin() {
-  const Trainer &t = TRAINERS[btlTrainer];
+  const Trainer &t = BTL_TRAINERS[btlTrainer];
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
 
@@ -3105,7 +3117,7 @@ void renderWin() {
       gfx->print(T(S_BTL_NEWBADGE));
     }
   }
-  snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCount(btlHard));
+  snprintf(l, sizeof(l), T(S_BADGES_FMT), pet.badgeCountIn(btlRegion, btlHard));
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(l) * 6, 316);
@@ -3242,7 +3254,7 @@ static void btlDoSwap() {
     btlEnterUntil[1] = now + BTL_ENTER_MS;
     btlSay(T(S_BTL_SENDS), lan.peerName, btlFoe.name);
   } else if (btlSwapWho == 1) {
-    const Trainer &t = TRAINERS[btlTrainer];
+    const Trainer &t = BTL_TRAINERS[btlTrainer];
     btlFoeAt++;
     foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
                    btlHard ? HARD_IV : EASY_IV);
@@ -3398,8 +3410,8 @@ static void renderPlayerBadges() {
   // of what is missing is still visible.
   for (int i = 0; i < TRAINER_GYMS; i++) {
     int bx = 140 + (i % 4) * 62, by = 188 + (i / 4) * 62;
-    bool got = pet.hasBadge(i, false);
-    bool hard = pet.hasBadge(i, true);
+    bool got = pet.hasBadge(0, i, false);
+    bool hard = pet.hasBadge(0, i, true);
     if (hard) {
       // Beaten on hard: a golden halo. Concentric rings, not a filled disc --
       // a disc sat behind the art and read as a gold coin rather than a glow.
@@ -3920,12 +3932,17 @@ void lanTap(int16_t x, int16_t y) {
 void renderGyms() {
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  // The ladder's own region in the title, since a vertical swipe moves between
+  // three of them and "GYMS" alone would not say which you are looking at.
+  char title[28];
+  snprintf(title, sizeof(title), "%s %s", TRAINER_SETS[gymRegion % GYM_REGIONS].region,
+           T(S_GYMS));
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_GYMS)) * 6, 42);
-  gfx->print(T(S_GYMS));
+  gfx->setCursor(CX - (int)strlen(title) * 6, 42);
+  gfx->print(title);
   char sub[24];
-  snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCount(gymHard));
+  snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCountIn(gymRegion, gymHard));
   gfx->setTextSize(1);
   gfx->setCursor(CX - (int)strlen(sub) * 3, 66);
   gfx->print(sub);
@@ -3944,7 +3961,7 @@ void renderGyms() {
     if (idx >= TRAINER_COUNT) break;
     const Trainer &t = TRAINERS[idx];
     int y = GYM_ROW_Y(i);
-    bool done = pet.hasBadge(idx, gymHard);
+    bool done = pet.hasBadge(gymRegion, idx, gymHard);
     bool open_ = gymUnlocked(idx, gymHard);
     gfx->fillRoundRect(70, y, 326, 44, 10, done ? UI_TRACK : UI_BG_DAY);
     gfx->drawRoundRect(70, y, 326, 44, 10, open_ ? UI_INK : UI_TRACK);

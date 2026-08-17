@@ -92,6 +92,7 @@ void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern bool galleryDirty;
 extern uint8_t galleryRegion;
+extern uint8_t gymRegion;
 extern bool lanOpen;
 extern uint8_t btlMyAct;
 extern uint8_t btlTrainGain, btlTrainWhich;
@@ -192,6 +193,8 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     btlHitUntil[1] = millis() + 300;   // foe flinching
   }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
+  else if (!strcmp(screen, "gymsj")) { gymOpen = true; gymRegion = 1; }
+  else if (!strcmp(screen, "gymsh")) { gymOpen = true; gymRegion = 2; }
   else if (!strcmp(screen, "lan")) { lanOpen = true; lan.state = LINK_OFF; }
   else if (!strcmp(screen, "lanpick")) {
     static const int f[]={9,25,143,94,131,3};

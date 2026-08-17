@@ -16,11 +16,13 @@ static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
 
 static void award(Pet &p){
-  p.winBadge(0,false); p.winBadge(1,false); p.winBadge(0,true);
+  p.winBadge(0,0,false); p.winBadge(0,1,false); p.winBadge(0,0,true);
+  p.winBadge(2,3,false);   // and one in another region's ladder
   p.avatar = 2; p.streak = 9; p.bestStreak = 11; p.totalMedals = 5;
 }
 static bool intact(Pet &p){
-  return p.hasBadge(0,false) && p.hasBadge(1,false) && p.hasBadge(0,true)
+  return p.hasBadge(0,0,false) && p.hasBadge(0,1,false) && p.hasBadge(0,0,true)
+      && p.hasBadge(2,3,false)
       && p.avatar==2 && p.streak==9 && p.bestStreak==11 && p.totalMedals==5;
 }
 

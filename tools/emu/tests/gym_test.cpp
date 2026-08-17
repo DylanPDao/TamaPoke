@@ -43,7 +43,7 @@ int main(){
   for (int lvl : {40, 60, 73, 100}) {
     printf("\n--- your creature: CHARIZARD L%d, perfect IVs ---\n", lvl);
     for (int ti=0; ti<TRAINER_COUNT; ti++){
-      const Trainer &t=TRAINERS[ti];
+      const Trainer &t=TRAINER_SETS[0].list[ti];
       int wins=0, runs=40;
       for(int r=0;r<runs;r++){
         Pet p; p.dbgHatchAs(6,false);

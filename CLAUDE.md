@@ -484,8 +484,40 @@ Three bugs the expansion exposed, all of which had been silently fine at 151:
   any species is unreachable, and the dot row became a page number because 25
   dots do not fit the round panel.
 
-Still to do: phase 2 (region setting + egg filter), phase 3 (per-region gyms
-and badges), phase 4 (sprites, and the web-installer size problem below).
+**Phase 2 landed: the egg region.** See § "Choose which region your egg comes
+from" in the README for the two anti-farming rules.
+
+**Phase 3 landed: three ladders.** `trainers.h` holds `TRAINERS_KANTO/JOHTO/
+HOENN` behind `TRAINER_SETS[GYM_REGIONS]`, and the gym screen changes ladder on
+a vertical swipe -- the same gesture the Pokedex uses, and the swipe-left
+chooser that was once planned is not needed. `TrainerMon::dex` had to widen to
+`uint16_t` (Hoenn runs past 255, the same trap `evolvesTo` fell into).
+
+Badges are stored ADDITIVELY: Kanto keeps `badges`/`badgesHard` under the keys
+it has always used, and Johto/Hoenn live in `badgesX`/`badgesHardX` under new
+ones. Widening the originals would have meant reinterpreting an existing save;
+this cannot. It is the same reasoning that put the box under its own key rather
+than growing the party blob. Every read goes through `badgeMask(region, hard)`,
+and the running fight keeps `btlRegion` separately from `gymRegion` so that
+leaving the gym list mid-battle cannot retarget the badge.
+
+**The Johto and Hoenn rosters are APPROXIMATE.** Kanto's was checked species by
+species against FireRed/LeafGreen; these two were written from recall and
+corrected once against an inspection pass, but they are not verified against
+Gold/Silver or Ruby/Sapphire. `roster_test` proves they are *valid* -- real dex
+numbers, sane levels, a champion at the top, enough of their own generation to
+prove the table is not misfiled -- not that they are *canonical*. Worth a pass
+against Bulbapedia before anyone treats them as authoritative.
+
+Two findings worth keeping: Johto's leaders really are Kanto-heavy (13 of 49
+creatures are Johto natives, against Hoenn's 47 of 57), and Pryce really is
+weaker than Jasmine in Gold/Silver, so the ladder dips there on purpose.
+
+Still to do: **badge ART is Kanto-only** -- `badges.h` has eight Kanto badges
+and the other two regions currently draw nothing. `gen_badges.py` already
+handles any of the five regional SVGs upstream, so it is a re-run plus the
+per-region indexing. Then phase 4 (sprites, and the web-installer size problem
+below).
 
 What changed for 386 species:
 

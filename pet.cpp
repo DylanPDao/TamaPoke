@@ -12,6 +12,8 @@ void Pet::begin() {
   // reset keeps the old Pokedex alive in RAM -- the firmware reboots on WIPE so
   // it never showed there, but anything calling begin() twice would see it, and
   // Party::begin() already guards the same way for the same reason.
+  memset(badgesX, 0, sizeof(badgesX));
+  memset(badgesHardX, 0, sizeof(badgesHardX));
   memset(dexReg, 0, sizeof(dexReg));
   memset(dexShinyReg, 0, sizeof(dexShinyReg));
   for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = 0;
@@ -975,6 +977,8 @@ void Pet::save() {
   prefs.putUChar("mvlv", lastLearnLevel);
   prefs.putUChar("avtr", avatar);
   prefs.putUChar("reg", region);
+  prefs.putBytes("badgX", badgesX, sizeof(badgesX));
+  prefs.putBytes("badhX", badgesHardX, sizeof(badgesHardX));
   prefs.putBytes("eggR", eggByRegion, sizeof(eggByRegion));
   prefs.putString("tnam", trainerName);
   prefs.putBool("froz", frozen);
@@ -1078,6 +1082,10 @@ void Pet::load() {
   lastLearnLevel = prefs.getUChar("mvlv", 0);
   frozen = prefs.getBool("froz", false);
   avatar = prefs.getUChar("avtr", 0);
+  // Absent on a Kanto-only save, which leaves both arrays zeroed -- exactly
+  // "no Johto or Hoenn badges yet".
+  prefs.getBytes("badgX", badgesX, sizeof(badgesX));
+  prefs.getBytes("badhX", badgesHardX, sizeof(badgesHardX));
   region = prefs.getUChar("reg", REGION_ALL);
   if (region >= REGION_COUNT) region = REGION_ALL;
   // A save from the Kanto-only build has neither key; getBytes leaves the

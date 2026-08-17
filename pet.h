@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include "dex.h"
+#include "trainers.h"   // GYM_REGIONS sizes the badge masks
 #include "party.h"
 
 // 1 tick = 1 minuto de juego. Baja este valor para probar mas rapido
@@ -167,19 +168,41 @@ public:
   }
 
   uint8_t avatar = 0;       // which player sprite, 0..3
+  // Kanto's ladder, under the keys it has always used. Johto and Hoenn live in
+  // a SEPARATE array under new keys rather than widening these -- purely
+  // additive, so an existing save cannot be misread, exactly the reasoning that
+  // put the box under its own key instead of growing the party blob.
   uint16_t badges = 0;      // bit n = trainer n beaten on easy
   uint16_t badgesHard = 0;  // ... and on hard
-  bool hasBadge(uint8_t i, bool hard) const {
-    return ((hard ? badgesHard : badges) >> i) & 1;
+  uint16_t badgesX[GYM_REGIONS - 1] = { 0 };
+  uint16_t badgesHardX[GYM_REGIONS - 1] = { 0 };
+
+  uint16_t badgeMask(uint8_t rg, bool hard) const {
+    if (rg == 0) return hard ? badgesHard : badges;
+    if (rg >= GYM_REGIONS) return 0;
+    return hard ? badgesHardX[rg - 1] : badgesX[rg - 1];
   }
-  void winBadge(uint8_t i, bool hard) {
-    if (hard) badgesHard |= (1 << i); else badges |= (1 << i);
+  bool hasBadge(uint8_t rg, uint8_t i, bool hard) const {
+    return (badgeMask(rg, hard) >> i) & 1;
+  }
+  void winBadge(uint8_t rg, uint8_t i, bool hard) {
+    if (rg >= GYM_REGIONS) return;
+    uint16_t bit = (uint16_t)1 << i;
+    if (rg == 0) { if (hard) badgesHard |= bit; else badges |= bit; }
+    else if (hard) badgesHardX[rg - 1] |= bit;
+    else badgesX[rg - 1] |= bit;
     save();
   }
-  uint8_t badgeCount(bool hard) const {
-    uint16_t v = hard ? badgesHard : badges;
+  uint8_t badgeCountIn(uint8_t rg, bool hard) const {
+    uint16_t v = badgeMask(rg, hard);
     uint8_t n = 0;
     while (v) { n += v & 1; v >>= 1; }
+    return n;
+  }
+  // Every region's badges together, for the player card's running total.
+  uint8_t badgeCount(bool hard) const {
+    uint8_t n = 0;
+    for (uint8_t r = 0; r < GYM_REGIONS; r++) n += badgeCountIn(r, hard);
     return n;
   }
 
