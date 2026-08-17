@@ -3,10 +3,14 @@
 // curve -- and a bad dex number here is an out-of-bounds read into DEX_TBL, not
 // a strange-looking opponent.
 //
-// CAVEAT worth keeping in view: the Kanto ladder was checked species by species
-// against the real FireRed/LeafGreen teams. The Johto and Hoenn ladders were
-// written from recall and are APPROXIMATE -- this test proves they are valid and
-// sanely ordered, NOT that they match Gold/Silver or Ruby/Sapphire exactly.
+// All three ladders are VERIFIED against the games themselves: Kanto by hand
+// against FireRed/LeafGreen, and Johto and Hoenn by tools/verify_rosters.py,
+// which diffs them against pokecrystal and pokeemerald -- the disassemblies, so
+// the games' own tables rather than somebody's transcription. Re-run it after
+// touching a roster; it reports zero differences across all 26 trainers.
+//
+// This test is the cheap always-on half: it cannot know what is canonical, but
+// it catches the mistakes that would crash or unbalance the game.
 #include "Arduino.h"
 #include "dex.h"
 #include "trainers.h"

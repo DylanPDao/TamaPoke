@@ -501,13 +501,21 @@ than growing the party blob. Every read goes through `badgeMask(region, hard)`,
 and the running fight keeps `btlRegion` separately from `gymRegion` so that
 leaving the gym list mid-battle cannot retarget the badge.
 
-**The Johto and Hoenn rosters are APPROXIMATE.** Kanto's was checked species by
-species against FireRed/LeafGreen; these two were written from recall and
-corrected once against an inspection pass, but they are not verified against
-Gold/Silver or Ruby/Sapphire. `roster_test` proves they are *valid* -- real dex
-numbers, sane levels, a champion at the top, enough of their own generation to
-prove the table is not misfiled -- not that they are *canonical*. Worth a pass
-against Bulbapedia before anyone treats them as authoritative.
+**All three rosters are VERIFIED against the games.** `tools/verify_rosters.py`
+diffs Johto and Hoenn against `pret/pokecrystal` and `pret/pokeemerald` -- the
+disassemblies, which are the games' own tables and so beat any wiki. It reports
+**0 differences across all 26 trainers**. Re-run it after touching a roster.
+
+It found ten, which is why it exists: Lance was missing his Charizard and had
+Dragonair where Dragonite belongs, Roxanne was two levels high, Norman and
+Winona were the wrong games' teams entirely, and four trainers had their teams
+in the wrong ORDER, which matters because the first slot is who leads.
+
+**Hoenn is EMERALD throughout**, and that follows from Juan being the eighth
+leader: in Ruby/Sapphire that seat is Wallace's and Steven is champion, while in
+Emerald Juan takes the gym and Wallace the title. Mixing them would have given a
+ladder that exists in neither game. Emerald's Steven is a post-game rematch at
+level 77 and is deliberately absent.
 
 Two findings worth keeping: Johto's leaders really are Kanto-heavy (13 of 49
 creatures are Johto natives, against Hoenn's 47 of 57), and Pryce really is

@@ -61,34 +61,37 @@ static const Trainer TRAINERS_JOHTO[TRAINER_COUNT] = {
   { "FALKNER",  "VIOLET",     T_FLYING,   2, { {16,7},{17,9} } },
   { "BUGSY",    "AZALEA",     T_BUG,      3, { {11,14},{14,14},{123,16} } },
   { "WHITNEY",  "GOLDENROD",  T_NORMAL,   2, { {35,18},{241,20} } },
-  { "MORTY",    "ECRUTEAK",   T_GHOST,    4, { {92,21},{93,21},{93,23},{94,25} } },
+  { "MORTY",    "ECRUTEAK",   T_GHOST,    4, { {92,21},{93,21},{94,25},{93,23} } },
   { "CHUCK",    "CIANWOOD",   T_FIGHTING, 2, { {57,27},{62,30} } },
   { "JASMINE",  "OLIVINE",    T_STEEL,    3, { {81,30},{81,30},{208,35} } },
   { "PRYCE",    "MAHOGANY",   T_ICE,      3, { {86,27},{87,29},{221,31} } },
   { "CLAIR",    "BLACKTHORN", T_DRAGON,   4, { {148,37},{148,37},{148,37},{230,40} } },
   { "WILL",     "ELITE 4",    T_PSYCHIC,  5, { {178,40},{124,41},{103,41},{80,41},{178,42} } },
   { "KOGA",     "ELITE 4",    T_POISON,   5, { {168,40},{49,41},{205,43},{89,42},{169,44} } },
-  { "BRUNO",    "ELITE 4",    T_FIGHTING, 5, { {237,42},{106,42},{95,43},{107,42},{68,46} } },
-  { "KAREN",    "ELITE 4",    T_DARK,     5, { {197,42},{45,42},{198,44},{94,45},{229,47} } },
-  { "LANCE",    "CHAMPION",   T_DRAGON,   6, { {130,44},{148,47},{148,47},{142,46},{149,50},{149,50} } },
+  { "BRUNO",    "ELITE 4",    T_FIGHTING, 5, { {237,42},{106,42},{107,42},{95,43},{68,46} } },
+  { "KAREN",    "ELITE 4",    T_DARK,     5, { {197,42},{45,42},{94,45},{198,44},{229,47} } },
+  { "LANCE",    "CHAMPION",   T_DRAGON,   6, { {130,44},{149,47},{149,47},{142,46},{6,46},{149,50} } },
 };
 
-// Hoenn: Ruby/Sapphire/Emerald. Steven is the champion here (Emerald's Wallace
-// is the alternative; Steven is the one most people mean).
+// Hoenn: EMERALD, consistently. That choice follows from Juan being the eighth
+// leader -- in Ruby/Sapphire that seat is Wallace's and Steven is the champion,
+// while in Emerald Juan takes the gym and Wallace the title. Mixing the two
+// would have given a ladder that exists in neither game. Emerald's Steven is a
+// post-game rematch at level 77 and is deliberately not here.
 static const Trainer TRAINERS_HOENN[TRAINER_COUNT] = {
-  { "ROXANNE",  "RUSTBORO",   T_ROCK,     3, { {74,14},{74,14},{299,15} } },
+  { "ROXANNE",  "RUSTBORO",   T_ROCK,     3, { {74,12},{74,12},{299,15} } },
   { "BRAWLY",   "DEWFORD",    T_FIGHTING, 3, { {66,16},{307,16},{296,19} } },
   { "WATTSON",  "MAUVILLE",   T_ELECTRIC, 4, { {100,20},{309,20},{82,22},{310,24} } },
   { "FLANNERY", "LAVARIDGE",  T_FIRE,     4, { {322,24},{218,24},{323,26},{324,29} } },
-  { "NORMAN",   "PETALBURG",  T_NORMAL,   3, { {289,28},{288,30},{289,31} } },
-  { "WINONA",   "FORTREE",    T_FLYING,   5, { {277,31},{278,30},{279,32},{333,33},{334,35} } },
+  { "NORMAN",   "PETALBURG",  T_NORMAL,   4, { {327,27},{288,27},{264,29},{289,31} } },
+  { "WINONA",   "FORTREE",    T_FLYING,   5, { {333,29},{357,29},{279,30},{227,31},{334,33} } },
   { "TATE",     "MOSSDEEP",   T_PSYCHIC,  4, { {344,41},{178,41},{337,42},{338,42} } },
   { "JUAN",     "SOOTOPOLIS", T_WATER,    5, { {370,41},{340,41},{364,43},{342,43},{230,46} } },
   { "SIDNEY",   "ELITE 4",    T_DARK,     5, { {262,46},{275,48},{332,46},{342,48},{359,49} } },
   { "PHOEBE",   "ELITE 4",    T_GHOST,    5, { {356,48},{354,49},{302,50},{354,49},{356,51} } },
   { "GLACIA",   "ELITE 4",    T_ICE,      5, { {364,50},{362,50},{364,52},{362,52},{365,53} } },
-  { "DRAKE",    "ELITE 4",    T_DRAGON,   5, { {372,52},{334,54},{330,53},{230,53},{373,55} } },
-  { "STEVEN",   "CHAMPION",   T_STEEL,    6, { {227,57},{344,55},{306,56},{346,56},{348,56},{376,58} } },
+  { "DRAKE",    "ELITE 4",    T_DRAGON,   5, { {372,52},{334,54},{230,53},{330,53},{373,55} } },
+  { "WALLACE",  "CHAMPION",   T_WATER,    6, { {321,57},{73,55},{272,56},{340,56},{130,56},{350,58} } },
 };
 
 // One ladder per region, in the same order as REGIONS in dex.h.
