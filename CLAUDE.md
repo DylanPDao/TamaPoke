@@ -114,9 +114,15 @@ Feature branches only, never commit straight to `main`.
 
 ## Roadmap
 
-Wild encounters / battle (designed, unimplemented): resolution by ATK/DEF/SPD using
-PMD Attack/Hurt animations, trainer rank as endgame. Battle style not yet chosen.
-Plus a 24–48 h soak test using `HEALTH`.
+The battle system is BUILT -- turn- and move-based, with the gym ladder and the
+Elite 4 on two difficulties. The old line here ("resolution by ATK/DEF/SPD,
+battle style not yet chosen") described a design that was superseded and is kept
+only in the § "Battle system" note explaining why.
+
+What is left is the 24-48 h soak test on `HEALTH`, and **wild encounters**, which
+were never built: there is no way to meet a creature outside a gym. That is the
+one substantial piece of unimplemented game left, and it now has nowhere obvious
+to live -- every gesture from the main screen is taken (see below).
 
 ## TODO
 
@@ -705,29 +711,28 @@ handler skips it (`passive = (i == 2)`), so it reads as information rather than
 a dead button. DEF still trains by itself, +1 per `DEF_TRAIN_TICKS` of good
 wellbeing.
 
-### Swipe map redesign (requested, not started)
+### Swipe map -- DONE, do not re-plan it
 
-Target layout from the main screen:
+This section used to hold a target layout and a list of conflicts. All four
+gestures are now bound, and the conflicts were resolved; it is recorded here as
+fact so nobody redesigns it from the old notes.
 
-| Gesture | Target | Status |
-|---|---|---|
-| Swipe up | **Player card** — player sprite (chosen by the user), badges earned | new, nothing exists |
-| Swipe down | Current Pokemon status card | exists, but see conflict below |
-| Swipe right | **Gym battles** | new, depends on the battle system |
-| Swipe left | open — suggestion below | undecided |
-| Swipe from the status card | **Moveset / moves known** | new; `moves.h` already has the move table + learnsets |
+| Gesture | From the main screen |
+|---|---|
+| Up | the creature's card (4 pages: profile, battle, moves, progress) |
+| Down | the player card (badges + avatar, then medals) |
+| Left | the gym ladder -- which is also where the LAN battle button lives |
+| Right | the party |
 
-**Conflicts to resolve first** — the current bindings are not what the target
-assumes (`onSwipeV`/`onSwipe` in `TamaPoke.ino`):
+The clock lost its gesture on purpose: the menu's SETTINGS row already opens it,
+and the player card is reached far more often. The Pokedex lost its horizontal
+gesture for the same reason -- it has a menu row, and a gesture is worth more
+spent on a screen without one.
 
-- Swipe **up** currently opens the Pokemon card; swipe **down** opens the clock.
-  The target wants up = player card, down = Pokemon card, so the clock needs a new
-  home (the menu `SETTINGS` row already opens it, so it may just lose the gesture).
-- Swipe **left/right** currently page the Pokedex gallery. The gallery is now
-  reachable from the menu, so the gesture is free — but `onSwipe` also handles
-  card paging and gallery exit, so unpicking it needs care.
+**Swipe left is spoken for.** The old suggestion of wild encounters there is
+superseded twice over: the gym ladder took it, and the multi-region plan (B2)
+turns it into a region/LAN chooser. Wild encounters, if they happen, need
+another home -- a menu row is the obvious one.
 
-**Suggestion for swipe left: wild encounters.** It pairs with gyms on the right
-(wild/grinding vs structured/progression), it is already half-designed in the
-Roadmap above, and it gives the training stats somewhere to matter. Alternative if
-that feels heavy: the berry/item bag, which currently has no home of its own.
+Every paged screen reached this way must be added to `swipe_test`; the same
+paging bug shipped four times before that test existed.
