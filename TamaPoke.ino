@@ -217,8 +217,15 @@ static bool gymUnlocked(uint8_t idx, bool hard) {
 // Team select. Candidate 0 is the live pet, 1..PARTY_SLOTS are the banked
 // members, so one bitmask covers the whole pool.
 bool pickOpen = false;
+// The team picker serves the gym ladder and the LAN screen both. PICK_LAN is
+// not a trainer index: squadCap() already returns an uncapped six for anything
+// past the roster, which is what a LAN battle wants -- two players who know
+// each other can bring what they like.
+#define PICK_LAN 0xFF
+static void lanOffer(bool host);
 uint8_t pickTrainer = 0;
 bool pickHard = false;
+bool lanWantHost = true;   // which button opened the picker
 uint16_t squadMask = 0xFFFF;   // everything, until the player says otherwise
 uint8_t pickPage = 0;
 #define PICK_PER_PAGE 6
@@ -3605,14 +3612,18 @@ static void drawPickCell(uint8_t n, int x, int y, uint8_t capLvl) {
 void renderPick() {
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
-  const Trainer &t = TRAINERS[pickTrainer];
   uint8_t cap = squadCap(pickTrainer, pickHard);
-  uint8_t top = 0;
-  for (int k = 0; k < t.count; k++)
-    if (t.team[k].level > top) top = t.team[k].level;
-
+  uint8_t top = 0;          // the level cap shown on each cell; 0 = uncapped
   char head[40];
-  snprintf(head, sizeof(head), "%s  Lv.%u x%u", t.name, top, t.count);
+  if (pickTrainer == PICK_LAN) {
+    snprintf(head, sizeof(head), "%s: %s", T(S_LAN),
+             lanWantHost ? T(S_LAN_HOST) : T(S_LAN_JOIN));
+  } else {
+    const Trainer &t = TRAINERS[pickTrainer];
+    for (int k = 0; k < t.count; k++)
+      if (t.team[k].level > top) top = t.team[k].level;
+    snprintf(head, sizeof(head), "%s  Lv.%u x%u", t.name, top, t.count);
+  }
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(head) * 6, 44);
@@ -3656,6 +3667,15 @@ void pickTap(int16_t x, int16_t y) {
     if (pickChosen() == 0 || pickChosen() > cap) return;   // GO stays inert
     sfxPlay(SFX_TAP);
     pickOpen = false;
+    if (pickTrainer == PICK_LAN) {
+      // The squad is chosen BEFORE the radio comes up, so what gets offered to
+      // the peer is what the player picked -- lanOffer() builds lan.mine from
+      // squadMask, and the fight is then rebuilt from lan.mine rather than from
+      // the party (see startLinkBattle).
+      lanOffer(lanWantHost);
+      lanOpen = true;
+      return;
+    }
     startTrainerBattle(pickTrainer, pickHard);
     return;
   }
@@ -3765,10 +3785,10 @@ void lanLeave() {
 }
 
 static void lanOffer(bool host) {
-  if (!linkNowBegin(&lan)) {          // no radio: say so rather than hanging
-    lan.state = LINK_REFUSED;
-    return;
-  }
+  // The squad is built BEFORE the radio is touched. What we advertise has to be
+  // exactly what the player just chose in the picker, and that does not depend
+  // on whether the radio comes up -- doing it the other way round meant a
+  // failed radio skipped the squad entirely and left nothing to inspect.
   lan.begin(host, pet.trainerName);
   snprintf(lan.peerName, sizeof(lan.peerName), "%s", pet.trainerName);
   buildSquad(0, TRAINER_TEAM_MAX, squadMask);
@@ -3777,12 +3797,15 @@ static void lanOffer(bool host) {
     linkMonFrom(m, btlSquad[i]);
     lan.addMon(m);
   }
+  if (!linkNowBegin(&lan)) {          // no radio: say so rather than hanging
+    lan.state = LINK_REFUSED;
+    return;
+  }
   // BOTH sides announce. Which of them ends up hosting is settled by id inside
   // the hello, so the buttons are only a preference -- two players who both tap
   // HOST still get a working fight instead of two authorities, and two who both
   // tap JOIN still get one instead of mutual silence.
   lan.start();
-  (void)host;
 }
 
 void lanTap(int16_t x, int16_t y) {
@@ -3792,7 +3815,13 @@ void lanTap(int16_t x, int16_t y) {
       int by = 120 + i * 70;
       if (x < 90 || x > 376 || y < by || y > by + 56) continue;
       sfxPlay(SFX_TAP);
-      lanOffer(i == 0);
+      lanWantHost = (i == 0);
+      lanOpen = false;
+      pickTrainer = PICK_LAN;
+      pickHard = false;
+      pickPage = 0;
+      pickDefault(squadCap(PICK_LAN, false));
+      pickOpen = true;
       return;
     }
   } else if (lan.state == LINK_READY) {

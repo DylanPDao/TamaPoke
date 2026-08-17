@@ -29,7 +29,15 @@ extern uint8_t btlSquadN, btlSquadAt, btlFoeAt, btlMenu, btlMsgCount;
 extern uint8_t btlMyAct, btlFoeSquadN;
 extern Combatant btlFoeSquad[];
 extern uint16_t squadMask;
+extern bool pickOpen, lanWantHost;
+extern uint8_t pickTrainer, pickPage;
+extern bool pickHard;
 void startLinkBattle();
+void pickTap(int16_t x, int16_t y);
+void pickDefault(uint8_t cap);
+uint8_t squadCap(uint8_t, bool);
+uint8_t pickChosen();
+#define PICK_LAN 0xFF
 
 // The sketch never sets a transport itself -- linkNowBegin does, and there is
 // no radio here -- so one is wired in to see what the UI actually sends.
@@ -158,6 +166,31 @@ int main(){
   lan.resultN = 3; lan.resultNew = true;
   render();
   ck(!lan.resultNew && btlYou.hp==before, "a runt result is dropped, not half-applied");
+
+  // --- the team you pick is the team that gets offered
+  {
+    lanOpen = false; battleOpen = false; btlLink = false;
+    for (int i=0;i<PARTY_SLOTS;i++){ PartyMon m; m.dex=30+i*5; m.level=45;
+      m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=20; party.replaceAt(i,m); }
+    lanWantHost = true;
+    pickTrainer = PICK_LAN; pickHard = false; pickPage = 0;
+    pickDefault(squadCap(PICK_LAN, false));
+    ck(squadCap(PICK_LAN,false)==TRAINER_TEAM_MAX,
+       "a LAN battle is uncapped: bring what you like");
+    pickOpen = true;
+
+    // keep only the live pet and party slot 1 (bits 0 and 2)
+    squadMask = (1 << 0) | (1 << 2);
+    ck(pickChosen()==2, "two chosen");
+    lan.begin(true,"T");
+    pickTap(200, 355);                    // FIGHT
+    ck(!pickOpen && lanOpen, "confirming the team opens the LAN screen");
+    ck(lan.mineN==2, "and offers exactly what was chosen, not the whole party");
+    ck(lan.mine[1].dex==35, "including the right party member");
+    // the emulator has no radio, so the offer cannot go anywhere -- but the
+    // squad must still have been built, which is the half that matters here
+    ck(lan.state==LINK_REFUSED, "with no radio it says so rather than hanging");
+  }
 
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;

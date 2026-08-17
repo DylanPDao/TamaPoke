@@ -355,8 +355,18 @@ Still to do:
   Treat first bring-up as debugging, not as confirmation. `linkNowStats()` was
   added for exactly that first session: rx, tx, tx failures, packets dropped as
   another pair's, and ring overflows, printed on `linkNowEnd()`.
-- **Both devices must pick their team before pairing.** The squad is whatever
-  `squadMask` held; there is no team-select step in the LAN flow yet.
+- ~~Team select~~ **done**. HOST/JOIN now opens the same picker the gym ladder
+  uses, with `PICK_LAN` (0xFF) as the trainer index -- `squadCap()` already
+  returns an uncapped six for anything past the roster, so a LAN battle is
+  uncapped by construction rather than by a special case. **Uncapped is the
+  decision**: two players who know each other should be able to bring what they
+  like, unlike hard mode where the caps are the point.
+
+  `lanOffer()` builds the squad BEFORE bringing the radio up, so what is
+  advertised is exactly what was just chosen whether or not the radio comes up.
+  `lan_test` drives the picker's FIGHT button and asserts `lan.mine` holds the
+  chosen two rather than the whole party -- it fails if the offer is rebuilt
+  from anything but `squadMask`.
 
 **The synchronous test transport caught a real re-entrancy bug.** `start()` and
 the hello handler both SENT before updating their state, so a reply that arrived

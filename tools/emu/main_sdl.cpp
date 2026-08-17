@@ -92,6 +92,9 @@ void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern bool lanOpen;
 extern uint8_t btlMyAct;
+extern bool lanWantHost;
+#define PICK_LAN 0xFF
+uint8_t squadCap(uint8_t, bool);
 #include "link.h"
 extern Link lan;
 void startLinkBattle();
@@ -168,6 +171,15 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
   else if (!strcmp(screen, "lan")) { lanOpen = true; lan.state = LINK_OFF; }
+  else if (!strcmp(screen, "lanpick")) {
+    static const int f[]={9,25,143,94,131,3};
+    for(int i=0;i<6;i++){ PartyMon m; m.dex=f[i]; m.level=40+i*5;
+      m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=25; party.replaceAt(i,m); }
+    lanWantHost = true;
+    pickTrainer = PICK_LAN; pickHard = false; pickPage = 0;
+    pickDefault(squadCap(PICK_LAN, false));
+    pickOpen = true;
+  }
   else if (!strcmp(screen, "lanlost")) { lanOpen = true; lan.begin(true,"D"); lan.state = LINK_LOST; }
   else if (!strcmp(screen, "lanready") || !strcmp(screen, "lanbattle") ||
            !strcmp(screen, "landone") || !strcmp(screen, "lanwait")) {
