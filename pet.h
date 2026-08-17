@@ -159,6 +159,12 @@ public:
   int16_t eggByRegion[REGION_COUNT] = { 0 };
   void setRegion(uint8_t r);
   const char *regionName() const { return REGIONS[region % REGION_COUNT].name; }
+  // How much of one region's dex is filled in, for the Pokedex header.
+  uint16_t registeredCountIn(uint16_t lo, uint16_t hi) const {
+    uint16_t n = 0;
+    for (uint16_t d = lo; d <= hi && d <= DEX_COUNT; d++) if (isRegistered(d)) n++;
+    return n;
+  }
 
   uint8_t avatar = 0;       // which player sprite, 0..3
   uint16_t badges = 0;      // bit n = trainer n beaten on easy

@@ -69,11 +69,18 @@ PmdMon galleryPmd;  // sprite grande de la vista detalle de la galeria (PMD/TPK2
 // galeria pokedex
 bool galleryOpen = false;
 bool galleryDirty = false;
-// 16 to a page. With three generations this is 25 pages, not the 10 the
-// Kanto-only build hardcoded -- which silently made everything past dex 160
-// unreachable in the Pokedex.
+// 16 to a page, and the Pokedex is browsed ONE REGION AT A TIME. Three
+// generations flat is 25 pages of swiping to reach Hoenn, which is not a
+// Pokedex, it is a scroll. A vertical swipe changes region and a horizontal one
+// pages within it, so nothing is ever more than ten pages from the front.
+// ALL is deliberately not offered here -- it is the thing being replaced.
 #define GAL_PER_PAGE 16
-#define GAL_PAGES ((DEX_COUNT + GAL_PER_PAGE - 1) / GAL_PER_PAGE)
+#define GAL_REGIONS (REGION_COUNT - 1)          // the real regions, not ALL
+#define GAL_LO (REGIONS[galleryRegion % GAL_REGIONS].lo)
+#define GAL_HI (REGIONS[galleryRegion % GAL_REGIONS].hi)
+#define GAL_SPAN (GAL_HI - GAL_LO + 1)
+#define GAL_PAGES ((GAL_SPAN + GAL_PER_PAGE - 1) / GAL_PER_PAGE)
+uint8_t galleryRegion = 0;
 int galleryPage = 0;        // GAL_PAGES paginas de GAL_PER_PAGE
 int16_t galleryDetail = 0;  // dex en vista detalle, 0 = rejilla
 
@@ -875,7 +882,15 @@ void onSwipeV(int dir) {
   if (gameOpen) { leaveGame(); return; }
   if (sackOpen) { leaveSack(); return; }
   if (spdOpen) { leaveSpeed(); return; }
-  if (galleryOpen || kbOpen || pet.ceremony) return;
+  if (galleryOpen) {
+    if (galleryDetail) { galleryDetail = 0; galleryPmd.unload(); galleryDirty = true; return; }
+    galleryRegion = (uint8_t)((galleryRegion + (dir > 0 ? 1 : GAL_REGIONS - 1)) % GAL_REGIONS);
+    galleryPage = 0;
+    galleryDirty = true;
+    sfxPlay(SFX_TAP);
+    return;
+  }
+  if (kbOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
     if (dir < 0) cardOpen = false;  // arriba cierra la ficha
@@ -4556,8 +4571,12 @@ void renderGallery() {
 
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
-  char head[24];
-  snprintf(head, sizeof(head), T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT);
+  // the region's own name and its own tally: "how much of Johto have I seen"
+  // is the question you are actually asking here
+  char head[32];
+  const RegionInfo &grg = REGIONS[galleryRegion % GAL_REGIONS];
+  snprintf(head, sizeof(head), "%s %u/%u", grg.name,
+           pet.registeredCountIn(grg.lo, grg.hi), (unsigned)GAL_SPAN);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(3);
   gfx->setCursor(CX - strlen(head) * 9, 36);
@@ -4565,8 +4584,8 @@ void renderGallery() {
 
   for (int r = 0; r < 4; r++) {
     for (int c = 0; c < 4; c++) {
-      int16_t dex = galleryPage * GAL_PER_PAGE + r * 4 + c + 1;
-      if (dex > DEX_COUNT) break;
+      int16_t dex = GAL_LO + galleryPage * GAL_PER_PAGE + r * 4 + c;
+      if (dex > GAL_HI || dex > DEX_COUNT) break;
       int x = GAL_X + c * GAL_CELL, y = GAL_Y + r * GAL_CELL;
       const uint8_t *t = thumbs.get(dex);
       if (t) {
@@ -4591,7 +4610,7 @@ void renderGallery() {
   // a round panel -- the chord at that height is only ~228 px -- and counting
   // them to find where you are is worse than reading the number.
   char pg[12];
-  snprintf(pg, sizeof(pg), "%d/%d", galleryPage + 1, GAL_PAGES);
+  snprintf(pg, sizeof(pg), "%d/%d", galleryPage + 1, (int)GAL_PAGES);
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(pg) * 6, 428);
@@ -4613,8 +4632,8 @@ void galleryTap(int16_t x, int16_t y) {
   }
   int c = (x - GAL_X) / GAL_CELL, r = (y - GAL_Y) / GAL_CELL;
   if (c < 0 || c > 3 || r < 0 || r > 3) return;
-  int16_t dex = galleryPage * GAL_PER_PAGE + r * 4 + c + 1;
-  if (dex > DEX_COUNT) return;
+  int16_t dex = GAL_LO + galleryPage * GAL_PER_PAGE + r * 4 + c;
+  if (dex > GAL_HI || dex > DEX_COUNT) return;
   galleryDetail = dex;
   galleryPmd.load(dex, pet.isShinyRegistered(dex));
 }

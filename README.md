@@ -132,6 +132,8 @@ After any ending, a **new egg** appears.
 - **8 medals** (Lv10/25/50, favorite berry found, 7-day streak, max bond, final form,
   "fit" = weight 0 & no slip-ups), per-pet + a global counter.
 - **Pokédex:** raising a species registers it; **386 + shinies** to complete.
+  Browsed **one region at a time** — swipe vertically for Kanto/Johto/Hoenn,
+  horizontally to page within it, so nothing is more than ten pages from the front.
 - **Region:** the pill under a waiting egg picks which generation it comes from —
   **Kanto / Johto / Hoenn / All**. A first egg gives that region's starter.
 

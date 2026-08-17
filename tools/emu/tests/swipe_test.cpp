@@ -13,12 +13,13 @@ volatile int g_touchX=0,g_touchY=0; volatile bool g_touchDown=false;
 void FakeESP::restart(){exit(0);}
 int FakeSerial::available(){return 0;}
 String FakeSerial::readStringUntil(char){return String("");}
-void setup(); void render(); void onSwipe(int dir);
+void setup(); void render(); void onSwipe(int dir); void onSwipeV(int dir);
 extern Pet pet;
 extern bool cardOpen, galleryOpen, clockOpen, kbOpen, menuOpen, partyOpen, partyPick;
 extern bool trainOpen, movePickOpen, battleOpen, gymOpen, playerOpen, boxOpen, pickOpen;
 extern uint8_t cardPage, gymPage, playerPage, movePickPage, boxPage, pickPage, partyDetail;
 extern int galleryPage; extern bool galleryDirty; extern uint8_t galleryDetail;
+extern uint8_t galleryRegion;
 extern uint8_t movePickSlot, movePickParty, boxSel, boxSwapFrom;
 extern uint16_t squadMask;
 extern uint8_t pickTrainer; extern bool pickHard;
@@ -59,23 +60,46 @@ int main(){
                                                   check("movepick", &movePickOpen, &movePickPage);
   clearAll(); pickTrainer=7; pickHard=false; pickDefault(squadCap(7,false)); pickOpen=true;
                                                   check("teampick", &pickOpen,     &pickPage);
-  // The Pokedex pages over the WHOLE dex. It was capped at 10 pages when the
-  // dex was 151 long, which silently hid everything past 160 once it grew.
-  clearAll(); galleryOpen=true; galleryDetail=0; galleryPage=0;
+  // The Pokedex pages within ONE region and changes region on a vertical swipe.
+  // Every species must be reachable: it was capped at 10 flat pages when the dex
+  // was 151 long, which silently hid everything past 160 once it grew to 386.
+  clearAll(); galleryOpen=true; galleryDetail=0; galleryPage=0; galleryRegion=0;
   onSwipe(-1);
   if (!galleryOpen) { printf("FAIL  gallery    closed on a swipe instead of paging\n"); bad++; }
   else if (galleryPage != 1) { printf("FAIL  gallery    did not advance (page=%d)\n", galleryPage); bad++; }
   else printf("PASS  %-10s pages on a horizontal swipe\n", "gallery");
   {
-    int pages = (DEX_COUNT + 15) / 16;
-    galleryPage = 0;
-    for (int i = 0; i < pages + 4; i++) onSwipe(-1);
-    if (galleryPage != pages - 1) {
-      printf("FAIL  gallery    stops at page %d of %d -- species past it are unreachable\n",
-             galleryPage + 1, pages);
-      bad++;
-    } else printf("PASS  %-10s reaches the last page (%d) so no species is hidden\n",
-                  "gallery", pages);
+    // walk every region to its last page and tick off what it can show
+    static bool seen[DEX_COUNT + 1] = { false };
+    int regions = REGION_COUNT - 1;
+    for (int r = 0; r < regions; r++) {
+      galleryRegion = (uint8_t)r;
+      galleryPage = 0;
+      int lo = REGIONS[r].lo, hi = REGIONS[r].hi;
+      int pages = (hi - lo + 1 + 15) / 16;
+      for (int p = 0; p < pages; p++) {
+        for (int i = 0; i < 16; i++) {
+          int d = lo + p * 16 + i;
+          if (d <= hi && d <= DEX_COUNT) seen[d] = true;
+        }
+        onSwipe(-1);
+      }
+      if (galleryPage != pages - 1) {
+        printf("FAIL  gallery    %s stops at page %d of %d\n",
+               REGIONS[r].name, galleryPage + 1, pages);
+        bad++;
+      }
+    }
+    int missing = 0;
+    for (int d = 1; d <= DEX_COUNT; d++) if (!seen[d]) missing++;
+    if (missing) { printf("FAIL  gallery    %d species are unreachable\n", missing); bad++; }
+    else printf("PASS  %-10s every one of the %d species is reachable\n", "gallery", DEX_COUNT);
+    // and a vertical swipe really does move between regions
+    galleryRegion = 0; galleryDetail = 0;
+    onSwipeV(1);
+    if (galleryRegion != 1 || !galleryOpen) {
+      printf("FAIL  gallery    a vertical swipe does not change region\n"); bad++;
+    } else printf("PASS  %-10s changes region on a vertical swipe\n", "gallery");
   }
   printf("%s\n", bad?"FAILURES":"every paged screen pages");
   return bad?1:0;

@@ -91,6 +91,7 @@ extern uint8_t btlMenu;
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern bool galleryDirty;
+extern uint8_t galleryRegion;
 extern bool lanOpen;
 extern uint8_t btlMyAct;
 extern uint8_t btlTrainGain, btlTrainWhich;
@@ -168,6 +169,13 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     // alone leaves the screenshot black -- the real UI sets both.
     galleryOpen = true;
     galleryDirty = true;
+    for (int d = 1; d <= 200; d++) pet.dbgHatchAs(d, false);
+  }
+  else if (!strcmp(screen, "gallery2")) {   // the second region
+    galleryOpen = true;
+    galleryDirty = true;
+    galleryRegion = 1;
+    for (int d = 1; d <= 200; d++) pet.dbgHatchAs(d, false);
   }
   else if (!strcmp(screen, "clock"))   clockOpen = true;
   else if (!strcmp(screen, "menu"))    menuOpen = true;
