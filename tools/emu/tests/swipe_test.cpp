@@ -20,6 +20,7 @@ extern bool trainOpen, movePickOpen, battleOpen, gymOpen, playerOpen, boxOpen, p
 extern uint8_t cardPage, gymPage, playerPage, movePickPage, boxPage, pickPage, partyDetail;
 extern int galleryPage; extern bool galleryDirty; extern uint8_t galleryDetail;
 extern uint8_t galleryRegion;
+extern uint8_t gymRegion;
 extern uint8_t movePickSlot, movePickParty, boxSel, boxSwapFrom;
 extern uint16_t squadMask;
 extern uint8_t pickTrainer; extern bool pickHard;
@@ -101,6 +102,28 @@ int main(){
       printf("FAIL  gallery    a vertical swipe does not change region\n"); bad++;
     } else printf("PASS  %-10s changes region on a vertical swipe\n", "gallery");
   }
+  // The gym ladder changes REGION on a vertical swipe, the same gesture the
+  // Pokedex uses. Without this the Johto and Hoenn ladders exist but cannot be
+  // reached, which is a worse failure than a paging bug: nothing looks broken.
+  clearAll(); gymOpen=true; gymRegion=0; gymPage=0;
+  {
+    bool ok = true;
+    for (int r = 1; r <= GYM_REGIONS; r++) {
+      onSwipeV(1);
+      if (gymRegion != r % GYM_REGIONS || !gymOpen) ok = false;
+    }
+    if (!ok) { printf("FAIL  gyms       vertical swipe does not cycle the ladders\n"); bad++; }
+    else printf("PASS  %-10s cycles all %d ladders on a vertical swipe\n", "gyms", GYM_REGIONS);
+    for (int r = 0; r < GYM_REGIONS; r++) {
+      gymRegion = (uint8_t)r; gymPage = 0; gymOpen = true;
+      onSwipe(-1);
+      if (gymPage != 1 || !gymOpen) {
+        printf("FAIL  gyms       %s does not page\n", TRAINER_SETS[r].region); bad++;
+      }
+    }
+    if (!bad) printf("PASS  %-10s every ladder still pages horizontally\n", "gyms");
+  }
+
   printf("%s\n", bad?"FAILURES":"every paged screen pages");
   return bad?1:0;
 }
