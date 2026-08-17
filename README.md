@@ -3,14 +3,14 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.3-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.4-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
 
 A gen-1-Pokémon-inspired tamagotchi for the
 **Waveshare ESP32-S3-Touch-AMOLED-1.75** (round 466×466 AMOLED, CO5300 driver
-over QSPI, CST9217 touch over I2C). Raise any of the 151, evolve it, train it
+over QSPI, CST9217 touch over I2C). Raise any of the 386, evolve it, train it
 and complete them all (shinies included).
 
 > **Personal, non-commercial fan project.** Code is MIT; the sprites are from
@@ -21,7 +21,7 @@ and complete them all (shinies included).
 
 ## Status
 
-Running on hardware. Implemented: the 151 + shinies animated from microSD, full
+Running on hardware. Implemented: 386 species + shinies animated from microSD, full
 life cycle (egg by rarity → evolution → farewell/release/runaway, each gated
 behind a decision dialog), bred-Pokédex with gallery, battle stats (IVs +
 training), retention hooks (streak / bond / medals / name), biome + real-time
@@ -91,7 +91,7 @@ While **awake**, per minute:
 - A daily **streak** and high **bond** push rare/legendary odds higher.
 - A clean **goodbye blesses** the next egg; a **run-away curses** it (forces Common).
 - Within a tier it favors species whose **evolution line you haven't finished** (so
-  all 151 are completable).
+  all 386 are completable).
 - **Shiny:** base **1 / 48** (→ **1 / 24** right after a goodbye), improved by
   streak/bond down to a best of **1 / 8**. Tracked separately in the dex.
 - Every hatch rolls unique **IVs** (see below) — no two are identical.
@@ -131,7 +131,7 @@ After any ending, a **new egg** appears.
   neglect. Both streak & bond improve egg/shiny odds — **and the IVs of your next pet**.
 - **8 medals** (Lv10/25/50, favorite berry found, 7-day streak, max bond, final form,
   "fit" = weight 0 & no slip-ups), per-pet + a global counter.
-- **Pokédex:** raising a species registers it; **151 + shinies** to complete.
+- **Pokédex:** raising a species registers it; **386 + shinies** to complete.
 
 ### Battle stats & IVs
 Every pet rolls four **IVs** (individual values, 0–31) at hatch — ATK / DEF / SPD /
@@ -245,7 +245,7 @@ pipeline below — the firmware accepts files over USB (PUT protocol with per-bl
 ACK), so you don't have to remove the card (it formats the SD to FAT if needed).
 
 ```bash
-python3 tools/pack_pmd.py       # fetch + pack PMD sprites: the 151 + shiny -> tools/sdcard/mons/p[s]NNN.bin
+python3 tools/pack_pmd.py       # fetch + pack PMD sprites: 386 + shiny -> tools/sdcard/mons/p[s]NNN.bin
 python3 tools/make_thumbs.py    # Pokédex thumbnails (from the PMD sprites) -> thumbs.bin
 python3 tools/send_sd.py        # send tools/sdcard/mons/* to the board's SD over USB
 ```
@@ -351,7 +351,7 @@ The chart is the **current (Gen 6+) one, not Gen 1's**, which is a deliberate ca
   Gen 6 Dragon was resisted only by Steel. Dragon → Fairy is **0×**, so Clefable
   hard-walls the strongest thing you can hatch.
 
-Seven of the 151 differ from their Gen 1 typing: Magnemite and Magneton gained Steel
+Seven of the original 151 differ from their Gen 1 typing: Magnemite and Magneton gained Steel
 (Gen 2), and Clefairy, Clefable, Jigglypuff, Wigglytuff and Mr. Mime gained Fairy
 (Gen 6) — the first two losing Normal entirely.
 
@@ -423,7 +423,7 @@ bars at zero for 1 h). Each bred species is recorded in the **bred Pokédex**
 (normal and shiny separately).
 
 The egg rolls rarity over the ~79 base forms (47 common / 27 rare / 5 legendary),
-**biased towards the lines you're missing** (all 151 are completable), blessed by
+**biased towards the lines you're missing** (all 386 are completable), blessed by
 a farewell and punished by a runaway. Legendaries only with 25+ registered.
 **Shiny** 1/48 (better with streak/bond/farewell).
 
@@ -445,7 +445,7 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 - `rtcbat.h` / `rtcbat.cpp` — PCF85063 RTC + AXP2101 PMU (battery, brightness, PWR button)
 - `audio.h` / `audio.cpp` — ES8311 + I2S + Game-Boy-style tone synth (non-blocking task)
 - `i18n.h` / `i18n.cpp` — the 6-language string tables
-- `dex.h` — GENERATED (`gen_dex.py`): the 151 table
+- `dex.h` — GENERATED (`gen_dex.py`): the 386 table
 - `species.h` — GENERATED (`sprites.py`): fallback sprites, UI icons, colours
 - `pin_config.h` — the board's official pins
 - `tools/` — pipeline: `dex_data.py` (data), `dex_stats.py`, `dex_types.py`, `gen_dex.py`,

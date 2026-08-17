@@ -90,6 +90,7 @@ extern uint32_t btlLungeUntil[2], btlHitUntil[2];
 extern uint8_t btlMenu;
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
+extern bool galleryDirty;
 extern bool lanOpen;
 extern uint8_t btlMyAct;
 extern uint8_t btlTrainGain, btlTrainWhich;
@@ -156,7 +157,12 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "profile")){ cardOpen = true; cardPage = 0; }
   else if (!strcmp(screen, "medals")) { cardOpen = true; cardPage = 3; }
   else if (!strcmp(screen, "progress")){cardOpen = true; cardPage = 4; }
-  else if (!strcmp(screen, "gallery")) galleryOpen = true;
+  else if (!strcmp(screen, "gallery")) {
+    // The grid is static and guarded by galleryDirty, so setting galleryOpen
+    // alone leaves the screenshot black -- the real UI sets both.
+    galleryOpen = true;
+    galleryDirty = true;
+  }
   else if (!strcmp(screen, "clock"))   clockOpen = true;
   else if (!strcmp(screen, "menu"))    menuOpen = true;
   else if (!strcmp(screen, "train"))   trainOpen = true;

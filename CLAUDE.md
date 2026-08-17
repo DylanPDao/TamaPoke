@@ -452,7 +452,7 @@ Team select, so which creature you bring is a real decision now that hard mode
 caps the size. Player card paging (badges + avatar, then medals). The reaction
 test for SPEED, splitting stat training out of the joy game.
 
-### Expanding past Kanto (TABLED -- analysis kept so it need not be redone)
+### Expanding past Kanto -- PHASE 1 DONE (the dex is 386)
 
 Feasible, and cheaper than it looks. **SpriteCollab already covers Gen 2 and 3**
 under the same CC BY-NC licence already in use -- dex 152, 252 and 384 all
@@ -460,7 +460,34 @@ return HTTP 200 from the existing `pack_pmd.py` URL. There is no need for
 ripped assets from elsewhere; `ZeChrales/PogoAssets` is Niantic art with no
 clear licence and would undo the care in CREDITS.md.
 
-What changes for 386 species:
+**Phase 1 landed: the data.** `DEX_COUNT` is 386, generated end to end.
+`tools/gen_dex_data.py` derives dex_data/dex_types from PokeAPI and its
+`--check` reproduces the hand-written 151 with zero unexpected differences,
+which is what makes it trustworthy for the 235 new ones. Gen 1's entries are
+copied through byte for byte and never regenerated -- they are not internally
+consistent (stone evolutions vary 30 vs 36 with no rule) and they are already
+live in people's Pokedex.
+
+Rarity for the new species is `capture_rate <= 45` among base forms, which
+reproduces 23 of the 27 the Gen 1 set picks by hand; the four it misses
+(Growlithe, Ponyta, Grimer, Rhyhorn) were chosen for being uncommon in game,
+which no data can tell you. Legendary comes straight from PokeAPI.
+
+Three bugs the expansion exposed, all of which had been silently fine at 151:
+- `DexEntry::evolvesTo` was `uint8_t`, so every evolution target above 255
+  overflowed. Now `uint16_t`.
+- `gen_moves.py` had its own `DEX_COUNT = 151`, so it emitted a Kanto-sized
+  `LEARN_OFS` while dex.h had grown -- every lookup past 151 would have read
+  off the end. It derives the count from `dex_data` now.
+- **The Pokedex was capped at 10 pages** (`if (np > 9) np = 9`), which hid
+  everything past dex 160. `swipe_test` now walks to the last page and fails if
+  any species is unreachable, and the dot row became a page number because 25
+  dots do not fit the round panel.
+
+Still to do: phase 2 (region setting + egg filter), phase 3 (per-region gyms
+and badges), phase 4 (sprites, and the web-installer size problem below).
+
+What changed for 386 species:
 
 - `dex.h`, `moves.h` and the learnsets **regenerate** -- `gen_dex.py` already
   loops `range(1, DEX_COUNT + 1)` and `fetch_pokeapi.py` fetches by number.

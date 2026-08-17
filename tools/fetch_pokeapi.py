@@ -38,16 +38,24 @@ except ImportError:
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'pokeapi_cache')
 API = 'https://pokeapi.co/api/v2/pokemon/%d'
-DEX_COUNT = 151
+DEX_COUNT = 386
 
 # Which ways of learning a move count as "this species can use it". Level-up
 # plus TM: that is how you would actually build a set, and level-up alone
 # leaves several species without even a same-type attack.
 METHODS = ('level-up', 'machine')
 
-# Version group the level-up levels are read from. Kanto, all 151, and level
-# gates that were not yet flattened by later generations' rebalancing.
-LEVEL_VG = 'firered-leafgreen'
+# Version group the level-up levels are read from, PER GENERATION -- a Johto or
+# Hoenn species has no FireRed/LeafGreen learnset at all, so reading them all
+# from Kanto would silently drop every gate for two thirds of the dex.
+# Each is the last game of its own generation, where the gates are properly
+# spread and not yet flattened by later rebalancing.
+def level_vg(num):
+    if num <= 151:
+        return 'firered-leafgreen'
+    if num <= 251:
+        return 'crystal'
+    return 'emerald'
 
 
 def fetch(num):
@@ -109,8 +117,8 @@ def main():
             # some games, and the minimum flattened Charizard's whole set to 1.
             # FireRed/LeafGreen is the pick -- Kanto, all 151, properly gated.
             lvlup = [lvl for meth, lvl, vg in m['details']
-                     if meth == 'level-up' and vg == LEVEL_VG and lvl > 0]
-            if not lvlup:   # not in FRLG (or only at level 1 there): any game
+                     if meth == 'level-up' and vg == level_vg(num) and lvl > 0]
+            if not lvlup:   # not in that game (or only at level 1): any game
                 lvlup = [lvl for meth, lvl, _vg in m['details']
                          if meth == 'level-up' and lvl > 1]
             is_tm = any(meth == 'machine' for meth, _lvl, _vg in m['details'])

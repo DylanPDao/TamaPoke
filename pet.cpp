@@ -277,7 +277,7 @@ void Pet::defTick(bool resting) {
 // quedan miembros sin registrar en la linea evolutiva de esta base?
 bool Pet::lineHasUnregistered(int16_t base) const {
   int16_t cur = base;
-  for (int guard = 0; cur >= 1 && cur <= 151 && guard < 6; guard++) {
+  for (int guard = 0; cur >= 1 && cur <= DEX_COUNT && guard < 6; guard++) {
     if (!isRegistered(cur)) return true;
     if (cur == DEX_EEVEE) {
       for (int16_t b = 134; b <= 136; b++)
@@ -290,11 +290,15 @@ bool Pet::lineHasUnregistered(int16_t base) const {
 }
 
 uint8_t Pet::eggRarity() const {
-  return (eggTarget >= 1 && eggTarget <= 151) ? DEX_TBL[eggTarget].rarity : R_COMUN;
+  return (eggTarget >= 1 && eggTarget <= DEX_COUNT) ? DEX_TBL[eggTarget].rarity : R_COMUN;
 }
 
 // elige la especie del huevo: tirada de rareza (mejorada por una despedida
 // completa, castigada por una escapada) y sesgo hacia lineas incompletas
+// Room for the candidate list. A whole rarity tier of a 386-species dex is far
+// more than the 80 the Kanto-only build needed.
+#define CAND_MAX 260
+
 int16_t Pet::pickEggSpecies() {
   // primera partida: inicial clasico
   if (registeredCount() == 0) {
@@ -315,9 +319,9 @@ int16_t Pet::pickEggSpecies() {
   // si la pokedex del tier esta completa, vale cualquiera del tier
   for (int pass = 0; pass < 2; pass++) {
     for (int t = tier; t >= R_COMUN; t--) {
-      int16_t cand[80];
+      int16_t cand[CAND_MAX];
       int n = 0;
-      for (int16_t d = 1; d <= 151 && n < 80; d++) {
+      for (int16_t d = 1; d <= DEX_COUNT && n < CAND_MAX; d++) {
         if (DEX_TBL[d].rarity != t) continue;
         if (pass == 0 && !lineHasUnregistered(d)) continue;
         cand[n++] = d;
@@ -329,7 +333,7 @@ int16_t Pet::pickEggSpecies() {
 }
 
 void Pet::registerSpecies(int16_t dex) {
-  if (dex < 1 || dex > 151) return;
+  if (dex < 1 || dex > DEX_COUNT) return;
   dexReg[(dex - 1) >> 3] |= (1 << ((dex - 1) & 7));
   if (shiny) dexShinyReg[(dex - 1) >> 3] |= (1 << ((dex - 1) & 7));
 }
@@ -606,7 +610,7 @@ void Pet::rollIVs() {
   ivSpe = rollIV(bonus);
   ivHp = rollIV(bonus);
   // los legendarios nacen con 3 de 4 IV perfectos, como en los juegos
-  if (speciesId >= 1 && speciesId <= 151 && DEX_TBL[speciesId].rarity == R_LEGENDARIO) {
+  if (speciesId >= 1 && speciesId <= DEX_COUNT && DEX_TBL[speciesId].rarity == R_LEGENDARIO) {
     uint8_t *p[4] = { &ivAtk, &ivDef, &ivSpe, &ivHp };
     for (int k = 3; k > 0; k--) {  // baraja para elegir cuales 3
       int j = random(k + 1);
@@ -626,7 +630,7 @@ void Pet::rollIVs() {
 
 uint16_t Pet::registeredCount() const {
   uint16_t n = 0;
-  for (int i = 1; i <= 151; i++)
+  for (int i = 1; i <= DEX_COUNT; i++)
     if (isRegistered(i)) n++;
   return n;
 }

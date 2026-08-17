@@ -9,7 +9,7 @@ dex_learnsets.py is missing or the move list changed.
 
 Learnsets are stored CSR-style: one flat LEARN_TBL of (move, level) pairs
 plus a LEARN_OFS index, so species n owns LEARN_OFS[n] .. LEARN_OFS[n+1].
-That is ~4.5 KB of flash for all 151, against ~20 KB for a fixed 2D array.
+That is a few KB of flash for the whole dex, against far more for a fixed 2D array.
 """
 import os
 import sys
@@ -27,7 +27,10 @@ def unpack(m):
     return tuple(m) + ((AIL_NONE, 0) if len(m) == 11 else ())
 from dex_learnsets import LEARNSETS
 
-DEX_COUNT = 151
+# Derived, not hardcoded: this file and dex.h must agree on how many species
+# there are, or LEARN_OFS is short and every lookup past the end reads garbage.
+from dex_data import DEX
+DEX_COUNT = len(DEX)
 MAX_NAME = 12  # four move buttons across a 466 px round panel at text size 2
 
 

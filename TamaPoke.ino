@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.3"
+#define FW_VERSION "2.4"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -69,7 +69,12 @@ PmdMon galleryPmd;  // sprite grande de la vista detalle de la galeria (PMD/TPK2
 // galeria pokedex
 bool galleryOpen = false;
 bool galleryDirty = false;
-int galleryPage = 0;        // 10 paginas de 16
+// 16 to a page. With three generations this is 25 pages, not the 10 the
+// Kanto-only build hardcoded -- which silently made everything past dex 160
+// unreachable in the Pokedex.
+#define GAL_PER_PAGE 16
+#define GAL_PAGES ((DEX_COUNT + GAL_PER_PAGE - 1) / GAL_PER_PAGE)
+int galleryPage = 0;        // GAL_PAGES paginas de GAL_PER_PAGE
 int16_t galleryDetail = 0;  // dex en vista detalle, 0 = rejilla
 
 bool screenOff = false;       // pulsacion corta del boton PWR
@@ -752,8 +757,8 @@ void handleSerial() {
     Serial.println();
     Serial.println("DONE");
   } else if (line == "REG") {
-    Serial.printf("pokedex %u/151:", pet.registeredCount());
-    for (int i = 1; i <= 151; i++)
+    Serial.printf("pokedex %u/%u:", pet.registeredCount(), DEX_COUNT);
+    for (int i = 1; i <= DEX_COUNT; i++)
       if (pet.isRegistered(i)) Serial.printf(" %d", i);
     Serial.println();
     Serial.println("DONE");
@@ -1100,7 +1105,7 @@ void onSwipe(int dir) {
     galleryPmd.unload();
     return;
   }
-  if (np > 9) np = 9;
+  if (np > GAL_PAGES - 1) np = GAL_PAGES - 1;
   if (np != galleryPage) {
     galleryPage = np;
     galleryDirty = true;
@@ -1623,7 +1628,7 @@ void render() {
       gfx->print(rar);
     }
     char reg[24];
-    snprintf(reg, sizeof(reg), T(S_POKEDEX_FMT), pet.registeredCount());
+    snprintf(reg, sizeof(reg), T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT);
     gfx->fillRect(0, 312, 466, 154, gNight ? UI_BG_NIGHT : UI_BG_DAY);
     gfx->setTextColor(inkColor());
     gfx->setTextSize(2);
@@ -3397,7 +3402,7 @@ static void renderPlayerBadges() {
   snprintf(l, sizeof(l), T(S_STREAK_FMT), pet.streak, pet.bestStreak);
   gfx->setCursor(CX - (int)strlen(l) * 6, 286);
   gfx->print(l);
-  snprintf(l, sizeof(l), T(S_POKEDEX_FMT), pet.registeredCount());
+  snprintf(l, sizeof(l), T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT);
   gfx->setCursor(CX - (int)strlen(l) * 6, 312);
   gfx->print(l);
   snprintf(l, sizeof(l), T(S_PARTY_FMT), party.count());
@@ -4102,7 +4107,7 @@ void renderCard() {
 static void menuRowLabel(int i, char *out, size_t n) {
   switch (i) {
     case 0: snprintf(out, n, "%s", T(S_STATS)); break;
-    case 1: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount()); break;
+    case 1: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT); break;
     case 2: snprintf(out, n, "%s", T(S_SETTINGS)); break;
     default: snprintf(out, n, "%s", T(S_CLOSE)); break;
   }
@@ -4510,7 +4515,7 @@ void renderGallery() {
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
   char head[24];
-  snprintf(head, sizeof(head), T(S_POKEDEX_FMT), pet.registeredCount());
+  snprintf(head, sizeof(head), T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(3);
   gfx->setCursor(CX - strlen(head) * 9, 36);
@@ -4518,8 +4523,8 @@ void renderGallery() {
 
   for (int r = 0; r < 4; r++) {
     for (int c = 0; c < 4; c++) {
-      int16_t dex = galleryPage * 16 + r * 4 + c + 1;
-      if (dex > 151) break;
+      int16_t dex = galleryPage * GAL_PER_PAGE + r * 4 + c + 1;
+      if (dex > DEX_COUNT) break;
       int x = GAL_X + c * GAL_CELL, y = GAL_Y + r * GAL_CELL;
       const uint8_t *t = thumbs.get(dex);
       if (t) {
@@ -4540,11 +4545,15 @@ void renderGallery() {
       }
     }
   }
-  // puntos de pagina
-  for (int i = 0; i < 10; i++) {
-    if (i == galleryPage) gfx->fillCircle(170 + i * 14, 436, 4, UI_INK);
-    else gfx->drawCircle(170 + i * 14, 436, 3, UI_INK);
-  }
+  // A page number, not a row of dots. 25 dots do not fit across the bottom of
+  // a round panel -- the chord at that height is only ~228 px -- and counting
+  // them to find where you are is worse than reading the number.
+  char pg[12];
+  snprintf(pg, sizeof(pg), "%d/%d", galleryPage + 1, GAL_PAGES);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(pg) * 6, 428);
+  gfx->print(pg);
   gfx->flush();
 }
 
@@ -4562,8 +4571,8 @@ void galleryTap(int16_t x, int16_t y) {
   }
   int c = (x - GAL_X) / GAL_CELL, r = (y - GAL_Y) / GAL_CELL;
   if (c < 0 || c > 3 || r < 0 || r > 3) return;
-  int16_t dex = galleryPage * 16 + r * 4 + c + 1;
-  if (dex > 151) return;
+  int16_t dex = galleryPage * GAL_PER_PAGE + r * 4 + c + 1;
+  if (dex > DEX_COUNT) return;
   galleryDetail = dex;
   galleryPmd.load(dex, pet.isShinyRegistered(dex));
 }

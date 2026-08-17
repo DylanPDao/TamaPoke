@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include "dex.h"
 #include "party.h"
 
 // 1 tick = 1 minuto de juego. Baja este valor para probar mas rapido
@@ -49,7 +50,7 @@ public:
   bool berryKnown = false;  // ya descubrio su baya favorita
   bool shiny = false;       // variante de color rara (se sortea en el huevo)
   uint32_t ageMinutes = 0;
-  int16_t speciesId = -1;      // numero de Pokedex (1-151), -1 = huevo
+  int16_t speciesId = -1;      // numero de Pokedex (1..DEX_COUNT), -1 = huevo
   int16_t prevSpeciesId = -1;  // para la animacion de evolucion
   uint8_t careMistakes = 0;   // descuidos: cada uno retrasa la evolucion 1 nivel
   bool sleeping = false;
@@ -62,8 +63,12 @@ public:
   // it; a runaway leaves endedKind at CER_NONE and the pet is simply gone.
   PartyMon endedMon;
   uint8_t endedKind = CER_NONE;
-  uint8_t dexReg[19] = { 0 };       // pokedex de criados (bitmap 151 bits)
-  uint8_t dexShinyReg[19] = { 0 };  // criados en version shiny
+  // Pokedex bitmaps, one bit per species. Widening these is SAFE on an existing
+  // save: getBytes() copies only what was stored, and the array is zeroed by its
+  // initialiser, so a 19-byte blob from the Kanto-only build lands in the front
+  // and bits 1-151 keep exactly their old meaning.
+  uint8_t dexReg[(DEX_COUNT + 7) / 8] = { 0 };       // criados
+  uint8_t dexShinyReg[(DEX_COUNT + 7) / 8] = { 0 };  // criados en version shiny
   // racha de cuidado diario (del jugador: persiste entre crianzas)
   uint16_t streak = 0, bestStreak = 0;
   uint32_t lastCareDay = 0;
@@ -218,7 +223,7 @@ public:
   // The legendary/shiny IV guarantees only fire inside hatch(), so without
   // this there is no way to exercise them from outside the class.
   void dbgHatchAs(int16_t dex, bool wantShiny) {
-    if (dex < 1 || dex > 151) return;
+    if (dex < 1 || dex > DEX_COUNT) return;
     eggTarget = dex;
     eggShiny = wantShiny;
     starterPick = false;
@@ -237,10 +242,10 @@ public:
     return l > MAX_LEVEL ? MAX_LEVEL : (uint8_t)l;
   }
   bool isRegistered(int16_t dex) const {
-    return dex >= 1 && dex <= 151 && (dexReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
+    return dex >= 1 && dex <= DEX_COUNT && (dexReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
   }
   bool isShinyRegistered(int16_t dex) const {
-    return dex >= 1 && dex <= 151 && (dexShinyReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
+    return dex >= 1 && dex <= DEX_COUNT && (dexShinyReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
   }
   uint16_t registeredCount() const;
   bool lineHasUnregistered(int16_t base) const;

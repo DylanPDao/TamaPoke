@@ -18,6 +18,7 @@ extern Pet pet;
 extern bool cardOpen, galleryOpen, clockOpen, kbOpen, menuOpen, partyOpen, partyPick;
 extern bool trainOpen, movePickOpen, battleOpen, gymOpen, playerOpen, boxOpen, pickOpen;
 extern uint8_t cardPage, gymPage, playerPage, movePickPage, boxPage, pickPage, partyDetail;
+extern int galleryPage; extern bool galleryDirty; extern uint8_t galleryDetail;
 extern uint8_t movePickSlot, movePickParty, boxSel, boxSwapFrom;
 extern uint16_t squadMask;
 extern uint8_t pickTrainer; extern bool pickHard;
@@ -58,6 +59,24 @@ int main(){
                                                   check("movepick", &movePickOpen, &movePickPage);
   clearAll(); pickTrainer=7; pickHard=false; pickDefault(squadCap(7,false)); pickOpen=true;
                                                   check("teampick", &pickOpen,     &pickPage);
+  // The Pokedex pages over the WHOLE dex. It was capped at 10 pages when the
+  // dex was 151 long, which silently hid everything past 160 once it grew.
+  clearAll(); galleryOpen=true; galleryDetail=0; galleryPage=0;
+  onSwipe(-1);
+  if (!galleryOpen) { printf("FAIL  gallery    closed on a swipe instead of paging\n"); bad++; }
+  else if (galleryPage != 1) { printf("FAIL  gallery    did not advance (page=%d)\n", galleryPage); bad++; }
+  else printf("PASS  %-10s pages on a horizontal swipe\n", "gallery");
+  {
+    int pages = (DEX_COUNT + 15) / 16;
+    galleryPage = 0;
+    for (int i = 0; i < pages + 4; i++) onSwipe(-1);
+    if (galleryPage != pages - 1) {
+      printf("FAIL  gallery    stops at page %d of %d -- species past it are unreachable\n",
+             galleryPage + 1, pages);
+      bad++;
+    } else printf("PASS  %-10s reaches the last page (%d) so no species is hidden\n",
+                  "gallery", pages);
+  }
   printf("%s\n", bad?"FAILURES":"every paged screen pages");
   return bad?1:0;
 }

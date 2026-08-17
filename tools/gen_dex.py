@@ -24,6 +24,12 @@ TYPE_BIOME = {
     'roca': 4, 'tierra': 4, 'dragon': 1, 'hielo': 5,  # los dragones gen1 (Dratini) viven en el agua
     'normal': 0, 'electrico': 0, 'lucha': 0, 'veneno': 0,
     'psiquico': 0, 'fantasma': 0,
+    # Gen 2/3 brought types no Gen 1 species had as a primary. Steel goes to the
+    # mountain (Steelix, Aron, Registeel are all cave/rock creatures), Dark to
+    # the forest (Umbreon, Houndour, Poochyena), Fairy to the meadow, and Flying
+    # to the meadow as well -- nothing in 1-386 is primarily Flying, but the map
+    # must be total or gen_dex.py raises on the first species that is.
+    'acero': 4, 'siniestro': 2, 'hada': 0, 'volador': 0,
 }
 
 # excepciones por dex# (el tipo no basta): fosiles marinos roca/agua -> playa
@@ -34,7 +40,7 @@ def main():
     out = []
     out.append("#pragma once\n#include <stdint.h>\n\n")
     out.append("// GENERADO por tools/gen_dex.py desde tools/dex_data.py - no editar\n\n")
-    out.append("#define DEX_COUNT 151\n")
+    out.append("#define DEX_COUNT %d\n" % len(DEX))
     out.append("#define DEX_EEVEE 133  // rama al azar: 134/135/136\n\n")
     out.append("// The 18 current types. See tools/dex_types.py for why this game uses the\n"
                "// modern chart rather than the Gen 1 one.\n"
@@ -64,7 +70,7 @@ def main():
         "enum : uint8_t { R_EVO = 0, R_COMUN, R_RARO, R_LEGENDARIO };\n\n"
         "struct DexEntry {\n"
         "  const char *name;\n"
-        "  uint8_t evolvesTo;    // numero de dex, 0 = forma final\n"
+        "  uint16_t evolvesTo;   // numero de dex, 0 = forma final (>255 con gen 2/3)\n"
         "  uint8_t evolveLevel;\n"
         "  uint8_t rarity;       // sale de huevo si > 0\n"
         "  uint16_t accent;      // color RGB565 del tipo para la UI\n"
