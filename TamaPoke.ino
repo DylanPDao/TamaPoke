@@ -81,6 +81,12 @@ bool galleryDirty = false;
 #define GAL_SPAN (GAL_HI - GAL_LO + 1)
 #define GAL_PAGES ((GAL_SPAN + GAL_PER_PAGE - 1) / GAL_PER_PAGE)
 uint8_t galleryRegion = 0;
+// Both the Pokedex and the gym ladder now open on a REGION CHOOSER rather than
+// dropping you into whichever region was last viewed. The vertical swipe that
+// changes region still works, but it is invisible, so on its own it meant the
+// Johto and Hoenn content looked absent.
+bool galleryPick = false;
+bool gymPick = false;
 int galleryPage = 0;        // GAL_PAGES paginas de GAL_PER_PAGE
 int16_t galleryDetail = 0;  // dex en vista detalle, 0 = rejilla
 
@@ -211,6 +217,8 @@ bool gymHard = false;   // which ladder the list is showing
 // normal battle screen takes over with btlLink set.
 bool lanOpen = false;
 Link lan;
+static void renderRegionPick(bool forGyms);   // the region chooser, defined below
+static int regionPickTap(int16_t x, int16_t y);
 static void drawEggRegion();          // defined with the egg screen helpers
 static bool eggRegionTap(int16_t x, int16_t y);
 static void btlLinkPoll();   // defined with the battle code, called from render()
@@ -1075,7 +1083,7 @@ void onSwipe(int dir) {
   if (gymOpen) {   // horizontal pages the ladder; vertical backs out
     uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
     int p = (int)gymPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= pages) gymOpen = false;
+    if (p < 0 || p >= pages) gymPick = true;   // back to the region chooser
     else gymPage = (uint8_t)p;
     return;
   }
@@ -1121,7 +1129,7 @@ void onSwipe(int dir) {
     // gesture: it has a menu row, and gestures are worth more spent on screens
     // without one.
     if (!pet.ceremony && !confirmUntil) {
-      if (dir < 0) { gymOpen = true; gymPage = 0; }
+      if (dir < 0) { gymOpen = true; gymPick = true; gymPage = 0; }
       else partyOpen = true;
     }
     return;
@@ -1133,8 +1141,8 @@ void onSwipe(int dir) {
     return;
   }
   int np = galleryPage - dir;  // deslizar a la izquierda avanza pagina
-  if (np < 0) {                // retroceder desde la primera = salir
-    galleryOpen = false;
+  if (np < 0) {                // back past the first page = the region chooser
+    galleryPick = true;
     galleryPmd.unload();
     return;
   }
@@ -1184,6 +1192,25 @@ void onTap(int16_t x, int16_t y) {
   }
   if (lanOpen) {
     lanTap(x, y);
+    return;
+  }
+  if (gymOpen && gymPick) {
+    int r = regionPickTap(x, y);
+    if (r >= 0) {
+      gymRegion = (uint8_t)r;
+      gymPage = 0;
+      gymPick = false;
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    if (y >= 340 && y <= 372 && x >= 148 && x <= 318) {   // LAN battle
+      gymOpen = false; gymPick = false;
+      lan.state = LINK_OFF;
+      lanOpen = true;
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    if (y > 380) { gymOpen = false; gymPick = false; }
     return;
   }
   if (gymOpen) {
@@ -1262,7 +1289,7 @@ void onTap(int16_t x, int16_t y) {
       sfxPlay(SFX_TAP);
       menuOpen = false;
       if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
-      else if (i == 1) { galleryOpen = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
+      else if (i == 1) { galleryOpen = true; galleryPick = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
       else if (i == 2) { openClock(); }
       return;                                     // i == 3 is CLOSE: just shut
     }
@@ -1295,6 +1322,20 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (galleryOpen) {
+    if (galleryPick) {
+      int r = regionPickTap(x, y);
+      if (r >= 0) {
+        galleryRegion = (uint8_t)r;
+        galleryPage = 0;
+        galleryDetail = 0;
+        galleryDirty = true;
+        galleryPick = false;
+        sfxPlay(SFX_TAP);
+      } else if (y > 380) {
+        galleryOpen = false;
+      }
+      return;
+    }
     galleryTap(x, y);
     return;
   }
@@ -1564,6 +1605,7 @@ void render() {
     return;
   }
   if (galleryOpen) {
+    if (galleryPick) { renderRegionPick(false); return; }
     renderGallery();
     return;
   }
@@ -1615,7 +1657,8 @@ void render() {
     return;
   }
   if (gymOpen) {
-    renderGyms();
+    if (gymPick) renderRegionPick(true);
+    else renderGyms();
     return;
   }
   if (playerOpen) {
@@ -4047,6 +4090,69 @@ static bool eggRegionTap(int16_t x, int16_t y) {
   pet.setRegion((pet.region + 1) % REGION_COUNT);
   sfxPlay(SFX_TAP);
   return true;
+}
+
+// The region chooser used by the Pokedex and the gym ladder. Each row carries
+// its own progress, so the screen answers "where am I up to" as well as "where
+// do I want to go".
+#define RPICK_X 74
+#define RPICK_W 318
+#define RPICK_H 62
+#define RPICK_Y(i) (108 + (i) * 72)
+
+static void renderRegionPick(bool forGyms) {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  char ttl[32];
+  if (forGyms) snprintf(ttl, sizeof(ttl), "%s", T(S_GYMS));
+  else snprintf(ttl, sizeof(ttl), T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(ttl) * 6, 48);
+  gfx->print(ttl);
+
+  for (uint8_t i = 0; i < GYM_REGIONS; i++) {
+    int y = RPICK_Y(i);
+    gfx->fillRoundRect(RPICK_X, y, RPICK_W, RPICK_H, 12, UI_WHITE);
+    gfx->drawRoundRect(RPICK_X, y, RPICK_W, RPICK_H, 12, UI_INK);
+    const char *nm = TRAINER_SETS[i].region;
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(3);
+    gfx->setCursor(RPICK_X + 18, y + 12);
+    gfx->print(nm);
+    char sub[28];
+    if (forGyms)
+      snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCountIn(i, gymHard));
+    else
+      snprintf(sub, sizeof(sub), "%u/%u",
+               pet.registeredCountIn(REGIONS[i].lo, REGIONS[i].hi),
+               (unsigned)(REGIONS[i].hi - REGIONS[i].lo + 1));
+    gfx->setTextColor(UI_TRACK);
+    gfx->setTextSize(2);
+    gfx->setCursor(RPICK_X + RPICK_W - 18 - (int)strlen(sub) * 12, y + 22);
+    gfx->print(sub);
+  }
+  if (forGyms) {
+    gfx->fillRoundRect(148, 340, 170, 32, 9, UI_BG_DAY);
+    gfx->drawRoundRect(148, 340, 170, 32, 9, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - strlen(T(S_LAN)) * 6, 348);
+    gfx->print(T(S_LAN));
+  }
+  gfx->setTextColor(UI_TRACK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
+  gfx->print(T(S_BACK));
+  gfx->flush();
+}
+
+// Returns the region tapped, or -1.
+static int regionPickTap(int16_t x, int16_t y) {
+  if (x < RPICK_X || x > RPICK_X + RPICK_W) return -1;
+  for (uint8_t i = 0; i < GYM_REGIONS; i++)
+    if (y >= RPICK_Y(i) && y <= RPICK_Y(i) + RPICK_H) return i;
+  return -1;
 }
 
 // ---------- level-up learn prompt ----------

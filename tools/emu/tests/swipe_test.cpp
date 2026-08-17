@@ -21,6 +21,7 @@ extern uint8_t cardPage, gymPage, playerPage, movePickPage, boxPage, pickPage, p
 extern int galleryPage; extern bool galleryDirty; extern uint8_t galleryDetail;
 extern uint8_t galleryRegion;
 extern uint8_t gymRegion;
+extern bool gymPick, galleryPick;
 extern uint8_t movePickSlot, movePickParty, boxSel, boxSwapFrom;
 extern uint16_t squadMask;
 extern uint8_t pickTrainer; extern bool pickHard;
@@ -29,6 +30,7 @@ uint8_t squadCap(uint8_t, bool);
 
 static int bad=0;
 static void clearAll(){
+  gymPick=galleryPick=false;
   cardOpen=galleryOpen=clockOpen=kbOpen=menuOpen=partyOpen=partyPick=false;
   trainOpen=movePickOpen=battleOpen=gymOpen=playerOpen=boxOpen=pickOpen=false;
   partyDetail=0; boxSel=boxSwapFrom=0;
@@ -54,7 +56,7 @@ int main(){
     m.ivAtk=m.ivDef=m.ivSpe=m.ivHp=20; party.box[i]=m; }
 
   clearAll(); cardOpen=true;                      check("card",     &cardOpen,     &cardPage);
-  clearAll(); gymOpen=true;                       check("gyms",     &gymOpen,      &gymPage);
+  clearAll(); gymOpen=true; gymPick=false;        check("gyms",     &gymOpen,      &gymPage);
   clearAll(); playerOpen=true;                    check("player",   &playerOpen,   &playerPage);
   clearAll(); partyOpen=true; boxOpen=true;       check("box",      &boxOpen,      &boxPage);
   clearAll(); movePickOpen=true; movePickParty=0; movePickSlot=0;
@@ -64,7 +66,7 @@ int main(){
   // The Pokedex pages within ONE region and changes region on a vertical swipe.
   // Every species must be reachable: it was capped at 10 flat pages when the dex
   // was 151 long, which silently hid everything past 160 once it grew to 386.
-  clearAll(); galleryOpen=true; galleryDetail=0; galleryPage=0; galleryRegion=0;
+  clearAll(); galleryOpen=true; galleryPick=false; galleryDetail=0; galleryPage=0; galleryRegion=0;
   onSwipe(-1);
   if (!galleryOpen) { printf("FAIL  gallery    closed on a swipe instead of paging\n"); bad++; }
   else if (galleryPage != 1) { printf("FAIL  gallery    did not advance (page=%d)\n", galleryPage); bad++; }
@@ -105,7 +107,7 @@ int main(){
   // The gym ladder changes REGION on a vertical swipe, the same gesture the
   // Pokedex uses. Without this the Johto and Hoenn ladders exist but cannot be
   // reached, which is a worse failure than a paging bug: nothing looks broken.
-  clearAll(); gymOpen=true; gymRegion=0; gymPage=0;
+  clearAll(); gymOpen=true; gymPick=false; gymRegion=0; gymPage=0;
   {
     bool ok = true;
     for (int r = 1; r <= GYM_REGIONS; r++) {
@@ -122,6 +124,26 @@ int main(){
       }
     }
     if (!bad) printf("PASS  %-10s every ladder still pages horizontally\n", "gyms");
+  }
+
+  // Opening either screen must land on the REGION CHOOSER, not on whichever
+  // region happened to be set last. Without it the Johto and Hoenn content is
+  // built, reachable only by an invisible gesture, and so looks absent.
+  {
+    clearAll();
+    onSwipe(-1);                       // swipe left from the main screen
+    if (!gymOpen || !gymPick) { printf("FAIL  gyms       does not open on the region chooser\n"); bad++; }
+    else printf("PASS  %-10s opens on the region chooser\n", "gyms");
+    // and paging back off the front of a ladder returns to it
+    gymPick = false; gymRegion = 2; gymPage = 0;
+    onSwipe(1);
+    if (!gymPick || !gymOpen) { printf("FAIL  gyms       paging back does not return to the chooser\n"); bad++; }
+    else printf("PASS  %-10s paging back returns to the chooser\n", "gyms");
+
+    clearAll(); galleryOpen = true; galleryPick = false; galleryRegion = 1; galleryPage = 0;
+    onSwipe(1);
+    if (!galleryPick || !galleryOpen) { printf("FAIL  gallery    paging back does not return to the chooser\n"); bad++; }
+    else printf("PASS  %-10s paging back returns to the chooser\n", "gallery");
   }
 
   printf("%s\n", bad?"FAILURES":"every paged screen pages");

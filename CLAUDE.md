@@ -487,6 +487,14 @@ Three bugs the expansion exposed, all of which had been silently fine at 151:
 **Phase 2 landed: the egg region.** See § "Choose which region your egg comes
 from" in the README for the two anti-farming rules.
 
+**Both multi-region screens open on a REGION CHOOSER**, and that is not
+cosmetic. They first shipped opening straight into whichever region was last
+set, with a vertical swipe as the only way to move -- which is invisible, so
+Johto and Hoenn were built, reachable, and looked absent. The chooser lists each
+region with its own progress (badges n/8, or dex n/total), paging back off the
+front of a ladder or grid returns to it, and the vertical swipe still works as a
+shortcut. `swipe_test` asserts both screens land on it.
+
 **Phase 3 landed: three ladders.** `trainers.h` holds `TRAINERS_KANTO/JOHTO/
 HOENN` behind `TRAINER_SETS[GYM_REGIONS]`, and the gym screen changes ladder on
 a vertical swipe -- the same gesture the Pokedex uses, and the swipe-left
