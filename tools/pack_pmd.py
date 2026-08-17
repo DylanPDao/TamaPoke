@@ -15,9 +15,12 @@ Genera /mons/pNNN.bin (y psNNN.bin shiny) en formato TPK2 multi-accion:
 Acciones: 0 Idle, 1 WalkL, 2 WalkR, 3 Sleep, 4 Eat, 5 Hurt, 6 Attack,
 7 Pose, 8 Hop, 9 Nod, 10 DeepBreath, 11 Sit. Las que falten se omiten.
 
-  python3 tools/pack_pmd.py             # los 151, normal + shiny
+  python3 tools/pack_pmd.py             # el dex entero, normal + shiny
+  python3 tools/pack_pmd.py kanto       # solo una region (johto, hoenn)
   python3 tools/pack_pmd.py 7 25        # dex concretos
   python3 tools/pack_pmd.py normal 1 4  # solo normales
+
+Necesita Pillow: pip3 install Pillow
 """
 import os
 import struct
@@ -25,6 +28,11 @@ import sys
 import urllib.request
 import xml.etree.ElementTree as ET
 from PIL import Image
+
+# Kept in step with dex.h rather than hardcoded, the same way gen_moves.py is.
+import re as _re
+_dexh = open(os.path.join(os.path.dirname(__file__), '..', 'dex.h')).read()
+DEX_COUNT = int(_re.search(r'#define DEX_COUNT (\d+)', _dexh).group(1))
 
 OUT = os.path.join(os.path.dirname(__file__), 'sdcard', 'mons')
 CACHE = os.path.join(os.path.dirname(__file__), 'pmd_cache')
@@ -152,7 +160,17 @@ def pack(dexnum, shiny=False):
 if __name__ == '__main__':
     args = sys.argv[1:]
     solo_normal = 'normal' in args
-    nums = [int(a) for a in args if a.isdigit()] or list(range(1, 152))
+    # The whole dex by default, not the old hardcoded 151. A region is easy to
+    # ask for on its own, since the fetch is long and most people want Kanto:
+    #   python3 tools/pack_pmd.py kanto
+    span = {'kanto': (1, 151), 'johto': (152, 251), 'hoenn': (252, 386)}
+    picked = [span[a] for a in args if a in span]
+    nums = [int(a) for a in args if a.isdigit()]
+    if not nums:
+        if picked:
+            nums = [d for lo, hi in picked for d in range(lo, hi + 1)]
+        else:
+            nums = list(range(1, DEX_COUNT + 1))
     fallos = []
     for n in nums:
         for sh in ([False] if solo_normal else [False, True]):

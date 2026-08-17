@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""Empaqueta todos los sprites de la SD (tools/sdcard/mons/*.bin) en un unico
-fichero web/sprites.pak para que el instalador web los suba de un clic.
+"""Empaqueta los sprites de la SD (tools/sdcard/mons/*.bin) en un .pak POR
+REGION para que el instalador web los suba de un clic.
+
+ONE FILE PER REGION, not one big one, and that is forced rather than chosen:
+Kanto alone is already ~40 MB, so all three would be ~100 MB -- exactly GitHub's
+hard per-file limit, which would make the bundle uncommittable. Splitting also
+means a player can install Kanto and stop, which is the whole 40 MB most people
+want, and add a region later without re-sending what they already have.
 
 Formato TPAK (little-endian):
   char[4]  "TPAK"
@@ -17,17 +23,25 @@ import struct
 
 HERE = os.path.dirname(__file__)
 MONS = os.path.join(HERE, 'sdcard', 'mons')
-OUT = os.path.join(HERE, '..', 'web', 'sprites.pak')
+WEB = os.path.join(HERE, '..', 'web')
+
+# Must match REGIONS in dex_data.py. A sprite file is pNNN.bin or psNNN.bin, so
+# the dex number is the trailing digits.
+REGIONS = [('kanto', 1, 151), ('johto', 152, 251), ('hoenn', 252, 386)]
+
+GITHUB_LIMIT = 100 * 1024 * 1024
 
 
-def main():
-    files = sorted(glob.glob(os.path.join(MONS, '*.bin')))
-    if not files:
-        raise SystemExit('no hay sprites en ' + MONS)
+def dex_of(path):
+    base = os.path.basename(path)
+    digits = ''.join(c for c in base if c.isdigit())
+    return int(digits) if digits else 0
+
+
+def write_pak(out, files):
     names = ['mons/' + os.path.basename(f) for f in files]
     blobs = [open(f, 'rb').read() for f in files]
-
-    with open(OUT, 'wb') as o:
+    with open(out, 'wb') as o:
         o.write(b'TPAK')
         o.write(struct.pack('<H', len(files)))
         for name, blob in zip(names, blobs):
@@ -37,10 +51,28 @@ def main():
             o.write(struct.pack('<I', len(blob)))
         for blob in blobs:
             o.write(blob)
+    return sum(len(b) for b in blobs)
 
-    total = sum(len(b) for b in blobs)
-    print(f'{os.path.normpath(OUT)}: {len(files)} sprites, {total / 1048576:.1f} MB datos '
-          f'({os.path.getsize(OUT) / 1048576:.1f} MB total)')
+
+def main():
+    files = sorted(glob.glob(os.path.join(MONS, '*.bin')))
+    if not files:
+        raise SystemExit('no hay sprites en ' + MONS)
+    made = 0
+    for name, lo, hi in REGIONS:
+        mine = [f for f in files if lo <= dex_of(f) <= hi]
+        if not mine:
+            print(f'{name}: no sprites packed yet, skipped')
+            continue
+        out = os.path.join(WEB, f'sprites-{name}.pak')
+        total = write_pak(out, mine)
+        size = os.path.getsize(out)
+        flag = '  !! OVER GITHUB LIMIT' if size > GITHUB_LIMIT else ''
+        print(f'{os.path.normpath(out)}: {len(mine)} sprites, '
+              f'{total / 1048576:.1f} MB datos ({size / 1048576:.1f} MB total){flag}')
+        made += 1
+    if not made:
+        raise SystemExit('nothing packed')
 
 
 if __name__ == '__main__':

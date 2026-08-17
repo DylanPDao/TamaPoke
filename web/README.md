@@ -11,8 +11,9 @@ same one as `tools/send_sd.py`).
 - `index.html` — the page (flashing + sprite loader).
 - `manifest.json` — ESP Web Tools config (points at the firmware).
 - `firmware/tamapoke.bin` — combined firmware, flashable at `0x0`.
-- `sprites.pak` — all the sprites in one bundle (TPAK), so the page sends them in
-  one click. **Generated** by `tools/pack_bundle.py` (gitignored by default — see
+- `sprites-kanto.pak`, `sprites-johto.pak`, `sprites-hoenn.pak` — the sprites bundled
+  (TPAK) **one file per region**, so the page sends a region in one click.
+  **Generated** by `tools/pack_bundle.py` (gitignored by default — see
   *Hosting the sprites* below).
 
 ## Regenerate
@@ -20,7 +21,7 @@ same one as `tools/send_sd.py`).
 After changing the firmware or the sprites:
 
 ```bash
-bash tools/build_web.sh        # recompiles -> firmware/tamapoke.bin AND rebuilds sprites.pak
+bash tools/build_web.sh        # recompiles -> firmware/tamapoke.bin AND rebuilds the region .paks
 ```
 
 ## Test locally
@@ -37,7 +38,7 @@ cd web && python3 -m http.server 8000
 
 1. **Install TamaPoke** → flashes the firmware (pick the USB port; tick "Erase
    device" for a fresh board).
-2. **Connect board** + **Load sprites** → downloads `sprites.pak` and copies it to
+2. **Connect board** + a region button → downloads that region's `.pak` and copies it to
    the microSD over USB (progress bar, ~8–10 min). Close the step-1 install tab
    first: only one program can use the port at a time.
 3. Restart (PWR button) → choose your starter and play.
@@ -46,7 +47,12 @@ A hidden "pick them manually" option lets advanced users send their own `.bin`.
 
 ## Hosting the sprites
 
-`sprites.pak` is ~58 MB and **gitignored** so it doesn't bloat the repo. To make
+Each region's `.pak` is ~27–40 MB and **gitignored** so it doesn't bloat the repo.
+
+**Why one file per region and not one big one:** all three together come to about
+100 MB, which is exactly GitHub's hard per-file limit — a single bundle would be
+uncommittable. Splitting also means most people can take Kanto (~40 MB) and stop,
+and add a region later without re-sending what is already on the card. To make
 the one-click sprite loader work on a real deployment, pick one:
 
 - **Commit it** — add `web/sprites.pak` to git and serve it from Pages. Simple,

@@ -66,7 +66,9 @@
        the port at a time).</p>
     <div class="row">
       <button id="connect">🔌 Connect board</button>
-      <button id="auto" disabled>⬇️ Load sprites</button>
+      <button id="auto" data-region="kanto" disabled>⬇️ Kanto sprites (~40 MB)</button>
+      <button id="autoj" data-region="johto" disabled>⬇️ Johto (~27 MB)</button>
+      <button id="autoh" data-region="hoenn" disabled>⬇️ Hoenn (~36 MB)</button>
     </div>
     <p class="note">Have your own <code>.bin</code> files? <label style="cursor:pointer;text-decoration:underline">pick them manually<input id="files" type="file" accept=".bin" multiple disabled hidden></label></p>
     <p class="note">🎨 Want to make your own sprites? See <a href="https://github.com/socquique/TamaPoke#generate-and-load-the-sprites-yourself" target="_blank">how to generate &amp; load them</a> in the repo.</p>
@@ -168,26 +170,43 @@ document.getElementById('connect').onclick = async () => {
     writer = port.writable.getWriter();
     lineBuf = '';
     log('Connected. Press "Load sprites".');
-    document.getElementById('auto').disabled = false;
+    for (const id of ['auto', 'autoj', 'autoh']) {
+      const b = document.getElementById(id);
+      if (b) b.disabled = false;
+    }
     document.getElementById('files').disabled = false;
     document.getElementById('connect').disabled = true;
   } catch (e) { log('Could not connect: ' + e.message); }
 };
 
-document.getElementById('auto').onclick = async () => {
+// One bundle per region. Kanto alone is ~40 MB and all three would be ~100 MB,
+// which is GitHub's hard per-file limit -- so they are separate files, and a
+// player can take Kanto and stop, or add a region later without re-sending what
+// is already on the card.
+async function loadRegion(btn) {
+  const region = btn.dataset.region;
   if (!writer) { log('Connect the board first.'); return; }
-  document.getElementById('auto').disabled = true;
-  log('Downloading sprite bundle (~58 MB)...');
+  btn.disabled = true;
+  log(`Downloading the ${region} sprite bundle...`);
   let items;
   try {
-    // sprites.pak servido desde el mismo origen (GitHub Pages) -> sin lios de CORS
-    const resp = await fetch('sprites.pak');
+    // served from the same origin (GitHub Pages) -> no CORS trouble
+    const resp = await fetch(`sprites-${region}.pak`);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     items = parsePak(await resp.arrayBuffer());
-  } catch (e) { log('Could not download sprites.pak: ' + e.message); return; }
-  log(`${items.length} sprites. Sending over USB...`);
+  } catch (e) {
+    log(`Could not download sprites-${region}.pak: ` + e.message);
+    btn.disabled = false;
+    return;
+  }
+  log(`${items.length} ${region} sprites. Sending over USB...`);
   await sendAll(items);
-};
+  log(`${region} done. You can load another region, or stop here.`);
+}
+for (const id of ['auto', 'autoj', 'autoh']) {
+  const b = document.getElementById(id);
+  if (b) b.onclick = () => loadRegion(b);
+}
 
 document.getElementById('files').onchange = async (ev) => {
   const files = [...ev.target.files];
