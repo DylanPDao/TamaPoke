@@ -352,11 +352,10 @@ Everything else is accounted for (PMD sprites CC BY-NC, badges CC BY 3.0). Eithe
 confirm their licence or replace them.
 
 
-0. **Fight UI polish** toward the mainline look: HP plates with an `HP` label,
-   numeric HP on your own side, and a platform ellipse under each creature.
-   Reference supplied by the user; the current layout already matches the
-   mainline arrangement (foe top-left info / top-right sprite, you bottom-right
-   / bottom-left).
+0. ~~Fight UI polish~~ **done**. HP plates carry the `HP` label and your own
+   side shows numeric HP (`btlSide`). The platform ellipse was dropped on the
+   user's call, not forgotten. The layout matches the mainline arrangement:
+   foe info top-left / sprite top-right, you bottom-right / bottom-left.
 1b. ~~Kanto badge art~~ **done**. `tools/gen_badges.py` needs `rsvg-convert`
    (`brew install librsvg`) and regenerates `badges.h` from the upstream SVG.
    A hard-mode clear draws a golden halo behind its badge.
@@ -646,9 +645,11 @@ capped by `trMaxFor(iv) = 70 + 30*iv/31`, feeding `calcStat()`. ATK trains via t
 punching bag, SPE via the ball game, DEF passively (+1 per `DEF_TRAIN_TICKS` = 60
 min of good wellbeing).
 
-Open question: DEF has no active trainer, so its submenu row is currently inert.
-Either give it a minigame or keep it passive and style the row as clearly
-non-interactive.
+~~Open question: DEF has no active trainer~~ **settled** -- kept passive and
+styled for it. `renderTrain()` draws the DEF row flat in `UI_TRACK` and the tap
+handler skips it (`passive = (i == 2)`), so it reads as information rather than
+a dead button. DEF still trains by itself, +1 per `DEF_TRAIN_TICKS` of good
+wellbeing.
 
 ### Swipe map redesign (requested, not started)
 
