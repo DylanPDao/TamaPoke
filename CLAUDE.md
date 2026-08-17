@@ -184,6 +184,35 @@ is a `uint8_t` under `"avtr"`, now taken modulo `AVATAR_COUNT` in all three
 places that used to mask it with `& 3`, and `pet.cpp` clamps an out-of-range
 value so a save from the four-avatar era still loads.
 
+### Hardware bring-up order (boards arriving)
+
+Nothing below this line has ever run on a board. Work down it -- each step can
+invalidate the ones after it, so a failure early is worth stopping on.
+
+1. **Does an EXISTING save survive the upgrade?** Do this FIRST and on a board
+   that already has a pet, because it is the only irreversible one. The dex
+   bitmaps went 19 -> 49 bytes and several keys are new; both were designed to
+   be additive (`getBytes` leaves a short blob in the front of the array, absent
+   keys leave zeroes) and `save_test` covers it, but only real NVS proves it.
+   **`EXPORT` before flashing** and keep the block -- that is exactly what it is
+   for, and it is the one safety net that exists.
+2. **Does it boot and stay up?** Flash is 52% and globals 20%, both comfortable,
+   but the PSRAM framebuffer plus two streamed battle sprites is what the
+   emulator cannot see. `HEALTH` reports uptime and heap.
+3. **The soak test, 24-48 h on `HEALTH`.** Watch the heap trend, not its value.
+   This branch added streamed battle sprites, 315 KB of backgrounds, a
+   full-screen redraw every frame at 10 fps, an audio task and a second NVS
+   blob -- any of which could leak slowly.
+4. **AUDIO, which nobody has ever heard.** `BEEP`, then a gym battle for the
+   music loop and the six cues. The volume curve (`500 * vol`) is a guess at
+   what sounds linear; expect to tune it.
+5. **LAN, on TWO boards.** `linknow.cpp` has never executed. Pair from the gym
+   chooser's LAN BATTLE button. `linkNowEnd()` prints rx / tx / tx failures /
+   packets dropped as another pair's / ring overflows -- read those before
+   assuming anything works. Treat the first session as debugging.
+6. **Gen 2/3 sprite streaming**, once `pack_pmd.py` has been run for them. Until
+   then those species show a dex number, which is the graceful path working.
+
 **0. Soak test -- the one item that can INVALIDATE work rather than add to it.**
 24-48 h on hardware with `HEALTH`. Everything built this session is verified in
 the emulator only, and the emulator explicitly cannot see timing, DMA tearing,
