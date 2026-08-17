@@ -91,6 +91,7 @@ extern uint8_t btlMenu;
 void startTrainerBattle(uint8_t idx, bool hard);
 extern bool gymOpen, playerOpen;
 extern bool lanOpen;
+extern uint8_t btlMyAct;
 #include "link.h"
 extern Link lan;
 void startLinkBattle();
@@ -167,7 +168,9 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   }
   else if (!strcmp(screen, "gyms")) { gymOpen = true; }
   else if (!strcmp(screen, "lan")) { lanOpen = true; lan.state = LINK_OFF; }
-  else if (!strcmp(screen, "lanready") || !strcmp(screen, "lanbattle")) {
+  else if (!strcmp(screen, "lanlost")) { lanOpen = true; lan.begin(true,"D"); lan.state = LINK_LOST; }
+  else if (!strcmp(screen, "lanready") || !strcmp(screen, "lanbattle") ||
+           !strcmp(screen, "landone") || !strcmp(screen, "lanwait")) {
     // No radio here, so the pairing is faked at the point the radio would have
     // finished it: both squads present, state READY. Everything past this --
     // layout, the battle screen, the guest's restrictions -- is the real code.
@@ -196,6 +199,11 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     lan.theirsN = 3;
     lan.state = LINK_READY;
     if (!strcmp(screen, "lanbattle")) { startLinkBattle(); }
+    else if (!strcmp(screen, "landone")) { lan.state = LINK_DONE; lan.youWon = true; lanOpen = true; }
+    else if (!strcmp(screen, "lanwait")) {
+      startLinkBattle();
+      btlMyAct = LINK_ACT_MOVE(0);      // tapped, rival has not chosen yet
+    }
     else lanOpen = true;
   }
   else if (!strcmp(screen, "box")) {

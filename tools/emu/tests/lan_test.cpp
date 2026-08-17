@@ -26,9 +26,17 @@ extern bool battleOpen, btlLink, btlLinkHost, btlOver, btlWon, lanOpen;
 extern Combatant btlYou, btlFoe;
 extern Combatant btlSquad[];
 extern uint8_t btlSquadN, btlSquadAt, btlFoeAt, btlMenu, btlMsgCount;
+extern uint8_t btlMyAct, btlFoeSquadN;
+extern Combatant btlFoeSquad[];
 extern uint16_t squadMask;
 void startLinkBattle();
 
+// The sketch never sets a transport itself -- linkNowBegin does, and there is
+// no radio here -- so one is wired in to see what the UI actually sends.
+static int sent=0; static uint8_t lastPkt[64]; static uint8_t lastLen=0;
+static void capture(void*, const uint8_t*b, uint8_t n){
+  sent++; lastLen = n < sizeof(lastPkt) ? n : sizeof(lastPkt); memcpy(lastPkt,b,lastLen);
+}
 static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
 
@@ -60,6 +68,7 @@ int main(){
   lan.theirs[1]=mon(65,50,"SPOON");
   lan.theirsN=2;
   lan.state=LINK_READY;
+  lan.send=capture;
 
   startLinkBattle();
   ck(battleOpen && btlLink && btlLinkHost, "the host starts a linked battle");
@@ -71,15 +80,53 @@ int main(){
   ck(!strcmp(btlSquad[1].name,"SNORE"), "including the rest of it");
   ck(btlFoe.dex==6 && btlFoe.hp==btlFoe.maxHp, "the rival leads with theirs, at full health");
 
-  // --- the guest may not switch: the wire carries a move slot and nothing else
+  // --- the peer's team is LIVE, not rebuilt each time it is looked at
+  ck(btlFoeSquadN==2, "the peer's whole team is held as combatants");
+  btlFoeSquad[1].hp = 7;
+  ck(btlFoeSquad[1].hp==7 && btlFoeSquad[1].maxHp>7,
+     "so a creature that switches out can stay hurt");
+
+  // --- the guest ASKS to switch; it never switches on its own, because the
+  // host is the only side that may spend a turn
   btlLinkHost = false;
+  lan.state = LINK_READY;
   btlMenu = 2;                       // the POKEMON list
   uint8_t was = btlSquadAt;
+  sent = 0;
   battleTap(69 + 168 + 10, 286 + 10);   // cell 1 of the switch grid
-  ck(btlSquadAt==was, "the guest cannot switch behind the host's back");
+  ck(btlSquadAt==was, "the guest does not switch locally");
+  ck(sent==1 && lastPkt[0]==LM_ACT, "it sends the request instead");
+  ck(LINK_ACT_IS_SWITCH(lastPkt[3]) && LINK_ACT_SLOT(lastPkt[3])==1,
+     "and the request names the slot it wants");
+
+  // --- the host LATCHES its own action instead of throwing it away
+  btlLinkHost = true;
+  btlLink = true;
+  btlOver = false;
+  btlMsgCount = 0;
+  lan.pendingAct = 0;
+  btlMyAct = 0;
+  btlMenu = 1;                       // the move grid
+  uint16_t hpWas = btlFoe.hp;
+  battleTap(69 + 10, 286 + 10);      // move slot 0
+  ck(btlMyAct != 0, "the host latches its move while the rival is still choosing");
+  ck(btlFoe.hp == hpWas, "and nothing is resolved yet");
+  lan.pendingAct = LINK_ACT_MOVE(0);
+  render();                          // btlLinkPoll spots that both are in
+  ck(btlMyAct == 0 && !lan.pendingAct,
+     "and the turn goes as soon as the rival's action lands");
+
+  // --- a peer that goes quiet ends the fight rather than hanging on it
+  btlOver = false; btlMsgCount = 0;
+  lan.state = LINK_LOST;
+  render();
+  ck(btlOver, "a lost peer ends the battle instead of waiting forever");
+  lan.state = LINK_READY;
+  btlOver = false; btlMsgCount = 0;
 
   // --- a result off the wire moves the guest's battle, and only once
   btlLink = true; btlLinkHost = false; btlMenu = 0; btlMsgCount = 0;
+  btlYou = btlSquad[btlSquadAt];
   LinkResult r{};
   r.hostHp = btlFoe.maxHp/2; r.guestHp = btlYou.maxHp/4;
   r.hostMove = 1; r.guestMove = 1; r.hostDmg = 5; r.guestDmg = 7;

@@ -157,6 +157,15 @@ non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
 ### Next up, roughly in order
 
+**Trainer avatars need redrawing.** `SPR_PLAYER_A..D` in `species.h` are four
+hand-drawn 16x16 char maps, cycled by tapping the avatar on player card page 1
+and drawn at 4x by `renderPlayerBadges()`. They are hand-drawn on purpose:
+SpriteCollab has no trainer art and ripped trainer sprites would be unlicensed,
+which is the one thing `CREDITS.md` is careful about. So a redraw means drawing
+them, not fetching them -- more than four options, and better ones. `avatar` is
+a `uint8_t` stored under `"avtr"` and masked with `& 3` in two places, so adding
+a fifth means widening that mask, not just adding art.
+
 **0. Soak test -- the one item that can INVALIDATE work rather than add to it.**
 24-48 h on hardware with `HEALTH`. Everything built this session is verified in
 the emulator only, and the emulator explicitly cannot see timing, DMA tearing,
@@ -254,6 +263,52 @@ pointer, NOT a direct ESP-NOW call, so `link_test` cross-wires two `Link`s in on
 process and exercises the entire handshake without a radio. That paid for itself
 immediately -- see below.
 
+**Hardened against a real radio (the "bulletproof" pass).** ESP-NOW is best
+effort, and the first version assumed delivery everywhere. Three rules now cover
+it, all in `link.h`'s header comment: every exchange is stamped with a turn
+number so a resend can never be read as a new choice; whatever we last said is
+resent until superseded; and `LinkResult` carries ABSOLUTE state, never deltas,
+so a guest that misses a turn entirely still lands on the right numbers from the
+next one. Every wait has a deadline -- `LINK_LOST` with a message, never a hang.
+
+`lossy_test` is what makes this provable without boards: it drops, duplicates
+and silences frames on purpose and asserts twelve turns still complete. It found
+two bugs that reading could not:
+
+- **A deadlock.** A side that reached READY stopped answering a peer still
+  assembling its squad, and only the side that is behind resends -- so one lost
+  SQUAD packet stalled the pair permanently. A finished side now answers a late
+  hello with its squad (and NOT another hello, or the two volley forever).
+- **A livelock.** Pairing settles into a burst of a fixed length; with one frame
+  in three dropped, the same POSITION in the burst died every time and the
+  resends never helped -- ten attempts, same packet, always. Squad packets are
+  now sent in a ROTATING order so no slot can stay unlucky. Jittering the timer
+  does not fix this on its own: the loss is per packet, not per millisecond.
+  Real interferers (beacons, microwaves) are periodic, so this is not academic.
+  Pairing went from 35 frames to 11 as a side effect.
+
+Also settled: two hosts (or two guests) resolve by id, the higher one hosting,
+so the buttons are a preference rather than a trap -- identical ids refuse
+rather than guess. A build fingerprint of the table sizes rides in the hello, so
+two builds whose `MOVE_TBL` differs refuse instead of narrating different moves.
+And NOTHING off the wire is trusted to index a table: `linkMonTo()` clamps dex,
+level and every move index, and terminates a name that arrived without a NUL.
+`MOVE_TBL[r.hostMove]` on the guest was a straight out-of-bounds read before.
+
+`linknow.cpp` now locks onto the first peer's MAC and unicasts to it, which
+stops two pairs of players in one room from joining each other's fights and buys
+a real transmit-status callback (a broadcast always reports success). Received
+packets are parked in a ring by the WiFi-task callback and drained by
+`linkNowPoll()` on the main loop, so protocol state is never touched from
+another task and nothing sends from inside the receive callback.
+
+UI: the host LATCHES its own action instead of discarding it when the rival has
+not chosen (that made you jab at the move until the timing lined up), both sides
+show "waiting for the rival", the guest can now switch by ASKING -- a switch
+rides the same message as a move -- and a finished fight returns to the LAN
+screen where AGAIN rematches with the squads both sides already hold. Leaving
+sends a goodbye so the peer reports at once rather than waiting out a timeout.
+
 Everything around the radio is now built and tested: `linknow.cpp` (ESP-NOW
 broadcast), the LAN screen (`renderLan`/`lanOffer`/`lanTap`, reached from a
 button on the gym list), and the battle wiring. `btlResolve()` takes the foe's
@@ -261,22 +316,28 @@ move from `lan.pendingMove` instead of the AI when `btlLink` is set, ships a
 `LinkResult` to the guest, and `btlLinkPoll()` applies it on the guest's side
 once a frame. `lan_test` covers that half; `link_test` covers the protocol.
 
-Two design points worth not undoing:
+Design points worth not undoing:
 - **The squad is rebuilt from `lan.mine`, not from `squadMask`.** What you fight
   with must be exactly what the peer was told you have. Rebuilding from the
   party would silently diverge if anything changed between offering and
   starting -- `lan_test` fails if you switch it back.
-- **The guest cannot switch creatures.** The wire carries a move slot and
-  nothing else, so a guest switch would desync. It is refused, not ignored.
-  Lifting this needs a new message type and a `LINK_PROTO` bump.
+- **The peer's team is held as live `Combatant`s** (`btlFoeSquad`), not rebuilt
+  from `lan.theirs` each time. A trainer's replacements only ever arrive once; a
+  linked opponent can switch out and back, so its creatures must remember how
+  battered they are or switching would heal them.
+- **An action is one message**, a move slot or a switch with the high bit set,
+  because turn matching and resend must have a single path. A move is stored as
+  slot+1 so that 0 can keep meaning "nothing chosen yet" -- storing it raw made
+  move slot 0 indistinguishable from silence.
 
 Still to do:
 - **Run it on two boards.** `linknow.cpp` has never executed. Channel choice,
-  broadcast delivery, the WiFi/PSRAM interaction and the current draw are all
-  unverified. Treat first bring-up as debugging, not as confirmation.
-- **Pairing is by broadcast**, so two pairs of devices in one room will collide.
-  Real addressing is the fix if that ever happens.
-- **Guest switching** and a rematch without re-pairing.
+  delivery, the WiFi/PSRAM interaction and the current draw are all unverified.
+  Treat first bring-up as debugging, not as confirmation. `linkNowStats()` was
+  added for exactly that first session: rx, tx, tx failures, packets dropped as
+  another pair's, and ring overflows, printed on `linkNowEnd()`.
+- **Both devices must pick their team before pairing.** The squad is whatever
+  `squadMask` held; there is no team-select step in the LAN flow yet.
 
 **The synchronous test transport caught a real re-entrancy bug.** `start()` and
 the hello handler both SENT before updating their state, so a reply that arrived

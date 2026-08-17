@@ -198,6 +198,15 @@ bool gymHard = false;   // which ladder the list is showing
 bool lanOpen = false;
 Link lan;
 static void btlLinkPoll();   // defined with the battle code, called from render()
+static void btlSwitchTo(uint8_t i);
+static void btlResolve(uint8_t yourMove);
+// The peer's whole team, kept live. A trainer's replacements are built fresh
+// from TRAINERS[] because they only ever arrive once; a linked opponent can
+// switch OUT and back IN, so its creatures have to remember how battered they
+// are. Host side only -- the guest takes absolute health off the wire.
+Combatant btlFoeSquad[TRAINER_TEAM_MAX];
+uint8_t btlFoeSquadN = 0;
+uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
 bool btlLink = false;      // this fight is against another device
 bool btlLinkHost = false;
 static bool gymUnlocked(uint8_t idx, bool hard) {
@@ -427,6 +436,15 @@ void ensureMon() {
 void loop() {
   uint32_t now = millis();
   pet.update(now);
+
+  // The link is pumped here rather than from the LAN screen, because it has to
+  // keep running through the battle too: linkNowPoll() drains what the radio
+  // parked on the WiFi task, and tick() is what resends a lost packet and gives
+  // up on a peer that has gone quiet.
+  if (lan.live()) {
+    linkNowPoll();
+    lan.tick(now);
+  }
 
   // avisa con un sonido cuando el bicho pasa a estar listo para evolucionar
   // (incluye el caso de cumplir al despertar). canEvolveNow es false durmiendo.
@@ -775,7 +793,7 @@ void onSwipeV(int dir) {
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (pickOpen) { pickOpen = false; return; }
-  if (lanOpen) { linkNowEnd(); lanOpen = false; return; }
+  if (lanOpen) { lanLeave(); lanOpen = false; return; }
   if (gymOpen) { gymOpen = false; return; }
   if (playerOpen) { playerOpen = false; return; }
   if (trainOpen) { trainOpen = false; return; }
@@ -2558,7 +2576,11 @@ void startLinkBattle() {
   btlTrainer = -1;
   btlHard = false;
   btlFoeAt = 0;
-  linkMonTo(btlFoe, lan.theirs[0]);
+  btlFoeSquadN = 0;
+  for (uint8_t i = 0; i < lan.theirsN && i < TRAINER_TEAM_MAX; i++)
+    linkMonTo(btlFoeSquad[btlFoeSquadN++], lan.theirs[i]);
+  btlFoe = btlFoeSquad[0];
+  btlMyAct = 0;
   btlMsgCount = 0;
   btlOver = false;
   btlWon = false;
@@ -2692,7 +2714,33 @@ static void btlApplyResult() {
 // Radio packets land on another task, so the guest picks them up here, once a
 // frame, rather than rendering from inside an interrupt.
 static void btlLinkPoll() {
-  if (!btlLink || btlLinkHost) return;
+  if (!btlLink) return;
+
+  // A peer that stopped answering. Ending the fight is the only honest thing to
+  // do -- there is no result coming, and pretending otherwise is the hang this
+  // whole layer exists to remove.
+  if (!lan.live() && !btlOver) {
+    btlOver = true;
+    btlWon = false;
+    audioMusic(MUS_NONE);
+    btlMsgCount = 0;
+    btlSay("%s", T(S_LAN_GONE));
+    return;
+  }
+
+  if (btlLinkHost) {
+    // Our own action was latched when it was tapped; theirs arrives whenever
+    // the radio manages it. Whichever is second sets the turn going.
+    if (btlMyAct && lan.hasPeerAct() && !btlOver && !btlMsgCount &&
+        btlSwapWho < 0) {
+      uint8_t act = btlMyAct;
+      btlMyAct = 0;
+      if (LINK_ACT_IS_SWITCH(act)) btlSwitchTo(LINK_ACT_SLOT(act));
+      else btlResolve(btlYou.moves[LINK_ACT_SLOT(act) % MOVE_SLOTS]);
+    }
+    return;
+  }
+
   if (lan.resultNew) btlApplyResult();
   if (lan.state == LINK_DONE && !btlOver) {
     btlOver = true;
@@ -2722,10 +2770,35 @@ static void btlResolve(uint8_t yourMove) {
   TurnLog lg;
   // Against another device the opponent's move comes off the wire, never from
   // the AI -- and the host is the only side that runs this at all.
-  uint8_t foeMove = btlLink
-      ? (lan.pendingMove ? btlFoe.moves[(lan.pendingMove - 1) % MOVE_SLOTS] : btlFoe.moves[0])
-      : aiChooseMove(btlFoe, btlYou, btlHard);
-  if (btlLink) lan.pendingMove = 0;
+  uint8_t foeMove;
+  bool foeSwitched = false;
+  uint32_t now = millis();
+  if (btlLink) {
+    // Off the wire, never from the AI. A switch is carried in the same message
+    // as a move, and like our own switch it costs the turn: they change, we act.
+    uint8_t act = lan.pendingAct;
+    if (LINK_ACT_IS_SWITCH(act)) {
+      uint8_t to = LINK_ACT_SLOT(act);
+      if (to < btlFoeSquadN && to != btlFoeAt && !btlFoeSquad[to].fainted()) {
+        btlFoeSquad[btlFoeAt] = btlFoe;     // remember how battered it was
+        btlFoeAt = to;
+        btlFoe = btlFoeSquad[to];
+        btlHpShown[1] = btlFoe.hp;
+        btlSyncSprite(1, btlFoe);
+        btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
+        btlEnterUntil[1] = now + BTL_ENTER_MS;
+        btlSay(T(S_BTL_SENDS), lan.peerName, btlFoe.name);
+        foeSwitched = true;
+      }
+      foeMove = 0;
+    } else {
+      foeMove = btlFoe.moves[LINK_ACT_SLOT(act) % MOVE_SLOTS];
+    }
+    lan.pendingAct = 0;
+  } else {
+    foeMove = aiChooseMove(btlFoe, btlYou, btlHard);
+  }
+  (void)foeSwitched;
 
   bool youFirst = battleMovesFirst(btlYou, yourMove, btlFoe, foeMove);
   Combatant *a = youFirst ? &btlYou : &btlFoe;
@@ -2733,7 +2806,6 @@ static void btlResolve(uint8_t yourMove) {
   uint8_t ma = youFirst ? yourMove : foeMove;
   uint8_t mb = youFirst ? foeMove : yourMove;
 
-  uint32_t now = millis();
   uint16_t hp0You = btlYou.hp, hp0Foe = btlFoe.hp;
   battleAct(*a, *b, ma, lg);
   btlNarrate(*a, *b, lg);
@@ -2757,7 +2829,7 @@ static void btlResolve(uint8_t yourMove) {
   // Someone went down. The replacement is NOT swapped in here -- that made the
   // change instant and read as a jump cut. Flag it, let the sprite drop out of
   // frame, and swap when the player dismisses the message.
-  if (btlFoe.fainted() && btlLink && btlFoeAt + 1 < lan.theirsN) {
+  if (btlFoe.fainted() && btlLink && btlFoeAt + 1 < btlFoeSquadN) {
     btlFaintUntil[1] = millis() + BTL_FAINT_MS;
     btlSwapWho = 1;
     return;
@@ -2785,6 +2857,7 @@ static void btlResolve(uint8_t yourMove) {
     // Tell the peer before anything else: if we stop here without sending, the
     // other device sits on a battle that will never take another turn.
     if (btlLink && btlLinkHost) lan.sendEnd(btlWon);
+    if (btlLink) { btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE)); return; }
     if (btlWon && btlTrainer >= 0) { btlWinUntil = millis() + 60000; return; }
     btlSay("%s", T(S_BTL_LOSE));
   }
@@ -2956,7 +3029,21 @@ void renderBattle() {
   btlSide(82, 82, 300, 40, btlFoe, 1);    // foe reads top-left, sprite top-right
   btlSide(250, 190, 76, 168, btlYou, 0);  // you read bottom-right, sprite bottom-left
 
-  if (btlMsgCount) {                   // narration takes over the menu area
+  // Waiting on the other device. Without this the screen is identical to the
+  // one where it is your turn, so a tap that has been sent and a tap that was
+  // never registered look exactly the same.
+  bool lanWait = btlLink && !btlOver &&
+                 (btlLinkHost ? (btlMyAct && !lan.hasPeerAct())
+                              : (lan.state == LINK_WAITING));
+  if (lanWait && !btlMsgCount) {
+    gfx->fillRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_WHITE);
+    gfx->drawRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_INK);
+    gfx->setTextColor(UI_TRACK);
+    gfx->setTextSize(1);
+    const char *w = T(S_LAN_WAITFOE);
+    gfx->setCursor(CX - (int)strlen(w) * 3, BTL_GRID_Y + 40);
+    gfx->print(w);
+  } else if (btlMsgCount) {            // narration takes over the menu area
     gfx->fillRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_WHITE);
     gfx->drawRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H * 2 + 8, 12, UI_INK);
     gfx->setTextColor(UI_INK);
@@ -3023,10 +3110,14 @@ void renderBattle() {
 static void btlDoSwap() {
   uint32_t now = millis();
   if (btlSwapWho == 1 && btlLink) {
-    btlFoeAt++;
-    if (btlFoeAt >= lan.theirsN) { btlSwapWho = -1; return; }
-    linkMonTo(btlFoe, lan.theirs[btlFoeAt]);
-    btlHpShown[1] = btlFoe.maxHp;
+    btlFoeSquad[btlFoeAt] = btlFoe;
+    // the next one still standing, not simply the next index
+    uint8_t nxt = btlFoeAt;
+    while (++nxt < btlFoeSquadN && btlFoeSquad[nxt].fainted()) {}
+    if (nxt >= btlFoeSquadN) { btlSwapWho = -1; return; }
+    btlFoeAt = nxt;
+    btlFoe = btlFoeSquad[btlFoeAt];
+    btlHpShown[1] = btlFoe.hp;
     btlSyncSprite(1, btlFoe);
     btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
     btlEnterUntil[1] = now + BTL_ENTER_MS;
@@ -3076,11 +3167,19 @@ void battleTap(int16_t x, int16_t y) {
     btlFreeSprites();
     audioMusic(MUS_NONE);
     battleOpen = false;
+    if (btlLink) { btlLink = false; lanOpen = true; }
     return;
   }
   if (btlMsgCount) {          // a tap clears the narration and returns the menu
     btlMsgCount = 0;
-    if (btlOver) { btlFreeSprites(); battleOpen = false; return; }
+    if (btlOver) {
+      btlFreeSprites();
+      battleOpen = false;
+      // Back to the LAN screen rather than all the way out: that is where a
+      // rematch is offered, and re-pairing for every fight would be tedious.
+      if (btlLink) { btlLink = false; lanOpen = true; }
+      return;
+    }
     if (btlSwapWho >= 0) btlDoSwap();   // the replacement arrives on this beat
     return;
   }
@@ -3099,13 +3198,22 @@ void battleTap(int16_t x, int16_t y) {
       int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
       if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
       const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
-      // A linked battle carries a move slot and nothing else, so the guest has
-      // no way to tell the host it switched. Refused rather than desynced.
-      if (i == btlSquadAt || m.fainted() || (btlLink && !btlLinkHost)) {
-        sfxPlay(SFX_DENY);
+      if (i == btlSquadAt || m.fainted()) { sfxPlay(SFX_DENY); return; }
+      sfxPlay(SFX_TAP);
+      if (btlLink && !btlLinkHost) {
+        // The guest asks; it never switches on its own. A switch rides the same
+        // message as a move, so the host spends the turn on it exactly as it
+        // would for us.
+        lan.sendAct(LINK_ACT_SWITCH_TO(i));
+        btlMenu = 0;
         return;
       }
-      sfxPlay(SFX_TAP);
+      if (btlLink) {            // host: latched like a move, see btlLinkPoll
+        btlMyAct = LINK_ACT_SWITCH_TO(i);
+        btlMenu = 0;
+        if (!lan.hasPeerAct()) return;
+        btlMyAct = 0;
+      }
       btlSwitchTo(i);
       return;
     }
@@ -3119,10 +3227,17 @@ void battleTap(int16_t x, int16_t y) {
     sfxPlay(SFX_TAP);
     btlMenu = 0;
     if (btlLink && !btlLinkHost) {
-      lan.sendMove(i);        // the guest asks; the host decides
+      lan.sendAct(LINK_ACT_MOVE(i));   // the guest asks; the host decides
       return;
     }
-    if (btlLink && !lan.pendingMove) return;   // host waits for their choice
+    if (btlLink) {
+      // Latched, not discarded. The host used to throw the tap away when the
+      // rival had not chosen yet, so you had to keep jabbing at the move until
+      // the timing happened to line up.
+      btlMyAct = LINK_ACT_MOVE(i);
+      if (!lan.hasPeerAct()) return;   // resolved by btlLinkPoll when it lands
+      btlMyAct = 0;
+    }
     btlResolve(btlYou.moves[i]);
     return;
   }
@@ -3532,14 +3647,18 @@ void renderLan() {
     case LINK_SQUADS:    msg = T(S_LAN_WAIT); break;
     case LINK_READY:     msg = T(S_LAN_READY); break;
     case LINK_REFUSED:   msg = T(S_LAN_REFUSED); break;
+    case LINK_LOST:      msg = T(S_LAN_GONE); break;
+    case LINK_DONE:      msg = lan.youWon ? T(S_BTL_WIN) : T(S_BTL_LOSE); break;
     default: break;
   }
-  gfx->setTextColor(lan.state == LINK_REFUSED ? UI_BAR_BAD : UI_TRACK);
+  gfx->setTextColor((lan.state == LINK_REFUSED || lan.state == LINK_LOST)
+                      ? UI_BAR_BAD : UI_TRACK);
   gfx->setTextSize(1);
   gfx->setCursor(CX - (int)strlen(msg) * 3, 76);
   gfx->print(msg);
 
-  if (lan.state == LINK_OFF || lan.state == LINK_REFUSED) {
+  if (lan.state == LINK_OFF || lan.state == LINK_REFUSED ||
+      lan.state == LINK_LOST) {
     const char *lab[2] = { T(S_LAN_HOST), T(S_LAN_JOIN) };
     for (int i = 0; i < 2; i++) {
       int y = 120 + i * 70;
@@ -3568,6 +3687,21 @@ void renderLan() {
     gfx->setTextColor(UI_BG_DAY);
     gfx->setCursor(CX - strlen(T(S_FIGHT)) * 6, 240);
     gfx->print(T(S_FIGHT));
+  } else if (lan.state == LINK_DONE) {
+    // Both squads are still in hand on both devices, so going again costs one
+    // packet -- there is nothing to re-exchange.
+    if (lan.peerName[0]) {
+      gfx->setTextColor(UI_INK);
+      gfx->setTextSize(2);
+      gfx->setCursor(CX - (int)strlen(lan.peerName) * 6, 140);
+      gfx->print(lan.peerName);
+    }
+    gfx->fillRoundRect(120, 220, 226, 56, 12, UI_BG_DAY);
+    gfx->drawRoundRect(120, 220, 226, 56, 12, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - strlen(T(S_LAN_REMATCH)) * 6, 240);
+    gfx->print(T(S_LAN_REMATCH));
   }
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(2);
@@ -3577,6 +3711,14 @@ void renderLan() {
 }
 
 // Hands our chosen squad to the link, then announces.
+// Leaving deliberately: tell the peer so it reports at once instead of sitting
+// out the timeout, then free the radio -- it costs real current.
+void lanLeave() {
+  if (lan.live()) lan.sendBye();
+  linkNowEnd();
+  lan.state = LINK_OFF;
+}
+
 static void lanOffer(bool host) {
   if (!linkNowBegin(&lan)) {          // no radio: say so rather than hanging
     lan.state = LINK_REFUSED;
@@ -3590,11 +3732,17 @@ static void lanOffer(bool host) {
     linkMonFrom(m, btlSquad[i]);
     lan.addMon(m);
   }
-  if (host) lan.start();              // the guest waits to be greeted
+  // BOTH sides announce. Which of them ends up hosting is settled by id inside
+  // the hello, so the buttons are only a preference -- two players who both tap
+  // HOST still get a working fight instead of two authorities, and two who both
+  // tap JOIN still get one instead of mutual silence.
+  lan.start();
+  (void)host;
 }
 
 void lanTap(int16_t x, int16_t y) {
-  if (lan.state == LINK_OFF || lan.state == LINK_REFUSED) {
+  if (lan.state == LINK_OFF || lan.state == LINK_REFUSED ||
+      lan.state == LINK_LOST) {
     for (int i = 0; i < 2; i++) {
       int by = 120 + i * 70;
       if (x < 90 || x > 376 || y < by || y > by + 56) continue;
@@ -3609,8 +3757,14 @@ void lanTap(int16_t x, int16_t y) {
       startLinkBattle();
       return;
     }
+  } else if (lan.state == LINK_DONE) {
+    if (x >= 120 && x <= 346 && y >= 220 && y <= 276) {
+      sfxPlay(SFX_TAP);
+      lan.sendRematch();      // both sides go back to READY and tap FIGHT
+      return;
+    }
   }
-  if (y > 370) { linkNowEnd(); lanOpen = false; }   // back
+  if (y > 370) { lanLeave(); lanOpen = false; }   // back
 }
 
 // ---------- gym list ----------

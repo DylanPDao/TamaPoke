@@ -4,6 +4,7 @@
 #include "sdmon.h"
 #include "rtcbat.h"
 #include "audio.h"
+#include "linknow.h"
 #include <cstdio>
 #include <string>
 
@@ -127,9 +128,14 @@ void audioBegin() {}
 void sfxPlay(uint8_t) {}
 // no radio here; the protocol itself is exercised by tests/link_test.cpp
 struct Link;
+// No radio here at all, which is why lossy_test drives Link directly instead
+// of going through this.
 bool linkNowBegin(Link *) { return false; }
 void linkNowEnd() {}
 bool linkNowUp() { return false; }
+void linkNowPoll() {}
+static LinkNowStats gNoStats;
+const LinkNowStats &linkNowStats() { return gNoStats; }
 // audio is silent here, but the sketch calls these, so they have to exist
 static uint8_t g_emuVol = 7, g_emuMusic = 0;
 void audioMusic(uint8_t id) { g_emuMusic = id; }
