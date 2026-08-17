@@ -186,8 +186,27 @@ done from here.
 - **A reason to rematch.** Beating a leader gives a badge and nothing else.
   Berries, or a training/IV reward, would make the ladder replayable instead of
   a checklist.
-- **Save backup.** A run is weeks of real time in one NVS partition. `LS`/`PUT`
-  already move files over USB, so an export/import command would be small.
+- ~~Save backup~~ **done**. `EXPORT` prints the whole save as a block of
+  `IMPORT <hex>` lines, and pasting that block back is the restore -- there is
+  no second format to get wrong and no 2000-character line for a terminal to
+  mangle. About 1.2 KB, 16 lines.
+
+  `save.cpp` is KEY-DRIVEN: `SAVE_FIELDS` lists all 51 keys with their types and
+  both directions walk that one table through the ordinary `Preferences` API, so
+  the identical code runs on the board and in the emulator. A struct of fields
+  would have been a second description of the save that drifts the moment
+  somebody adds one. `save_test` compares the table against the keys actually
+  present after a save, so a forgotten key fails a test instead of silently
+  vanishing from every player's backup -- and that check has to run against a
+  store the FIRMWARE wrote, not one a restore produced, or it validates itself
+  (it did exactly that until it was moved).
+
+  An import VALIDATES THE WHOLE BLOB before touching NVS: magic, version,
+  checksum, and every length. A half-applied restore over a good save would be
+  worse than having no backup. It also clears first, so a restore replaces a
+  save rather than merging with it. `console_test` drives the real hex out and
+  back through `handleSerial()`, including a mistyped digit, an odd-length line
+  and a bare commit.
 
 **A. Audio and the win screen -- BACKEND DONE, one UI piece left.**
 

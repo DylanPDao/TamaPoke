@@ -26,6 +26,7 @@
 #include "badges.h"
 #include <stdarg.h>
 #include "party.h"
+#include "save.h"
 #include "pet.h"
 #include "sdmon.h"
 #include "rtcbat.h"
@@ -662,6 +663,50 @@ void handleSerial() {
   } else if (line == "ABANDON") {
     pet.dbgRunawayReady();  // fuerza el estado "lista para escaparse" (test del boton)
     Serial.println("DONE");
+  } else if (line == "EXPORT") {
+    // Prints the whole save as a block of IMPORT commands. Pasting that block
+    // back is the restore -- there is no separate format to get wrong, and no
+    // single 2000-character line for a terminal to mangle.
+    static uint8_t buf[2048];
+    size_t n = saveExport(buf, sizeof(buf));
+    if (!n) { Serial.println("EXPORT FAIL"); return; }
+    Serial.printf("# TamaPoke save, %u bytes. Paste this whole block back.\n",
+                  (unsigned)n);
+    for (size_t i = 0; i < n; i += 48) {
+      Serial.print("IMPORT ");
+      for (size_t j = i; j < i + 48 && j < n; j++) Serial.printf("%02X", buf[j]);
+      Serial.println();
+    }
+    Serial.println("IMPORT");        // the empty one commits
+  } else if (line.startsWith("IMPORT")) {
+    // IMPORT <hex>   append a chunk
+    // IMPORT         commit what has been appended
+    static uint8_t in[2048];
+    static size_t inN = 0;
+    String hex = line.substring(6);
+    hex.trim();
+    if (hex.length()) {
+      if (hex.length() & 1) { Serial.println("IMPORT ODD"); inN = 0; return; }
+      for (size_t i = 0; i + 1 < (size_t)hex.length(); i += 2) {
+        if (inN >= sizeof(in)) { Serial.println("IMPORT FULL"); inN = 0; return; }
+        auto nyb = [](char c) -> int {
+          if (c >= '0' && c <= '9') return c - '0';
+          if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+          if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+          return -1;
+        };
+        const char *hs = hex.c_str();
+        int hi = nyb(hs[i]), lo = nyb(hs[i + 1]);
+        if (hi < 0 || lo < 0) { Serial.println("IMPORT BAD"); inN = 0; return; }
+        in[inN++] = (uint8_t)((hi << 4) | lo);
+      }
+      return;                        // silent while collecting
+    }
+    if (!inN) { Serial.println("IMPORT EMPTY"); return; }
+    bool ok = saveImport(in, inN);
+    Serial.println(ok ? "IMPORT OK" : "IMPORT REJECTED");
+    inN = 0;
+    if (ok) { Serial.println("DONE"); delay(100); ESP.restart(); }
   } else if (line == "WIPE") {
     pet.factoryReset();     // borra NVS y reinicia -> partida nueva (eleccion de inicial)
     Serial.println("DONE");
