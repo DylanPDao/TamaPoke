@@ -521,11 +521,18 @@ Two findings worth keeping: Johto's leaders really are Kanto-heavy (13 of 49
 creatures are Johto natives, against Hoenn's 47 of 57), and Pryce really is
 weaker than Jasmine in Gold/Silver, so the ladder dips there on purpose.
 
-Still to do: **badge ART is Kanto-only** -- `badges.h` has eight Kanto badges
-and the other two regions currently draw nothing. `gen_badges.py` already
-handles any of the five regional SVGs upstream, so it is a re-run plus the
-per-region indexing. Then phase 4 (sprites, and the web-installer size problem
-below).
+**Badge art is done for all three.** `gen_badges.py` now fetches Kanto, Johto
+and Hoenn from upstream itself and emits `BADGES_ART[BADGE_REGIONS][8]`; the
+player card gained a badge page per region (`PLAYER_PAGES` is `GYM_REGIONS + 1`,
+so the page you are on IS the region and no extra control was needed). Sinnoh
+and Unova are one line away in `REGIONS` there.
+
+One fix was needed to isolate them: the column finder assumed Kanto's cleanly
+separated layout, and Johto's and Hoenn's sheets have neighbours that touch into
+a single wide span. It now splits anything much wider than the median column
+rather than demanding a layout only Kanto has.
+
+Still to do: phase 4 (sprites, and the web-installer size problem below).
 
 What changed for 386 species:
 

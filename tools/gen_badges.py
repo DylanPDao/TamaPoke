@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Kanto gym badges: SteGriff/pokemon-badges Kanto.svg -> badges.h
+"""Gym badges: SteGriff/pokemon-badges regional SVGs -> badges.h
 
     brew install librsvg
-    python3 tools/gen_badges.py path/to/Kanto.svg
+    python3 tools/gen_badges.py            # fetches all three regions
+    python3 tools/gen_badges.py Kanto.svg  # or renders one local file
 
 Renders the sheet with rsvg-convert, isolates the eight badges from its lower
 (larger) row, downscales each to 32x32 with alpha and packs them 8bpp with a
@@ -24,6 +25,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, '..', 'badges.h')
 SIZE = 32          # emitted size
 RENDER_W = 2400    # render wide so the downscale has detail to average
+
+# One row per gym region, in the same order as TRAINER_SETS in trainers.h.
+# Upstream also ships Sinnoh and Unova, so a fourth region is one line here.
+SVG_BASE = 'https://raw.githubusercontent.com/SteGriff/pokemon-badges/master/svg/%s.svg'
+REGIONS = ['Kanto', 'Johto', 'Hoenn']
 
 NAMES = ['BOULDER', 'CASCADE', 'THUNDER', 'RAINBOW',
          'SOUL', 'MARSH', 'VOLCANO', 'EARTH']
@@ -82,6 +88,24 @@ def find_badges(w, h, ch, rows):
                 spans.append((x0, x))
         else:
             x += 1
+    # Kanto's eight columns are cleanly separated; Johto's and Hoenn's are not,
+    # and two neighbours can touch into one wide span. Split anything much wider
+    # than the typical column rather than demanding a layout only Kanto has.
+    if len(spans) > 8:
+        spans.sort(key=lambda sp: sp[1] - sp[0], reverse=True)
+        spans = sorted(spans[:8])
+    guard = 0
+    while len(spans) < 8 and guard < 16:
+        guard += 1
+        widths = sorted(b - a for a, b in spans)
+        med = widths[len(widths) // 2]
+        wi = max(range(len(spans)), key=lambda i: spans[i][1] - spans[i][0])
+        a, b = spans[wi]
+        parts = max(2, int(round((b - a) / float(med))))
+        parts = min(parts, 8 - len(spans) + 1)
+        step = (b - a) // parts
+        spans[wi:wi + 1] = [(a + k * step, a + (k + 1) * step if k < parts - 1 else b)
+                            for k in range(parts)]
     if len(spans) != 8:
         raise SystemExit('expected 8 badge columns, found %d' % len(spans))
 
@@ -184,41 +208,72 @@ def quantise(px, maxc=15):
     return keep, idx
 
 
-def main():
-    svg = sys.argv[1] if len(sys.argv) > 1 else 'Kanto.svg'
-    png = os.path.join(HERE, '_kanto_render.png')
-    subprocess.run(['rsvg-convert', '-w', str(RENDER_W), svg, '-o', png], check=True)
+def render(svg_path, png):
+    subprocess.run(['rsvg-convert', '-w', str(RENDER_W), svg_path, '-o', png],
+                   check=True)
     w, h, ch, rows = decode_png(png)
     boxes = find_badges(w, h, ch, rows)
-    print('sheet %dx%d, %d badges found' % (w, h, len(boxes)))
+    return w, h, ch, rows, boxes
+
+
+def source_for(region):
+    """A local SVG if one was given, else the upstream one."""
+    local = os.path.join(HERE, '%s.svg' % region)
+    if os.path.exists(local):
+        return local
+    dst = os.path.join(HERE, '_%s.svg' % region.lower())
+    r = subprocess.run(['curl', '-fsSL', SVG_BASE % region], capture_output=True)
+    if r.returncode != 0:
+        raise SystemExit('cannot fetch %s' % (SVG_BASE % region))
+    open(dst, 'wb').write(r.stdout)
+    return dst
+
+
+def main():
+    only = sys.argv[1] if len(sys.argv) > 1 else None
+    regions = REGIONS if not only else [os.path.basename(only).split('.')[0]]
 
     out = ['// GENERADO por tools/gen_badges.py - no editar',
            '//',
-           '// Kanto gym badges. Source art: SteGriff/pokemon-badges, Stephen',
-           '// Griffiths 2011, CC BY 3.0, traced from Bulbapedia. See CREDITS.md --',
-           '// the attribution has to ship with anything built from this.',
+           '// Gym badges for every region. Source art: SteGriff/pokemon-badges,',
+           '// Stephen Griffiths 2011, CC BY 3.0, traced from Bulbapedia. See',
+           '// CREDITS.md -- the attribution has to ship with anything built',
+           '// from this.',
            '#pragma once', '#include <stdint.h>', '',
-           '#define BADGE_PX %d' % SIZE, '']
-    for i, (x0, x1, y0, y1) in enumerate(boxes):
-        px = downscale(rows, ch, x0, x1, y0, y1, SIZE)
-        pal, idx = quantise(px)
-        out.append('// %s' % NAMES[i])
-        out.append('static const uint16_t BADGE_%d_PAL[%d] = { %s };'
-                   % (i, len(pal), ', '.join('0x%04X' % c for c in pal)))
-        out.append('static const uint8_t BADGE_%d_IDX[%d] = {' % (i, len(idx)))
-        for r in range(0, len(idx), 32):
-            out.append('  ' + ','.join(str(v) for v in idx[r:r + 32]) + ',')
-        out.append('};')
-        print('  %-8s %3d colours -> %d' % (NAMES[i], len(set(idx)) - 1, len(pal)))
+           '#define BADGE_PX %d' % SIZE,
+           '#define BADGE_REGIONS %d' % len(regions), '']
+    tmp = []
+    for ri, region in enumerate(regions):
+        svg = only if only else source_for(region)
+        png = os.path.join(HERE, '_badge_render.png')
+        w, h, ch, rows, boxes = render(svg, png)
+        print('%s: sheet %dx%d, %d badges found' % (region, w, h, len(boxes)))
+        if len(boxes) < 8:
+            raise SystemExit('%s: only %d badges isolated, expected 8' % (region, len(boxes)))
+        for i, (x0, x1, y0, y1) in enumerate(boxes[:8]):
+            px = downscale(rows, ch, x0, x1, y0, y1, SIZE)
+            pal, idx = quantise(px)
+            sym = '%s_%d' % (region.upper(), i)
+            out.append('// %s %s' % (region, NAMES[i] if ri == 0 else i + 1))
+            out.append('static const uint16_t BADGE_%s_PAL[%d] = { %s };'
+                       % (sym, len(pal), ', '.join('0x%04X' % c for c in pal)))
+            out.append('static const uint8_t BADGE_%s_IDX[%d] = {' % (sym, len(idx)))
+            for r in range(0, len(idx), 32):
+                out.append('  ' + ','.join(str(v) for v in idx[r:r + 32]) + ',')
+            out.append('};')
+        tmp.append(region)
+        os.remove(png)
     out.append('')
     out.append('struct BadgeArt { const uint16_t *pal; const uint8_t *idx; };')
-    out.append('static const BadgeArt BADGES_ART[8] = {')
-    for i in range(8):
-        out.append('  { BADGE_%d_PAL, BADGE_%d_IDX },' % (i, i))
+    out.append('static const BadgeArt BADGES_ART[BADGE_REGIONS][8] = {')
+    for region in tmp:
+        out.append('  { ' + ' '.join('{ BADGE_%s_%d_PAL, BADGE_%s_%d_IDX },'
+                                     % (region.upper(), i, region.upper(), i)
+                                     for i in range(8)) + ' },')
     out.append('};')
     open(OUT, 'w').write('\n'.join(out) + '\n')
-    os.remove(png)
-    print('wrote %s (%d badges at %dx%d)' % (os.path.normpath(OUT), len(boxes), SIZE, SIZE))
+    print('wrote %s (%d regions x 8 at %dx%d)'
+          % (os.path.normpath(OUT), len(tmp), SIZE, SIZE))
 
 
 if __name__ == '__main__':

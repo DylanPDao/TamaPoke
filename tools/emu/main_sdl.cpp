@@ -285,6 +285,11 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     gShowAllAvatars = true;
   }
   else if (!strcmp(screen, "player")) { pet.renameTrainer("DYLAN"); pet.badges = 0xBF; pet.badgesHard = 0x0A; pet.streak = 5; playerOpen = true; }
+  else if (!strcmp(screen, "player2")) {
+    pet.renameTrainer("DYLAN");
+    pet.badgesX[0] = 0x3F; pet.badgesHardX[0] = 0x05;   // Johto
+    playerOpen = true; playerPage = 1;
+  }
   else if (!strcmp(screen, "medals2")) { pet.medals = 0x5B; pet.totalMedals = 12; playerOpen = true; playerPage = 1; }
   else if (!strcmp(screen, "gymfight")) { startTrainerBattle(0, false); }
   else if (!strcmp(screen, "learn")) {

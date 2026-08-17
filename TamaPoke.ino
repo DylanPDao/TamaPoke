@@ -260,8 +260,12 @@ uint8_t pickPage = 0;
 #define PICK_Y(i) (86 + ((i) / 2) * (PICK_CELL_H + 6))
 #define PICK_GO_Y 350
 bool playerOpen = false;
-uint8_t playerPage = 0;   // 0 badges, 1 medals
-#define PLAYER_PAGES 2
+// One badge page per gym region, then the medals. Three ladders will not fit on
+// one page, and the page you are on IS the region -- no extra control needed,
+// and horizontal paging already works everywhere else.
+uint8_t playerPage = 0;
+#define PLAYER_PAGES (GYM_REGIONS + 1)
+#define playerBadgeRegion (playerPage % GYM_REGIONS)
 uint8_t gymPage = 0;
 #define GYM_ROWS 5
 #define GYM_ROW_Y(i) (110 + (i) * 50)
@@ -3101,7 +3105,7 @@ void renderWin() {
     if (btlHard) {
       for (int r = 62; r >= 56; r--) gfx->drawCircle(CX, by, r, r % 2 ? 0xFEA0 : 0xFF60);
     }
-    const BadgeArt &a = BADGES_ART[btlTrainer];
+    const BadgeArt &a = BADGES_ART[btlRegion % BADGE_REGIONS][btlTrainer];
     for (int r = 0; r < BADGE_PX; r++)
       for (int c = 0; c < BADGE_PX; c++) {
         uint8_t v = a.idx[r * BADGE_PX + c];
@@ -3391,27 +3395,36 @@ static void renderPlayerBadges() {
   gfx->setCursor(CX - (int)strlen(tn) * 9, 40);
   gfx->print(tn);
 
-  if (gShowAllAvatars) {          // emulator only: every avatar at once
+  // Pages 1 and 2 are the other regions' ladders: name them, and drop the
+  // avatar so the badges have the room. Only page 0 is "you".
+  if (playerBadgeRegion != 0) {
+    const char *rn = TRAINER_SETS[playerBadgeRegion].region;
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - (int)strlen(rn) * 6, 120);
+    gfx->print(rn);
+  } else if (gShowAllAvatars) {          // emulator only: every avatar at once
     for (uint8_t i = 0; i < AVATAR_COUNT; i++)
       drawAvatar(i, 60 + (i % 4) * 88, 60 + (i / 4) * 60, 3);
-  } else
-  drawAvatar(pet.avatar, CX - AVATAR_PX * 2, 72, 4);
-  // the sprite alone is not always obvious at 16x16, so it is named
-  const char *an = AVATARS[pet.avatar % AVATAR_COUNT].name;
-  gfx->setTextColor(UI_INK);
-  gfx->setTextSize(1);
-  gfx->setCursor(CX - (int)strlen(an) * 3, 143);
-  gfx->print(an);
-  gfx->setTextColor(UI_TRACK);
-  gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 154);
-  gfx->print(T(S_AVATAR_HINT));
+  } else {
+    drawAvatar(pet.avatar, CX - AVATAR_PX * 2, 72, 4);
+    // the sprite alone is not always obvious at 16x16, so it is named
+    const char *an = AVATARS[pet.avatar % AVATAR_COUNT].name;
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(1);
+    gfx->setCursor(CX - (int)strlen(an) * 3, 143);
+    gfx->print(an);
+    gfx->setTextColor(UI_TRACK);
+    gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 154);
+    gfx->print(T(S_AVATAR_HINT));
+  }
 
   // The real badges, 2x4. Unearned ones draw as a faint outline so the shape
   // of what is missing is still visible.
   for (int i = 0; i < TRAINER_GYMS; i++) {
     int bx = 140 + (i % 4) * 62, by = 188 + (i / 4) * 62;
-    bool got = pet.hasBadge(0, i, false);
-    bool hard = pet.hasBadge(0, i, true);
+    bool got = pet.hasBadge(playerBadgeRegion, i, false);
+    bool hard = pet.hasBadge(playerBadgeRegion, i, true);
     if (hard) {
       // Beaten on hard: a golden halo. Concentric rings, not a filled disc --
       // a disc sat behind the art and read as a gold coin rather than a glow.
@@ -3425,7 +3438,7 @@ static void renderPlayerBadges() {
       gfx->drawCircle(bx, by, 20, UI_TRACK);
       continue;
     }
-    const BadgeArt &a = BADGES_ART[i];
+    const BadgeArt &a = BADGES_ART[playerBadgeRegion % BADGE_REGIONS][i];
     for (int r = 0; r < BADGE_PX; r++)
       for (int c = 0; c < BADGE_PX; c++) {
         uint8_t v = a.idx[r * BADGE_PX + c];
@@ -3484,7 +3497,7 @@ static void renderPlayerMedals() {
 void renderPlayer() {
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
-  if (playerPage == 0) renderPlayerBadges();
+  if (playerPage < GYM_REGIONS) renderPlayerBadges();
   else renderPlayerMedals();
 
   for (uint8_t i = 0; i < PLAYER_PAGES; i++) {

@@ -12,7 +12,9 @@ This project is not affiliated with or endorsed by any of those companies.
 | Resource | Source | Use in the project |
 |---|---|---|
 | **All sprites** (idle, walk, sleep, eat, hurt, attack…) | [PMD Sprite Collaboration (PMDCollab/SpriteCollab)](https://github.com/PMDCollab/SpriteCollab) | Mystery-Dungeon-style animated sprites used everywhere: main screen, stat card, minigame, and the Pokédex grid + detail view |
-| **Gen 1 base stats** | [PokéAPI](https://pokeapi.co) | Real ATK/DEF/SPD/HP for each species |
+| **Base stats and learnsets** | [PokéAPI](https://pokeapi.co) | Real stats and level-up moves for all 386 |
+| **Gym badges** (all three regions) | [SteGriff/pokemon-badges](https://github.com/SteGriff/pokemon-badges) | `badges.h`, via `tools/gen_badges.py` — Stephen Griffiths 2011, **CC BY 3.0**, traced from Bulbapedia |
+| **Gym leader teams** (Johto, Hoenn) | [pret/pokecrystal](https://github.com/pret/pokecrystal), [pret/pokeemerald](https://github.com/pret/pokeemerald) | Verified against the games' own trainer tables by `tools/verify_rosters.py` — no art is taken, only the team data |
 
 The **SpriteCollab** sprites are the work of its community of artists under their
 own terms (Creative Commons Attribution-NonCommercial 4.0). Per-species/per-author
