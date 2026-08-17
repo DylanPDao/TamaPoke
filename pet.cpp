@@ -1,4 +1,5 @@
 #include "pet.h"
+#include "avatars.h"
 #include "dex.h"
 #include "moves.h"
 #include "audio.h"
@@ -1018,7 +1019,7 @@ void Pet::load() {
   frozen = prefs.getBool("froz", false);
   avatar = prefs.getUChar("avtr", 0);
   prefs.getString("tnam", trainerName, sizeof(trainerName));
-  if (avatar > 3) avatar = 0;
+  if (avatar >= AVATAR_COUNT) avatar = 0;   // a save from when there were four
   badges = prefs.getUShort("badg", 0);
   badgesHard = prefs.getUShort("badh", 0);
   if (!isEgg() && moveCount() == 0 && lastLearnLevel == 0) {

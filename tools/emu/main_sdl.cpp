@@ -94,6 +94,7 @@ extern bool lanOpen;
 extern uint8_t btlMyAct;
 extern uint8_t btlTrainGain, btlTrainWhich;
 extern bool lanWantHost;
+extern bool gShowAllAvatars;
 #define PICK_LAN 0xFF
 uint8_t squadCap(uint8_t, bool);
 #include "link.h"
@@ -255,6 +256,11 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   }
   else if (!strcmp(screen, "gymshard")) { gymOpen = true; gymHard = true; pet.badgesHard = 0x03; }
   else if (!strcmp(screen, "speed")) { startSpeedGame(); }
+  else if (!strcmp(screen, "avatars")) {
+    pet.renameTrainer("DYLAN");
+    playerOpen = true;
+    gShowAllAvatars = true;
+  }
   else if (!strcmp(screen, "player")) { pet.renameTrainer("DYLAN"); pet.badges = 0xBF; pet.badgesHard = 0x0A; pet.streak = 5; playerOpen = true; }
   else if (!strcmp(screen, "medals2")) { pet.medals = 0x5B; pet.totalMedals = 12; playerOpen = true; playerPage = 1; }
   else if (!strcmp(screen, "gymfight")) { startTrainerBattle(0, false); }

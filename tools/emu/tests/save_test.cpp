@@ -34,7 +34,7 @@ int main(){
   pet.relearnFromLevel();
   while (pet.hasLearnOffer()) pet.declineLearn();
   pet.rename("SCORCH");
-  pet.avatar = 2;
+  pet.avatar = 6;        // past the old four, so a stale & 3 mask would break it
   pet.badges = 0x00BF; pet.badgesHard = 0x000A;
   pet.streak = 12; pet.bestStreak = 19; pet.totalMedals = 41;
   pet.gameHi = 33; pet.strHi = 21; pet.spdHi = 9;
@@ -109,7 +109,7 @@ int main(){
   ck(p2.trAtk==64 && p2.trDef==31 && p2.trSpe==90, "and its training");
   ck(!strcmp(p2.trainerName,"DYLAN"), "the trainer name survives");
   ck(!strcmp(p2.nick,"SCORCH"), "so does the nickname");
-  ck(p2.avatar==2, "and the avatar");
+  ck(p2.avatar==6, "and the avatar, including one past the original four");
   ck(p2.badges==0x00BF && p2.badgesHard==0x000A, "both badge ladders");
   ck(p2.streak==12 && p2.bestStreak==19 && p2.totalMedals==41, "streak and medals");
   ck(p2.gameHi==33 && p2.strHi==21 && p2.spdHi==9, "every minigame record");

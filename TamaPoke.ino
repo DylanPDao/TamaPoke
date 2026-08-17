@@ -24,6 +24,7 @@
 #include "linknow.h"
 #include "backs.h"
 #include "badges.h"
+#include "avatars.h"
 #include <stdarg.h>
 #include "party.h"
 #include "save.h"
@@ -208,6 +209,7 @@ static void btlResolve(uint8_t yourMove);
 Combatant btlFoeSquad[TRAINER_TEAM_MAX];
 uint8_t btlFoeSquadN = 0;
 uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
+bool gShowAllAvatars = false;  // emulator screenshot aid, never set on hardware
 bool btlPetIn = false;       // was the live pet in the squad?
 uint8_t btlTrainGain = 0;    // what the win trained, for the win screen
 uint8_t btlTrainWhich = 0;
@@ -1130,7 +1132,7 @@ void onTap(int16_t x, int16_t y) {
     }
     // the avatar is the only other live target; everything else backs out
     if (playerPage == 0 && x > CX - 40 && x < CX + 40 && y > 70 && y < 146) {
-      pet.avatar = (pet.avatar + 1) & 3;
+      pet.avatar = (uint8_t)((pet.avatar + 1) % AVATAR_COUNT);
       pet.flushSave();
       sfxPlay(SFX_TAP);
       return;
@@ -3347,11 +3349,19 @@ static void renderPlayerBadges() {
   gfx->setCursor(CX - (int)strlen(tn) * 9, 40);
   gfx->print(tn);
 
-  static const char *const *AV[4] = { SPR_PLAYER_A, SPR_PLAYER_B, SPR_PLAYER_C, SPR_PLAYER_D };
-  drawMap(AV[pet.avatar & 3], 16, CX - 32, 72, 4, false);
-  gfx->setTextColor(UI_TRACK);
+  if (gShowAllAvatars) {          // emulator only: every avatar at once
+    for (uint8_t i = 0; i < AVATAR_COUNT; i++)
+      drawAvatar(i, 60 + (i % 4) * 88, 60 + (i / 4) * 60, 3);
+  } else
+  drawAvatar(pet.avatar, CX - AVATAR_PX * 2, 72, 4);
+  // the sprite alone is not always obvious at 16x16, so it is named
+  const char *an = AVATARS[pet.avatar % AVATAR_COUNT].name;
+  gfx->setTextColor(UI_INK);
   gfx->setTextSize(1);
-  gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 142);
+  gfx->setCursor(CX - (int)strlen(an) * 3, 143);
+  gfx->print(an);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setCursor(CX - (int)strlen(T(S_AVATAR_HINT)) * 3, 154);
   gfx->print(T(S_AVATAR_HINT));
 
   // The real badges, 2x4. Unearned ones draw as a faint outline so the shape
@@ -5108,6 +5118,17 @@ const char *statusMsg() {
 }
 
 // dibuja un mapa de n x n pixeles escalado; silhouette=true lo pinta en tinta
+// An 8bpp indexed avatar, same shape as the badge art: 0xFF is transparent.
+void drawAvatar(uint8_t which, int x, int y, int s) {
+  const AvatarArt &a = AVATARS[which % AVATAR_COUNT];
+  for (int r = 0; r < AVATAR_PX; r++)
+    for (int c = 0; c < AVATAR_PX; c++) {
+      uint8_t v = a.idx[r * AVATAR_PX + c];
+      if (v == 0xFF) continue;
+      gfx->fillRect(x + c * s, y + r * s, s, s, a.pal[v]);
+    }
+}
+
 void drawMap(const char *const *map, int n, int x, int y, int s, bool silhouette) {
   for (int r = 0; r < n; r++) {
     for (int c = 0; c < n; c++) {
