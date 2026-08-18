@@ -227,6 +227,7 @@ static void renderRegionPick(bool forGyms);   // the region chooser, defined bel
 static int regionPickTap(int16_t x, int16_t y);
 static void drawEggRegion();          // defined with the egg screen helpers
 static bool eggRegionTap(int16_t x, int16_t y);
+static void drawBtlBack();
 static void btlLinkPoll();   // defined with the battle code, called from render()
 static void btlSwitchTo(uint8_t i);
 static void btlResolve(uint8_t yourMove);
@@ -304,6 +305,12 @@ uint8_t pickPage = 0;
 #define PICK_X(i) (78 + ((i) % 2) * (PICK_CELL_W + 10))
 #define PICK_Y(i) (86 + ((i) / 2) * (PICK_CELL_H + 6))
 #define PICK_GO_Y 350
+// BACK beside FIGHT on the team-select screen. There was no way out of it but a
+// swipe, which is invisible -- the same complaint as everywhere else.
+#define PICK_BTN_W 155
+#define PICK_BTN_H UI_TAP_MIN
+#define PICK_BACK_X (233 - PICK_BTN_W - 7)
+#define PICK_GO_X (233 + 7)
 bool playerOpen = false;
 // One badge page per gym region, then the medals. Three ladders will not fit on
 // one page, and the page you are on IS the region -- no extra control needed,
@@ -351,7 +358,7 @@ uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 #define BTL_CELL_W 160
 #define BTL_CELL_H 44
 #define BTL_GRID_X 69
-#define BTL_GRID_Y 286
+#define BTL_GRID_Y 274
 #define BTL_CELL_X(i) (BTL_GRID_X + ((i) % 2) * (BTL_CELL_W + 8))
 #define BTL_CELL_Y(i) (BTL_GRID_Y + ((i) / 2) * (BTL_CELL_H + 8))
 
@@ -365,7 +372,18 @@ uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 // The gap between the two rows and the two columns is split down the middle, and
 // the bottom row additionally claims the empty space beneath it.
 #define BTL_HIT_PAD 4
-#define BTL_HIT_BOTTOM 26
+// The bottom row keeps extra room downward, but not so much that it reaches the
+// BACK bar below it -- the mistake made once already with BOX and CLOSE.
+#define BTL_HIT_BOTTOM 6
+// BACK, under the grid: the move and switch screens had no way out except
+// choosing something.
+// The gym list's EASY/HARD pill. It was 24 px tall, which is half a fingertip.
+#define GYMDIF_Y 72
+#define GYMDIF_H UI_TAP_MIN
+#define BTL_BACK_W 190
+#define BTL_BACK_H UI_TAP_MIN
+#define BTL_BACK_X (233 - BTL_BACK_W / 2)
+#define BTL_BACK_Y 384
 #define BTL_HIT_X0(i) (BTL_CELL_X(i) - BTL_HIT_PAD)
 // The far edges stop one pixel short so the four boxes TILE: the gap between
 // two cells is split down the middle with no pixel left over and none shared.
@@ -1303,7 +1321,7 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (gymOpen) {
-    if (y >= 76 && y <= 100) {          // the difficulty pill
+    if (y >= GYMDIF_Y && y <= GYMDIF_Y + GYMDIF_H) {   // the difficulty pill
       gymHard = !gymHard;
       sfxPlay(SFX_TAP);
       return;
@@ -3343,18 +3361,28 @@ void renderBattle() {
     gfx->setCursor(CX - 30, BTL_GRID_Y + 84);
     gfx->print("tap...");
   } else if (btlMenu == 0) {
-    // FIGHT or POKEMON, the mainline's own first choice
-    const char *lab[2] = { T(S_FIGHT), T(S_BTL_SWITCH) };
+    // FIGHT across the top, then POKEMON and RUN side by side. Three full-width
+    // rows do not fit: the panel is round, and at that depth the chord is only
+    // ~250 px. The lower two reuse the move grid's cells, so they inherit its
+    // padded hit areas -- which is what made POKEMON hard to press before.
+    gfx->fillRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H, 10, UI_BG_DAY);
+    gfx->drawRoundRect(BTL_GRID_X, BTL_GRID_Y, 328, BTL_CELL_H, 10, UI_INK);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - (int)strlen(T(S_FIGHT)) * 6, BTL_GRID_Y + 14);
+    gfx->print(T(S_FIGHT));
+    const char *low[2] = { T(S_BTL_SWITCH), T(S_BTL_RUN) };
     for (int i = 0; i < 2; i++) {
-      int x = BTL_GRID_X, y = BTL_GRID_Y + i * (BTL_CELL_H + 8);
-      gfx->fillRoundRect(x, y, 328, BTL_CELL_H, 10, i ? UI_TRACK : UI_BG_DAY);
-      gfx->drawRoundRect(x, y, 328, BTL_CELL_H, 10, UI_INK);
+      int x = BTL_CELL_X(i + 2), y = BTL_CELL_Y(i + 2);
+      gfx->fillRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, UI_TRACK);
+      gfx->drawRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, UI_INK);
       gfx->setTextColor(UI_INK);
       gfx->setTextSize(2);
-      gfx->setCursor(CX - (int)strlen(lab[i]) * 6, y + 14);
-      gfx->print(lab[i]);
+      gfx->setCursor(x + (BTL_CELL_W - (int)strlen(low[i]) * 12) / 2, y + 14);
+      gfx->print(low[i]);
     }
   } else if (btlMenu == 2) {
+    drawBtlBack();
     // who to bring on instead; the current one and anything fainted is inert
     for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
       int x = BTL_CELL_X(i), y = BTL_CELL_Y(i);
@@ -3372,6 +3400,7 @@ void renderBattle() {
       gfx->print(hp);
     }
   } else {
+    drawBtlBack();
     for (int i = 0; i < MOVE_SLOTS; i++) {
       int x = BTL_CELL_X(i), y = BTL_CELL_Y(i);
       uint8_t mv = btlYou.moves[i];
@@ -3454,6 +3483,37 @@ int btlCellIndexAt(int16_t x, int16_t y) {
   return -1;
 }
 
+// The way out of the move and switch screens. Without it the only exits were
+// choosing something or leaving the fight entirely.
+static void drawBtlBack() {
+  gfx->fillRoundRect(BTL_BACK_X, BTL_BACK_Y, BTL_BACK_W, BTL_BACK_H, 11, UI_TRACK);
+  gfx->drawRoundRect(BTL_BACK_X, BTL_BACK_Y, BTL_BACK_W, BTL_BACK_H, 11, UI_INK);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(CX - (int)strlen(T(S_BACK)) * 6, BTL_BACK_Y + 14);
+  gfx->print(T(S_BACK));
+}
+
+static bool btlBackTap(int16_t x, int16_t y) {
+  if (x < BTL_BACK_X || x > BTL_BACK_X + BTL_BACK_W ||
+      y < BTL_BACK_Y || y > BTL_BACK_Y + BTL_BACK_H) return false;
+  btlMenu = 0;
+  sfxPlay(SFX_TAP);
+  return true;
+}
+
+// Running. A gym leader keeps their badge and the fight simply ends; against
+// another device the peer is told, so it does not sit waiting for a move that
+// will never come.
+static void btlRun() {
+  sfxPlay(SFX_DENY);
+  btlFreeSprites();
+  audioMusic(MUS_NONE);
+  if (btlLink) { lanLeave(); btlLink = false; lanOpen = true; }
+  battleOpen = false;
+  btlMenu = 0;
+}
+
 void battleTap(int16_t x, int16_t y) {
   if (btlWinUntil) {          // dismiss the win screen and leave the fight
     btlWinUntil = 0;
@@ -3477,16 +3537,18 @@ void battleTap(int16_t x, int16_t y) {
     return;
   }
   if (btlMenu == 0) {
-    for (int i = 0; i < 2; i++) {
-      int cy = BTL_GRID_Y + i * (BTL_CELL_H + 8);
-      if (x < BTL_GRID_X || x > BTL_GRID_X + 328 || y < cy || y > cy + BTL_CELL_H) continue;
+    if (x >= BTL_GRID_X - BTL_HIT_PAD && x <= BTL_GRID_X + 328 + BTL_HIT_PAD &&
+        y >= BTL_HIT_Y0(0) && y <= BTL_HIT_Y1(0)) {
       sfxPlay(SFX_TAP);
-      btlMenu = i ? 2 : 1;
+      btlMenu = 1;                       // FIGHT
       return;
     }
+    if (btlCellHit(2, x, y)) { sfxPlay(SFX_TAP); btlMenu = 2; return; }
+    if (btlCellHit(3, x, y)) { btlRun(); return; }
     return;
   }
   if (btlMenu == 2) {
+    if (btlBackTap(x, y)) return;
     for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
       if (!btlCellHit(i, x, y)) continue;
       const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
@@ -3512,6 +3574,7 @@ void battleTap(int16_t x, int16_t y) {
     btlMenu = 0;      // anywhere else backs out
     return;
   }
+  if (btlBackTap(x, y)) return;
   for (int i = 0; i < MOVE_SLOTS; i++) {
     if (!btlYou.moves[i]) continue;
     if (!btlCellHit(i, x, y)) continue;
@@ -3908,17 +3971,35 @@ void renderPick() {
   }
 
   bool ok = pickChosen() > 0 && pickChosen() <= cap;
-  gfx->fillRoundRect(140, PICK_GO_Y, 186, 40, 12, ok ? UI_BAR_OK : UI_TRACK);
-  gfx->drawRoundRect(140, PICK_GO_Y, 186, 40, 12, UI_INK);
+  gfx->fillRoundRect(PICK_BACK_X, PICK_GO_Y, PICK_BTN_W, PICK_BTN_H, 12, UI_TRACK);
+  gfx->drawRoundRect(PICK_BACK_X, PICK_GO_Y, PICK_BTN_W, PICK_BTN_H, 12, UI_INK);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  gfx->setCursor(PICK_BACK_X + (PICK_BTN_W - (int)strlen(T(S_BACK)) * 12) / 2,
+                 PICK_GO_Y + 14);
+  gfx->print(T(S_BACK));
+  gfx->fillRoundRect(PICK_GO_X, PICK_GO_Y, PICK_BTN_W, PICK_BTN_H, 12,
+                     ok ? UI_BAR_OK : UI_TRACK);
+  gfx->drawRoundRect(PICK_GO_X, PICK_GO_Y, PICK_BTN_W, PICK_BTN_H, 12, UI_INK);
   gfx->setTextColor(ok ? UI_BG_DAY : 0x8410);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_FIGHT)) * 6, PICK_GO_Y + 12);
+  gfx->setCursor(PICK_GO_X + (PICK_BTN_W - (int)strlen(T(S_FIGHT)) * 12) / 2,
+                 PICK_GO_Y + 14);
   gfx->print(T(S_FIGHT));
   gfx->flush();
 }
 
 void pickTap(int16_t x, int16_t y) {
-  if (y >= PICK_GO_Y && y <= PICK_GO_Y + 40 && x >= 140 && x <= 326) {
+  if (y >= PICK_GO_Y && y <= PICK_GO_Y + PICK_BTN_H &&
+      x >= PICK_BACK_X && x <= PICK_BACK_X + PICK_BTN_W) {   // BACK
+    sfxPlay(SFX_TAP);
+    pickOpen = false;
+    if (pickTrainer == PICK_LAN) { lanOpen = true; }
+    else { gymOpen = true; }
+    return;
+  }
+  if (y >= PICK_GO_Y && y <= PICK_GO_Y + PICK_BTN_H &&
+      x >= PICK_GO_X && x <= PICK_GO_X + PICK_BTN_W) {
     uint8_t cap = squadCap(pickTrainer, pickHard);
     if (pickChosen() == 0 || pickChosen() > cap) return;   // GO stays inert
     sfxPlay(SFX_TAP);
@@ -4118,11 +4199,13 @@ void renderGyms() {
   // difficulty pill: hard caps YOUR team to the leader's size and level, so it
   // is a different ladder with its own badges rather than a damage multiplier
   const char *dif = T(gymHard ? S_HARD : S_EASY);
-  int dw = (int)strlen(dif) * 12 + 24;
-  gfx->fillRoundRect(CX - dw / 2, 76, dw, 24, 10, gymHard ? UI_BAR_BAD : UI_TRACK);
+  int dw = (int)strlen(dif) * 12 + 48;      // wider as well as taller
+  if (dw < 120) dw = 120;
+  gfx->fillRoundRect(CX - dw / 2, GYMDIF_Y, dw, GYMDIF_H, 12,
+                     gymHard ? UI_BAR_BAD : UI_TRACK);
   gfx->setTextColor(gymHard ? UI_BG_DAY : UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - (int)strlen(dif) * 6, 81);
+  gfx->setCursor(CX - (int)strlen(dif) * 6, GYMDIF_Y + 14);
   gfx->print(dif);
 
   for (int i = 0; i < GYM_ROWS; i++) {

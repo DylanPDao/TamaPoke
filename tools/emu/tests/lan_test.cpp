@@ -183,7 +183,7 @@ int main(){
     squadMask = (1 << 0) | (1 << 2);
     ck(pickChosen()==2, "two chosen");
     lan.begin(true,"T");
-    pickTap(200, 355);                    // FIGHT
+    pickTap(300, 366);                    // FIGHT (right of BACK now)
     ck(!pickOpen && lanOpen, "confirming the team opens the LAN screen");
     ck(lan.mineN==2, "and offers exactly what was chosen, not the whole party");
     ck(lan.mine[1].dex==35, "including the right party member");

@@ -322,7 +322,7 @@ int main(int argc, char **argv) {
   printf("PASS: battle starts with a squad of %u\n", btlSquadN);
 
   btlMenu = 0;
-  click(233, 286 + 52 + 22);            // POKEMON is the SECOND root row
+  click(150, 274 + 52 + 22);            // POKEMON: lower-LEFT cell now (RUN is right)
   if (btlMenu != 2) { printf("FAIL: POKEMON did not open the switch list\n"); return 1; }
   printf("PASS: POKEMON opens the switch list\n");
 
@@ -395,14 +395,17 @@ int main(int argc, char **argv) {
   squadMask = 0xFFFF;
   pickTrainer = 0; pickHard = true; pickOpen = true;   // BROCK: cap of 2
   uint8_t cap = squadCap(0, true);
-  click(233, 370);                                     // FIGHT with 6 chosen
+  // x=300: FIGHT sits right of centre now, with BACK to its left. Tapping 233
+  // lands in the gap between them and hits nothing, which made the next check
+  // pass for the wrong reason.
+  click(300, 366);                                     // FIGHT with 6 chosen
   if (battleOpen || !pickOpen) { printf("FAIL: FIGHT fired while over the cap\n"); return 1; }
   printf("PASS: FIGHT is inert while over the cap (%u chosen, cap %u)\n", 6, cap);
 
   // deselect down to the cap, then it should start
   for (int slot = 5; slot >= (int)cap; slot--)
     click(PICK_X(slot) + 40, PICK_Y(slot) + 30);
-  click(233, 370);
+  click(300, 366);
   if (!battleOpen) { printf("FAIL: FIGHT did not start at the cap\n"); return 1; }
   printf("PASS: trimming to the cap lets the fight start (squad %u)\n", btlSquadN);
   if (btlSquadN > cap) { printf("FAIL: squad exceeded the cap\n"); return 1; }

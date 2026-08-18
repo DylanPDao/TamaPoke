@@ -45,7 +45,7 @@ int main(){
   while (pet.hasLearnOffer()) pet.declineLearn();
 
   // Sweep the whole grid area and record which cell each pixel belongs to.
-  const int X0 = 40, X1 = 430, Y0 = 270, Y1 = 420;
+  const int X0 = 40, X1 = 430, Y0 = 258, Y1 = 410;
   int area[4] = {0,0,0,0};
   int overlap = 0;
   int gapRow = 0, gapCol = 0;
@@ -69,7 +69,7 @@ int main(){
 
   // no dead horizontal seam between the rows
   int seam = 0;
-  for (int y = 328; y <= 340; y++)
+  for (int y = 316; y <= 328; y++)
     if (btlCellIndexAt(200, y) < 0) seam++;
   ck(seam == 0, "no dead gap between the two rows");
   (void)gapRow; (void)gapCol; (void)overlap;
@@ -82,7 +82,7 @@ int main(){
 
   // a tap just below the bottom row still counts -- that is where a finger
   // reaching for the lowest button actually lands
-  ck(btlCellIndexAt(150, 392) == 2 && btlCellIndexAt(320, 392) == 3,
+  ck(btlCellIndexAt(150, 372) == 2 && btlCellIndexAt(320, 372) == 3,
      "a low tap still reaches the bottom row");
 
   // The four boxes must TILE: the seam between them is one pixel wide, owned by
@@ -90,7 +90,7 @@ int main(){
   // rectangles here -- a test that copies the geometry drifts from it.
   ck(btlCellIndexAt(232, 300) == 0 && btlCellIndexAt(233, 300) == 1,
      "the column seam belongs to exactly one side");
-  ck(btlCellIndexAt(200, 333) == 0 && btlCellIndexAt(200, 334) == 2,
+  ck(btlCellIndexAt(200, 321) == 0 && btlCellIndexAt(200, 322) == 2,
      "and so does the row seam");
 
   // finally, drive a real tap low in the bottom-left cell through battleTap
