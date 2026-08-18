@@ -128,6 +128,12 @@ int main(int argc, char **argv) {
   if (pet.isEgg()) pet.dbgHatchAs(6, false);
   pump(4);
 
+  // The learn prompt is MODAL -- it swallows every tap until answered -- so a
+  // creature with moves waiting will ignore the icons. That is correct
+  // behaviour, and it started firing here as soon as dex_moves.py gained the
+  // cheap early attacks: a level 1 creature now actually has things to learn.
+  while (pet.hasLearnOffer()) pet.declineLearn();
+  pump(2);
   click(341, 390);                       // 5th icon (dumbbell)
   if (!trainOpen) { printf("FAIL: train icon did not open the submenu\n"); return 1; }
   printf("PASS: 5th icon opens the training submenu\n");
@@ -144,12 +150,10 @@ int main(int argc, char **argv) {
   spdOpen = false;
 
   click(341, 390);
-  click(233, 306);                       // row 2 == DEFENCE: must stay put
-  if (!trainOpen || sackOpen || spdOpen) {
-    printf("FAIL: DEFENCE row is not inert (trainOpen=%d)\n", (int)trainOpen);
-    return 1;
-  }
-  printf("PASS: DEFENCE row is inert and the submenu stays open\n");
+  click(233, 306);                       // row 2 == DEFENCE -> the ball game
+  if (!gameOpen) { printf("FAIL: DEFENCE row did not start the ball game\n"); return 1; }
+  printf("PASS: DEFENCE routes to the ball game\n");
+  gameOpen = false;
   trainOpen = false;
 
   click(233, 60);                        // name/status band opens the menu

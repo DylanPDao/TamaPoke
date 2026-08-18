@@ -1381,14 +1381,15 @@ void onTap(int16_t x, int16_t y) {
     bool inPanel = (x >= TRAIN_X && x <= TRAIN_X + TRAIN_W &&
                     y >= TRAIN_Y && y <= TRAIN_Y + TRAIN_H);
     if (!inPanel) { trainOpen = false; return; }   // tap outside = back to the pet
-    for (int i = 0; i < 2; i++) {   // row 2 is DEF: passive, deliberately inert
+    for (int i = 0; i < 3; i++) {   // all three train something now
       int ry = TRAIN_ROW_Y(i);
       if (x < TRAIN_X + 18 || x > TRAIN_X + TRAIN_W - 18) continue;
       if (y < ry || y > ry + TRAIN_ROW_H) continue;
       sfxPlay(SFX_TAP);
       trainOpen = false;
       if (i == 0) startSack();
-      else startSpeedGame();
+      else if (i == 1) startSpeedGame();
+      else startGame();          // the ball game trains DEF
       return;
     }
     return;
@@ -1551,7 +1552,9 @@ void onTap(int16_t x, int16_t y) {
       if (i == 0) {
         if (!pet.sleeping) feedMenuUntil = millis() + 6000;
       } else if (i == 1) {
-        startGame();
+        // The ball used to live here. It is DEF's trainer now, so it belongs in
+        // the training menu with the other two rather than on the home row.
+        if (!pet.sleeping) trainOpen = true;
       } else if (i == 2) {
         pet.toggleLight();
       } else if (i == 3) {
@@ -4563,7 +4566,7 @@ void renderTrain() {
 
   for (int i = 0; i < 3; i++) {
     int y = TRAIN_ROW_Y(i);
-    bool passive = (i == 2);   // DEF has no minigame: drawn flat, ignores taps
+    bool passive = false;      // every row opens a game now, DEF included
     gfx->fillRoundRect(TRAIN_X + 18, y, TRAIN_W - 36, TRAIN_ROW_H, 12,
                        passive ? UI_TRACK : UI_BG_DAY);
     gfx->drawRoundRect(TRAIN_X + 18, y, TRAIN_W - 36, TRAIN_ROW_H, 12, UI_INK);

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """The move list, hand-authored. Source of truth for moves.h via gen_moves.py.
 
-76 moves, trimmed from Gen 1's 165: 63 attacking (three or four per type, a
+86 moves, trimmed from Gen 1's 165 and then topped up with the cheap early
+attacks the early game needs: 63 attacking (three or four per type, a
 cheap one and a strong one), 11 stat-stage moves and 2 heals. STRUGGLE at the
 end makes 77 -- it is a fallback, not a learnable move.
 
@@ -70,28 +71,41 @@ TG_SELF, TG_FOE = 0, 1
 # or a status move, which never rolls).
 MOVES = [
     # --- NORMAL -----------------------------------------------------------
+    # The cheap early attacks. Without these a young creature had NOTHING of its
+    # own: about 15% of species reached level 15 with no attacking move at all,
+    # because their real early moves were missing here and they were quietly
+    # leaning on TMs to fill the gap. That only became visible once TMs were
+    # gated -- a level 1 Squirtle had been opening with SURF instead.
     ("TACKLE",       "tackle",        'normal',   MC_PHYS,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
+    ("SCRATCH",      "scratch",       'normal',   MC_PHYS,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
+    ("POUND",        "pound",         'normal',   MC_PHYS,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
+    ("FURY ATTACK",  "fury-attack",   'normal',   MC_PHYS,  15,  85, EF_MULTI,     0, 0, 0, TG_FOE),
     ("QUICK ATTACK", "quick-attack",  'normal',   MC_PHYS,  40, 100, EF_PRIORITY,  1, 0, 0, TG_FOE),
     ("SWIFT",        "swift",         'normal',   MC_SPEC,  60,   0, EF_NEVER_MISS, 0, 0, 0, TG_FOE),
     ("BODY SLAM",    "body-slam",     'normal',   MC_PHYS,  85, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("DOUBLE-EDGE",  "double-edge",   'normal',   MC_PHYS, 120, 100, EF_RECOIL,    3, 0, 0, TG_FOE),
     ("HYPER BEAM",   "hyper-beam",    'normal',   MC_SPEC, 150,  90, EF_RECHARGE,  0, 0, 0, TG_FOE),
+    # --- FLYING (the early ones; WING ATTACK and up are further down) ------
+    ("PECK",         "peck",          'flying',   MC_PHYS,  35, 100, EF_NONE,      0, 0, 0, TG_FOE),
     # --- FIRE -------------------------------------------------------------
     ("EMBER",        "ember",         'fire',     MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
     ("FIRE PUNCH",   "fire-punch",    'fire',     MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
     ("FLAMETHROWER", "flamethrower",  'fire',     MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
     ("FIRE BLAST",   "fire-blast",    'fire',     MC_SPEC, 110,  85, EF_NONE,      0, 0, 0, TG_FOE, AIL_BURN, 10),
     # --- WATER ------------------------------------------------------------
+    ("BUBBLE",       "bubble",        'water',    MC_SPEC,  30, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("WATER GUN",    "water-gun",     'water',    MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("WATERFALL",    "waterfall",     'water',    MC_PHYS,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("SURF",         "surf",          'water',    MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("HYDRO PUMP",   "hydro-pump",    'water',    MC_SPEC, 110,  80, EF_NONE,      0, 0, 0, TG_FOE),
     # --- ELECTRIC ---------------------------------------------------------
+    ("SPARK",        "spark",         'electric', MC_PHYS,  35, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 20),
     ("THUNDERSHOCK", "thunder-shock", 'electric', MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 10),
     ("THUNDERPUNCH", "thunder-punch", 'electric', MC_PHYS,  75, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 10),
     ("THUNDERBOLT",  "thunderbolt",   'electric', MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 10),
     ("THUNDER",      "thunder",       'electric', MC_SPEC, 110,  70, EF_NONE,      0, 0, 0, TG_FOE, AIL_PARA, 30),
     # --- GRASS ------------------------------------------------------------
+    ("ABSORB",       "absorb",        'grass',    MC_SPEC,  20, 100, EF_DRAIN,    50, 0, 0, TG_FOE),
     ("VINE WHIP",    "vine-whip",     'grass',    MC_PHYS,  45, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("RAZOR LEAF",   "razor-leaf",    'grass',    MC_PHYS,  55,  95, EF_NONE,      0, 0, 0, TG_FOE),
     ("MEGA DRAIN",   "mega-drain",    'grass',    MC_SPEC,  40, 100, EF_DRAIN,    50, 0, 0, TG_FOE),
@@ -109,6 +123,7 @@ MOVES = [
     # 130 in the modern games; 100 here so one move can't decide a gym
     ("HI JUMP KICK", "high-jump-kick",'fighting', MC_PHYS, 100,  90, EF_NONE,      0, 0, 0, TG_FOE),
     # --- POISON -----------------------------------------------------------
+    ("POISON STING", "poison-sting",  'poison',   MC_PHYS,  15, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 30),
     ("ACID",         "acid",          'poison',   MC_SPEC,  40, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 10),
     ("SLUDGE",       "sludge",        'poison',   MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 30),
     ("SLUDGE BOMB",  "sludge-bomb",   'poison',   MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_POISON, 30),  # LATER (Gen 2)
@@ -121,10 +136,12 @@ MOVES = [
     ("DRILL PECK",   "drill-peck",    'flying',   MC_PHYS,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("FLY",          "fly",           'flying',   MC_PHYS,  90,  95, EF_CHARGE,    1, 0, 0, TG_FOE),
     # --- PSYCHIC ----------------------------------------------------------
+    ("PSYWAVE",      "psywave",       'psychic',  MC_SPEC,  30, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("CONFUSION",    "confusion",     'psychic',  MC_SPEC,  50, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_CONFUSE, 10),
     ("PSYBEAM",      "psybeam",       'psychic',  MC_SPEC,  65, 100, EF_NONE,      0, 0, 0, TG_FOE, AIL_CONFUSE, 10),
     ("PSYCHIC",      "psychic",       'psychic',  MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),
     # --- BUG --------------------------------------------------------------
+    ("BUG BITE",     "bug-bite",      'bug',      MC_PHYS,  30, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("PIN MISSILE",  "pin-missile",   'bug',      MC_PHYS,  25,  95, EF_MULTI,     0, 0, 0, TG_FOE),
     # 20 power in Gen 1, 80 since Gen 7 -- the modern value, like the stats
     ("LEECH LIFE",   "leech-life",    'bug',      MC_PHYS,  80, 100, EF_DRAIN,    50, 0, 0, TG_FOE),
@@ -135,6 +152,7 @@ MOVES = [
     ("BUG BUZZ",     "bug-buzz",      'bug',      MC_SPEC,  90, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 4)
     ("X-SCISSOR",    "x-scissor",     'bug',      MC_PHYS,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 4)
     # --- ROCK -------------------------------------------------------------
+    ("ROCK SMASH",   "rock-smash",    'fighting', MC_PHYS,  40, 100, EF_NONE,      0, 0, 0, TG_FOE),
     ("ROCK THROW",   "rock-throw",    'rock',     MC_PHYS,  50,  90, EF_NONE,      0, 0, 0, TG_FOE),
     ("ROCK SLIDE",   "rock-slide",    'rock',     MC_PHYS,  75,  90, EF_NONE,      0, 0, 0, TG_FOE),
     ("ANCIENTPOWER", "ancient-power", 'rock',     MC_SPEC,  60, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 2)

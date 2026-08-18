@@ -220,18 +220,24 @@ the games: **they cap training.**
   pattern and a shiny was never mediocre.
 - IVs are shown on the Battle page of the stat card; a perfect 31 is highlighted.
 
-Training: **STRENGTH** ← the bag, **SPEED** ← the reaction test, **DEFENSE** ← 1 h of
-wellbeing (resting, or awake with every need ≥ 40). **VIT** can't be trained.
+Training: **STRENGTH** ← the bag, **SPEED** ← the reaction test, **DEFENSE** ← the
+ball game (and still 1 h of wellbeing passively). **VIT** can't be trained. All three
+live in the training menu now; the ball moved off the home row when it became
+defence's trainer.
 
-**TMs are gated by power.** A TM carries no level requirement in the data — true of
-the games, wrong here, because a young creature has few level-up moves and the spare
-slots were filled with the strongest TMs in the table. A **level 1 Squirtle opened
-with SURF and BLIZZARD and could beat Brock.** A TM may now only fill a slot from
-roughly **power ÷ 2**: the 40s around level 20, the 110s past 50. Level-up moves are
-untouched — they already have real gates.
+**TMs unlock at level 40**, all of them, and nothing before. A TM carries no level
+requirement in the data — true of the games, wrong here, because a young creature
+has few level-up moves and the spare slots were filled with the strongest TMs in the
+table. A **level 1 Squirtle opened with SURF and BLIZZARD and could beat Brock.**
 
-The effect is that the level-up that matters actually matters. A Squirtle learns
-WATER GUN at 13, and against Brock that reads: **L12 = 0 %, L13 = 65 %, L15 = 81 %**.
+One number rather than a curve: the first five leaders sit at **14–43**, so you
+fight the early ladder on what your species actually learns, and TMs arrive as you
+enter the back half. A creature retires at 73 and caps at 100.
+
+That only works because the move table now carries the **cheap early attacks** —
+SCRATCH, PECK, POISON STING, BUBBLE, ABSORB, SPARK, FURY ATTACK and the rest. Before
+them, ~15 % of species reached level 15 with no attacking move at all and were
+quietly leaning on TMs to fill the gap.
 
 **Gym wins train too**, which is what makes the ladder worth replaying rather than
 a checklist you tick once:

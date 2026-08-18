@@ -515,12 +515,24 @@ bool Pet::knowsMove(uint8_t mv) const {
 // GROWL and LEER. So score instead: attacks over status, stronger over weaker,
 // STAB ahead of equal power, and a bonus for the handful of moves that really
 // are gated behind a level, since those are meant to be upgrades.
-// What level a TM-only move is allowed to auto-fill a slot at. Status moves are
-// cheap and land early; damage scales with power.
+// TMs unlock at one level, for everything.
+//
+// This replaced a power/2 curve, which was impossible for a player to predict
+// (SURF at 45, ROCK SLIDE at 37) and dribbled unlocks out one at a time so none
+// of them felt like anything. A single number is explainable in one sentence and
+// lands on a seam the game already has: the first five leaders sit at 14-43, so
+// you fight the early ladder on what your species actually learns, and TMs
+// arrive as you enter the back half. A creature retires at 73 and caps at 100.
+//
+// It only works because dex_moves.py now carries the cheap early attacks --
+// SCRATCH, PECK, POISON STING, BUBBLE and the rest. Without those, gating TMs
+// this hard would leave young creatures with nothing at all, which is exactly
+// what the power/2 version was papering over.
+#define TM_LEVEL 40
+
 static uint8_t tmLevelFor(const MoveEntry &m) {
-  if (m.cat == MC_STATUS) return 8;
-  uint16_t need = m.power / 2;
-  return need < 5 ? 5 : (need > MAX_LEVEL ? MAX_LEVEL : (uint8_t)need);
+  (void)m;
+  return TM_LEVEL;
 }
 
 void Pet::relearnFromLevel() {
@@ -850,11 +862,19 @@ void Pet::feedCandy() {
   save();
 }
 
-void Pet::playResult(uint8_t score) {
-  if (ceremony != CER_NONE || isEgg()) return;
-  // No stat training here any more. Playing is for happiness; SPEED has its own
-  // reaction test (trainSpeed). Doing both made the ball game a stat grind and
-  // forced speed's rate to be tuned against joy's pacing instead of the bag's.
+uint8_t Pet::playResult(uint8_t score) {
+  if (ceremony != CER_NONE || isEgg()) return 0;
+  // The ball game is DEFENCE's trainer now. It used to train SPEED, which was
+  // moved to its own reaction test to stop playing being a stat grind -- and
+  // that left DEF with no active trainer at all, only the slow passive tick.
+  // Keeping the ball on the defensive stat fits it: you are stopping something
+  // from getting past you.
+  uint8_t before = trDef;
+  uint8_t gain = score / 2;
+  if (gain > 18) gain = 18;          // the same per-session ceiling as the bag
+  uint16_t v = (uint16_t)trDef + gain;
+  trDef = v > trMaxDef() ? trMaxDef() : (uint8_t)v;
+  gain = trDef - before;
   joy = clamp100(joy + 5 + (score > 15 ? 30 : score * 2));
   energy = dropTo(energy, 10 + score / 2, 5);
   fullness = dropTo(fullness, 5, 5);
@@ -865,6 +885,7 @@ void Pet::playResult(uint8_t score) {
   addBond(2);
   registerCare();
   save();
+  return gain;
 }
 
 // saco de entrenamiento: los golpes entrenan la fuerza. Devuelve la subida.
