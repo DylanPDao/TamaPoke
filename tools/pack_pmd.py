@@ -25,7 +25,7 @@ Necesita Pillow: pip3 install Pillow
 import os
 import struct
 import sys
-import urllib.request
+import subprocess
 import xml.etree.ElementTree as ET
 from PIL import Image
 
@@ -60,16 +60,20 @@ ACTIONS = [
 
 
 def fetch(url, dest):
+    """curl, not urllib. The python.org macOS build ships without a usable CA
+    bundle, so urlopen dies with CERTIFICATE_VERIFY_FAILED on every request --
+    which this reported as 'sin AnimData.xml', i.e. as if the sprite did not
+    exist. gen_avatars.py and gen_dex_data.py hit the same wall."""
     if os.path.exists(dest):
         return True
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        data = urllib.request.urlopen(req, timeout=30).read()
-        open(dest, 'wb').write(data)
-        return True
-    except Exception:
+    r = subprocess.run(['curl', '-fsSL', '--retry', '2', '-A', 'Mozilla/5.0',
+                        '-o', dest, url], capture_output=True)
+    if r.returncode != 0:
+        if os.path.exists(dest):
+            os.remove(dest)
         return False
+    return True
 
 
 def rgb565(r, g, b):
