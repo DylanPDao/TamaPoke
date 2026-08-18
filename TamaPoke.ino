@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.4"
+#define FW_VERSION "2.5"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -233,6 +233,17 @@ uint8_t btlFoeSquadN = 0;
 uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
 // Which ladder the gym screen and the current fight belong to. The battle keeps
 // its own copy so that leaving the gym list mid-fight cannot retarget the badge.
+// The BOX button on the party screen. It was 150x32 with a pixel-exact hit
+// test, which is a small target on a round panel -- reported as hard to press,
+// same complaint as the battle grid. Now bigger AND padded: the drawn size grew
+// too, so the button looks like the size it actually is rather than hiding a
+// generous hit area behind a small graphic.
+#define BOXBTN_X 146
+#define BOXBTN_Y 332
+#define BOXBTN_W 174
+#define BOXBTN_H 40
+#define BOXBTN_PAD 8
+
 uint8_t gymRegion = 0;
 uint8_t btlRegion = 0;
 #define TRAINERS (TRAINER_SETS[gymRegion % GYM_REGIONS].list)
@@ -317,6 +328,37 @@ uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 #define BTL_GRID_Y 286
 #define BTL_CELL_X(i) (BTL_GRID_X + ((i) % 2) * (BTL_CELL_W + 8))
 #define BTL_CELL_Y(i) (BTL_GRID_Y + ((i) / 2) * (BTL_CELL_H + 8))
+
+// A cell's HIT area is bigger than the cell that is drawn. On the board the two
+// bottom buttons were much harder to hit than the top two: the drawn cells are
+// only 44 px tall, there was an 8 px dead gap between the rows, and everything
+// below the bottom row was dead too -- so a finger landing low, or a touch panel
+// reading a few pixels high, missed entirely. Nothing else is tappable in this
+// area while the grid is open, so the slop costs nothing.
+//
+// The gap between the two rows and the two columns is split down the middle, and
+// the bottom row additionally claims the empty space beneath it.
+#define BTL_HIT_PAD 4
+#define BTL_HIT_BOTTOM 26
+#define BTL_HIT_X0(i) (BTL_CELL_X(i) - BTL_HIT_PAD)
+// The far edges stop one pixel short so the four boxes TILE: the gap between
+// two cells is split down the middle with no pixel left over and none shared.
+#define BTL_HIT_X1(i) (BTL_CELL_X(i) + BTL_CELL_W + BTL_HIT_PAD - 1)
+#define BTL_HIT_Y0(i) (BTL_CELL_Y(i) - BTL_HIT_PAD)
+#define BTL_HIT_Y1(i) (BTL_CELL_Y(i) + BTL_CELL_H - 1 + \
+                       ((i) / 2 ? BTL_HIT_BOTTOM : BTL_HIT_PAD))
+
+// Which cell a point falls in, or -1. Exposed (not static) so a test can sweep
+// the panel and prove there are no dead pixels between the cells -- the bug that
+// made the bottom row hard to press was a gap, not a wrong rectangle.
+int btlCellIndexAt(int16_t x, int16_t y);
+
+// Used by BOTH the move grid and the switch grid. They had a copy each of the
+// same rectangle test, which is exactly how two halves of one control drift.
+static inline bool btlCellHit(int i, int16_t x, int16_t y) {
+  return x >= BTL_HIT_X0(i) && x <= BTL_HIT_X1(i) &&
+         y >= BTL_HIT_Y0(i) && y <= BTL_HIT_Y1(i);
+}
 #define TRAIN_X 73
 #define TRAIN_Y 96
 #define TRAIN_W 320
@@ -991,7 +1033,8 @@ void renderPartyDetail() {
 
 void partyTap(int16_t x, int16_t y) {
   if (boxOpen) { boxTap(x, y); return; }
-  if (!partyPick && y >= 336 && y <= 368 && x >= 158 && x <= 308) {
+  if (!partyPick && y >= BOXBTN_Y - BOXBTN_PAD && y <= BOXBTN_Y + BOXBTN_H + BOXBTN_PAD &&
+      x >= BOXBTN_X - BOXBTN_PAD && x <= BOXBTN_X + BOXBTN_W + BOXBTN_PAD) {
     boxOpen = true;                  // open the box, nothing picked yet
     boxPage = 0;
     boxSwapFrom = 0;
@@ -3339,6 +3382,12 @@ static void btlSwitchTo(uint8_t i) {
   btlResolve(0);          // move 0 = no attack, so only the foe acts
 }
 
+int btlCellIndexAt(int16_t x, int16_t y) {
+  for (int i = 0; i < 4; i++)
+    if (btlCellHit(i, x, y)) return i;
+  return -1;
+}
+
 void battleTap(int16_t x, int16_t y) {
   if (btlWinUntil) {          // dismiss the win screen and leave the fight
     btlWinUntil = 0;
@@ -3373,8 +3422,7 @@ void battleTap(int16_t x, int16_t y) {
   }
   if (btlMenu == 2) {
     for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
-      int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
-      if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
+      if (!btlCellHit(i, x, y)) continue;
       const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
       if (i == btlSquadAt || m.fainted()) { sfxPlay(SFX_DENY); return; }
       sfxPlay(SFX_TAP);
@@ -3400,8 +3448,7 @@ void battleTap(int16_t x, int16_t y) {
   }
   for (int i = 0; i < MOVE_SLOTS; i++) {
     if (!btlYou.moves[i]) continue;
-    int cx = BTL_CELL_X(i), cy = BTL_CELL_Y(i);
-    if (x < cx || x > cx + BTL_CELL_W || y < cy || y > cy + BTL_CELL_H) continue;
+    if (!btlCellHit(i, x, y)) continue;
     sfxPlay(SFX_TAP);
     btlMenu = 0;
     if (btlLink && !btlLinkHost) {
@@ -4534,8 +4581,9 @@ void renderParty() {
     char bl[24];
     snprintf(bl, sizeof(bl), T(S_BOX_FMT), party.boxCount(), BOX_SLOTS);
     bool armed = boxSwapFrom != 0;
-    gfx->fillRoundRect(158, 336, 150, 32, 9, armed ? UI_BAR_WARN : UI_BG_DAY);
-    gfx->drawRoundRect(158, 336, 150, 32, 9, UI_INK);
+    gfx->fillRoundRect(BOXBTN_X, BOXBTN_Y, BOXBTN_W, BOXBTN_H, 10,
+                       armed ? UI_BAR_WARN : UI_BG_DAY);
+    gfx->drawRoundRect(BOXBTN_X, BOXBTN_Y, BOXBTN_W, BOXBTN_H, 10, UI_INK);
     gfx->setTextColor(UI_INK);
     gfx->setTextSize(2);
     gfx->setCursor(233 - (int)strlen(bl) * 6, 344);

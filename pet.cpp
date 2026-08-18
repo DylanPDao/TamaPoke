@@ -515,6 +515,14 @@ bool Pet::knowsMove(uint8_t mv) const {
 // GROWL and LEER. So score instead: attacks over status, stronger over weaker,
 // STAB ahead of equal power, and a bonus for the handful of moves that really
 // are gated behind a level, since those are meant to be upgrades.
+// What level a TM-only move is allowed to auto-fill a slot at. Status moves are
+// cheap and land early; damage scales with power.
+static uint8_t tmLevelFor(const MoveEntry &m) {
+  if (m.cat == MC_STATUS) return 8;
+  uint16_t need = m.power / 2;
+  return need < 5 ? 5 : (need > MAX_LEVEL ? MAX_LEVEL : (uint8_t)need);
+}
+
 void Pet::relearnFromLevel() {
   for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = 0;
   if (isEgg()) return;
@@ -534,6 +542,16 @@ void Pet::relearnFromLevel() {
     uint8_t mv = learnMove(speciesId, i);
     if (!mv || mv >= MOVE_COUNT || knowsMove(mv)) continue;
     const MoveEntry &m = MOVE_TBL[mv];
+    // A TM carries no level requirement in the data, which is true of the games
+    // but wrong here: with only one or two level-up moves early on, the spare
+    // slots were filled with the strongest TMs in the table and a NEWBORN opened
+    // with SURF, BLIZZARD and OUTRAGE. That, not the damage formula, is why a
+    // level 1 Squirtle could beat Brock.
+    //
+    // So a TM is gated by its own power: roughly power/2, which puts the 40s
+    // around level 20 and the 110s out past 50 where a creature is genuinely
+    // built. Level-up moves are untouched -- they already have real gates.
+    if (tmPass && lvl < tmLevelFor(m)) continue;
     int16_t sc = (m.cat == MC_STATUS) ? 10 : (int16_t)m.power + 20;
     // STAB outweighs raw power, or every species defaults to the same two
     // generic sledgehammers and the roster loses its identity.
@@ -567,11 +585,17 @@ void Pet::relearnFromLevel() {
   uint8_t best = 0;
   int16_t bestSc = 0;
   for (uint8_t i = 0; i < n; i++) {
-    if (learnLevel(speciesId, i) > lvl) continue;
+    uint8_t at = learnLevel(speciesId, i);
+    if (at > lvl) continue;
     uint8_t mv = learnMove(speciesId, i);
     if (!mv || mv >= MOVE_COUNT) continue;
     const MoveEntry &m = MOVE_TBL[mv];
     if (m.cat == MC_STATUS || (m.type != d.type1 && m.type != d.type2)) continue;
+    // The same TM gate as above. This fallback used to ignore it, which is how
+    // a level 1 Squirtle ended up holding SURF: it had no Water move, so the
+    // guarantee reached past every check and handed it the best one in the
+    // table. A creature with no STAB it can legally use simply has none yet.
+    if (at == 0 && lvl < tmLevelFor(m)) continue;
     int16_t sc = (int16_t)m.power;
     if (m.effect == EF_RECHARGE) sc -= 35;
     if (m.effect == EF_RECOIL) sc -= 20;

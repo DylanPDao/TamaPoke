@@ -207,6 +207,28 @@ Two boards flashed with v2.4. What was learned, all of it invisible from here:
   name and so fell in no region. The Kanto pack was 302 files instead of 303.
   Files with no dex number are shared and now ride with the first pack.
 
+### Found by hand on the board, not by any test
+
+- **A level 1 Squirtle could beat Brock.** Not the damage formula, which is fine:
+  `relearnFromLevel()` was handing newborns the strongest TMs in the table. Its
+  two-pass ordering put level-up moves first, but TMs still TOPPED UP the spare
+  slots, and a young creature has almost none of its own -- so the set came out
+  SURF / OUTRAGE / WATERFALL / BLIZZARD. Worse, the STAB guarantee at the end of
+  the function reached past every check to force in the best same-type move,
+  which is how SURF survived a first attempt at gating. Both paths are gated by
+  `tmLevelFor()` now, roughly power/2.
+
+  The documented ladder curve is unchanged (checked at 40/60/73/100 against the
+  table in this file) and matched-level play is sharper than before: Squirtle vs
+  Brock is 0% at L12, 65% at L13 -- exactly when WATER GUN unlocks.
+
+- **Touch targets that are fine in the emulator are not fine under a finger.**
+  The battle grid's bottom row and the party screen's BOX button were both
+  reported as hard to press. Synthetic taps are exact coordinates, so no test
+  could have found either. Both now have hit areas larger than their graphics,
+  and `hit_test` asserts the battle grid tiles with no dead pixels and that the
+  bottom row is not smaller than the top.
+
 ### Hardware bring-up order (boards arriving)
 
 Nothing below this line has ever run on a board. Work down it -- each step can

@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://socquique.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.4-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.5-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/socquique/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
@@ -167,6 +167,16 @@ the games: **they cap training.**
 
 Training: **STRENGTH** ← the bag, **SPEED** ← the reaction test, **DEFENSE** ← 1 h of
 wellbeing (resting, or awake with every need ≥ 40). **VIT** can't be trained.
+
+**TMs are gated by power.** A TM carries no level requirement in the data — true of
+the games, wrong here, because a young creature has few level-up moves and the spare
+slots were filled with the strongest TMs in the table. A **level 1 Squirtle opened
+with SURF and BLIZZARD and could beat Brock.** A TM may now only fill a slot from
+roughly **power ÷ 2**: the 40s around level 20, the 110s past 50. Level-up moves are
+untouched — they already have real gates.
+
+The effect is that the level-up that matters actually matters. A Squirtle learns
+WATER GUN at 13, and against Brock that reads: **L12 = 0 %, L13 = 65 %, L15 = 81 %**.
 
 **Gym wins train too**, which is what makes the ladder worth replaying rather than
 a checklist you tick once:
