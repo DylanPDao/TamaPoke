@@ -15,4 +15,8 @@ tools/demo_compare.js
 tools/pmd_cache/
 tools/pokeapi_cache/
 
-web/sprites-*.pak
+# The sprite bundles ARE committed, and that is deliberate. They have to be
+# served same-origin from GitHub Pages: release assets send no CORS headers at
+# all, so a browser can never fetch() one, however convenient it would be to
+# keep them out of the repo. Tested with an Origin header; there is no header
+# to be had. Pages sends access-control-allow-origin: *.
