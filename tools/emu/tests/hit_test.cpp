@@ -30,6 +30,7 @@ extern Combatant btlYou;
 void startBattle(int16_t dex, uint8_t lvl);
 int btlCellIndexAt(int16_t x, int16_t y);
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot);
+void uiButtonHeights(int *out, int max, int *n);
 
 static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
@@ -111,6 +112,20 @@ int main(){
     ck(clBot < 466 && boxTop > 0, "both stay on the panel");
     printf("      BOX %d..%d, CLOSE %d..%d, gap %d px\n",
            boxTop, boxBot, clTop, clBot, clTop - boxBot);
+  }
+
+  // Three separate "hard to hit" reports came in from the board, all the same
+  // mistake: a button sized to fit its label rather than a finger. This holds
+  // every primary control to one minimum so the fourth report does not happen.
+  {
+    int h[8], n = 0;
+    uiButtonHeights(h, 8, &n);
+    int small = 0;
+    for (int i = 0; i < n; i++) if (h[i] < 44) small++;
+    printf("      button heights:");
+    for (int i = 0; i < n; i++) printf(" %d", h[i]);
+    printf(" px\n");
+    ck(small == 0, "every primary button is at least 44 px tall");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");

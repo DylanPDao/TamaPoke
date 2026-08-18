@@ -244,17 +244,29 @@ uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
 // same complaint as the battle grid. Now bigger AND padded: the drawn size grew
 // too, so the button looks like the size it actually is rather than hiding a
 // generous hit area behind a small graphic.
+// The smallest a button may be. Three separate "hard to hit" reports -- the
+// battle grid's bottom row, the party screen's BOX, and the LAN button -- were
+// all the same mistake: a control sized to fit its label rather than a finger.
+// 44 px is the usual guidance and roughly a fingertip on this 466 px panel.
+#define UI_TAP_MIN 44
+
+// The LAN battle button on the gym region chooser.
+#define LANBTN_W 190
+#define LANBTN_H UI_TAP_MIN
+#define LANBTN_X (233 - LANBTN_W / 2)
+#define LANBTN_Y 336
+
 #define BOXBTN_X 146
 #define BOXBTN_Y 320
 #define BOXBTN_W 174
-#define BOXBTN_H 40
+#define BOXBTN_H UI_TAP_MIN
 #define BOXBTN_PAD 8
 // CLOSE sits below BOX with a real gap between them. They used to touch at
 // y=372, and BOX's padding then reached to 380 -- so the top of CLOSE was
 // inside BOX's hit area and taps there opened the box instead of closing the
 // screen. Padding one button into its neighbour just moves the problem along.
 #define PARTYCLOSE_Y 376
-#define PARTYCLOSE_H 44
+#define PARTYCLOSE_H UI_TAP_MIN
 #define PARTYCLOSE_X 133
 #define PARTYCLOSE_W 200
 
@@ -1047,6 +1059,16 @@ void renderPartyDetail() {
 
 // The two buttons' hit areas, so a test can prove they do not overlap without
 // copying the geometry -- a test that restates the numbers drifts from them.
+// Every primary button's height, so a test can hold them all to UI_TAP_MIN
+// instead of waiting for somebody to report the next one by hand.
+void uiButtonHeights(int *out, int max, int *n) {
+  const int h[] = { BOXBTN_H, PARTYCLOSE_H, LANBTN_H, BTL_CELL_H + BTL_HIT_PAD * 2 };
+  int c = (int)(sizeof(h) / sizeof(h[0]));
+  if (c > max) c = max;
+  for (int i = 0; i < c; i++) out[i] = h[i];
+  if (n) *n = c;
+}
+
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot) {
   if (boxTop) *boxTop = BOXBTN_Y - BOXBTN_PAD;
   if (boxBot) *boxBot = BOXBTN_Y + BOXBTN_H + BOXBTN_PAD;
@@ -1269,7 +1291,8 @@ void onTap(int16_t x, int16_t y) {
       sfxPlay(SFX_TAP);
       return;
     }
-    if (y >= 340 && y <= 372 && x >= 148 && x <= 318) {   // LAN battle
+    if (y >= LANBTN_Y && y <= LANBTN_Y + LANBTN_H &&
+        x >= LANBTN_X && x <= LANBTN_X + LANBTN_W) {   // LAN battle
       gymOpen = false; gymPick = false;
       lan.state = LINK_OFF;
       lanOpen = true;
@@ -4223,11 +4246,11 @@ static void renderRegionPick(bool forGyms) {
     gfx->print(sub);
   }
   if (forGyms) {
-    gfx->fillRoundRect(148, 340, 170, 32, 9, UI_BG_DAY);
-    gfx->drawRoundRect(148, 340, 170, 32, 9, UI_INK);
+    gfx->fillRoundRect(LANBTN_X, LANBTN_Y, LANBTN_W, LANBTN_H, 11, UI_BG_DAY);
+    gfx->drawRoundRect(LANBTN_X, LANBTN_Y, LANBTN_W, LANBTN_H, 11, UI_INK);
     gfx->setTextColor(UI_INK);
     gfx->setTextSize(2);
-    gfx->setCursor(CX - strlen(T(S_LAN)) * 6, 348);
+    gfx->setCursor(CX - strlen(T(S_LAN)) * 6, LANBTN_Y + 14);
     gfx->print(T(S_LAN));
   }
   gfx->setTextColor(UI_TRACK);
