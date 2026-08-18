@@ -94,6 +94,7 @@ extern bool galleryDirty;
 extern uint8_t galleryRegion;
 extern uint8_t gymRegion;
 extern bool gymPick, galleryPick;
+int wavMain(const char *path, const char *demo);
 extern bool lanOpen;
 extern uint8_t btlMyAct;
 extern uint8_t btlTrainGain, btlTrainWhich;
@@ -327,11 +328,14 @@ int main(int argc, char **argv) {
   int scale = 2;
   const char *save = "tamapoke.nvs";
   const char *shot = nullptr, *shotOut = "shot.ppm";
+  const char *wav = nullptr, *demo = nullptr;
   int shotLvl = 0, shotIv = -1, shotDex = 6;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--fast") && i + 1 < argc) emuSetTimeScale(atoi(argv[++i]));
     else if (!strcmp(argv[i], "--save") && i + 1 < argc) save = argv[++i];
+    else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
+    else if (!strcmp(argv[i], "--demo") && i + 1 < argc) demo = argv[++i];
     else if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
     else if (!strcmp(argv[i], "--out") && i + 1 < argc) shotOut = argv[++i];
     else if (!strcmp(argv[i], "--lvl") && i + 1 < argc) shotLvl = atoi(argv[++i]);
@@ -340,6 +344,8 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--sprites") && i + 1 < argc) emuSetSpriteDir(argv[++i]);
     else if (!strcmp(argv[i], "--wipe")) { remove(save); }
   }
+  // Audio preview: no SDL, no board -- just a file you can listen to.
+  if (wav) return wavMain(wav, demo);
   if (shot) return shotMode(shot, shotOut, shotLvl, shotIv, shotDex);   // headless: no SDL at all
   nvsLoad(save);
 

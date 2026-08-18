@@ -207,6 +207,32 @@ Two boards flashed with v2.4. What was learned, all of it invisible from here:
   name and so fell in no region. The Kanto pack was 302 files instead of 303.
   Files with no dex number are shared and now ride with the first pack.
 
+### Audio: a real synth, and a way to HEAR it without a board
+
+`gbsynth.h/.cpp` replaces the single 50% square that made everything sound like
+a beeper. Two pulse voices with four duty cycles and volume envelopes, plus a
+noise channel, mixed -- which is the actual difference between "beeps" and
+"chiptune": a lead at 12.5% duty that decays, over a bass line, with noise for
+impacts.
+
+It has NO Arduino dependency on purpose. It fills a buffer and the caller
+decides what to do with it: I2S on the board, a WAV file here.
+
+**`tools/emu/tamapoke-emu --wav out.wav --demo two`** is the important part.
+Audio was unverifiable for months because the emulator stubs `sfxPlay` to
+silence, so the only loop was flash-listen-guess-reflash. Demos: `duty`, `env`,
+`noise`, `two`, `tour`.
+
+`synth_test` measures what is measurable -- duty cycles come out at .120/.247/
+.495/.750, pitch within 1 Hz of the request, envelopes decaying 22500 -> 4500 ->
+0, two voices genuinely mixing, volume 0 truly silent. Whether a tune sounds
+GOOD is still ears-only, which is exactly why the WAV export exists.
+
+Still to do: the synth is built and tested but **the firmware still plays the
+old tone table** -- wiring `audio.cpp`'s task onto GbSynth is next, then parsing
+`pret/pokered`'s `audio/music/*.asm` (same `square_note`/`duty_cycle` vocabulary
+as the cries) into note data for the real battle themes.
+
 ### Found by hand on the board, not by any test
 
 - **A level 1 Squirtle could beat Brock.** Not the damage formula, which is fine:
