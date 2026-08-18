@@ -43,9 +43,24 @@
     ⚠️ Your browser doesn't support Web Serial. Use <b>Chrome</b> or <b>Edge</b> on a computer.
   </p>
 
+  <div class="step" style="border-left:4px solid #e8503a;background:#fff6f4">
+    <p><b>⚠️ Board not showing up? Read this first — it is almost always this.</b></p>
+    <p>A brand-new board <b>does not appear as a serial port at all</b>. The firmware it
+       ships with never switches USB on, so your computer sees nothing and it looks like a
+       dead board or a broken cable. It is neither. Put it in <b>download mode</b>:</p>
+    <p style="font-size:1.05em"><b>hold BOOT&nbsp;→ tap RESET&nbsp;→ let go of BOOT</b></p>
+    <p class="note">The two small buttons next to the USB-C socket. Nothing on screen will
+       change — that is normal. Now press install and the port will be there.
+       After TamaPoke is on it, this is never needed again.</p>
+    <p class="note">Still nothing? Use a cable that carries <b>data</b> (a charge-only USB-C
+       cable powers the board perfectly and carries nothing), and plug <b>straight into your
+       computer</b> rather than through a hub.</p>
+  </div>
+
   <h2><span class="num">1</span>Flash the firmware</h2>
   <div class="step">
-    <p>Plug the board in via USB and press install. Pick the port and wait.</p>
+    <p>Plug the board in via USB and press install. Pick the port and wait.
+       Takes about a minute. No drivers needed on any OS.</p>
     <esp-web-install-button manifest="manifest.json">
       <button slot="activate">⚡ Install TamaPoke</button>
       <span slot="unsupported">Browser not supported (use Chrome/Edge).</span>
@@ -59,9 +74,12 @@
 
   <h2><span class="num">2</span>Load the sprites onto the microSD</h2>
   <div class="step">
-    <p>Put a microSD into the board (it formats itself). Press <b>Connect board</b>
-       and then <b>Load sprites</b>: they download and copy over USB automatically
-       (~40 MB, a few minutes). Don't remove the card.</p>
+    <p>Put a microSD into the board (it formats itself). Press <b>Connect board</b>,
+       then a region. Kanto is the one to start with — the other two are optional and
+       can be added any time without redoing this one.</p>
+    <p class="note">⏱️ <b>This part is slow, and that is normal.</b> The sprites go over
+       the USB serial link, so Kanto's 40 MB takes roughly <b>10–15 minutes</b>. Leave the
+       tab open and the card in. The progress bar moves the whole time.</p>
     <p class="note">Close the step-1 install tab first (only one program can use
        the port at a time).</p>
     <div class="row">
@@ -183,19 +201,39 @@ document.getElementById('connect').onclick = async () => {
 // which is GitHub's hard per-file limit -- so they are separate files, and a
 // player can take Kanto and stop, or add a region later without re-sending what
 // is already on the card.
+// Where the bundles live. They are NOT committed: each is ~40 MB, and putting
+// them in the repo would make every clone of a firmware project carry 100+ MB of
+// sprites forever. A GitHub Release hosts them outside the git history, and its
+// downloads send Access-Control-Allow-Origin, so fetch() from Pages works.
+//
+// Same origin is tried first anyway, so `python3 -m http.server` in web/ with the
+// paks sitting there works for local testing without touching this.
+const PAK_RELEASE = 'https://github.com/DylanPDao/TamaPoke/releases/latest/download';
+
+async function fetchPak(region) {
+  const tries = [`sprites-${region}.pak`, `${PAK_RELEASE}/sprites-${region}.pak`];
+  let last;
+  for (const url of tries) {
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) return await resp.arrayBuffer();
+      last = new Error('HTTP ' + resp.status);
+    } catch (e) { last = e; }
+  }
+  throw last || new Error('not found');
+}
+
 async function loadRegion(btn) {
   const region = btn.dataset.region;
   if (!writer) { log('Connect the board first.'); return; }
   btn.disabled = true;
-  log(`Downloading the ${region} sprite bundle...`);
+  log(`Downloading the ${region} sprite bundle (this is the slow part)...`);
   let items;
   try {
-    // served from the same origin (GitHub Pages) -> no CORS trouble
-    const resp = await fetch(`sprites-${region}.pak`);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    items = parsePak(await resp.arrayBuffer());
+    items = parsePak(await fetchPak(region));
   } catch (e) {
-    log(`Could not download sprites-${region}.pak: ` + e.message);
+    log(`Could not download the ${region} bundle: ` + e.message);
+    log(`If this repo has no release yet, that is why -- see web/README.md.`);
     btn.disabled = false;
     return;
   }

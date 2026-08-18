@@ -309,7 +309,13 @@ done from here.
   sound switch stays the master; volume is how loud it is when on, and 0 is
   silence without disabling the system.
 
-**A3. Audio is UNHEARD.** All of the above is verified only by compiling and by
+**A3. ~~Audio is UNHEARD~~ -- HEARD, and it works.** Confirmed on hardware
+2026-08-17: `BEEP` produces sound. That closes the oldest unknown in this file.
+Still untuned rather than unverified: nobody has judged the music loop, the six
+battle cues in context, or whether the `500 * vol` amplitude curve sounds linear
+across 0-10. Those need a listen, not a test.
+
+**A3-old. Audio was UNHEARD.** All of the above is verified only by compiling and by
 clicking through the emulator, which has no audio at all -- `host_impl.cpp`
 stubs `sfxPlay` to nothing. Nobody has heard the music loop, the six cues, or
 the volume curve. The amplitude scale in particular (`500 * vol`) is a guess at

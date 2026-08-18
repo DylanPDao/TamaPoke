@@ -49,6 +49,27 @@ A hidden "pick them manually" option lets advanced users send their own `.bin`.
 
 Each region's `.pak` is ~27–40 MB and **gitignored** so it doesn't bloat the repo.
 
+## Publishing the sprite bundles
+
+The `.pak` files are **not committed** — each is ~40 MB and a firmware repo should
+not make every clone carry 100+ MB of sprites forever. They are attached to a
+**GitHub Release** instead, which lives outside the git history and serves
+`Access-Control-Allow-Origin`, so the installer page can `fetch()` them.
+
+```bash
+bash tools/build_web.sh                  # rebuilds firmware + the region .paks
+gh release create v2.4 web/sprites-*.pak --title "TamaPoke v2.4" --notes "Sprite bundles"
+# later versions: gh release upload v2.5 web/sprites-*.pak
+```
+
+The page tries **same-origin first**, then the release. So for local testing you can
+just leave the `.pak` files in `web/` and run `python3 -m http.server` — no edit
+needed. If the buttons report "could not download", the usual cause is that no
+release exists yet.
+
+`PAK_RELEASE` at the top of the script block in `index.html` points at the repo;
+change it if you fork.
+
 **Why one file per region and not one big one:** all three together come to about
 100 MB, which is exactly GitHub's hard per-file limit — a single bundle would be
 uncommittable. Splitting also means most people can take Kanto (~40 MB) and stop,
