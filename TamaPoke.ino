@@ -148,6 +148,12 @@ uint32_t feedMenuUntil = 0;   // selector de comida abierto hasta este millis
 // minijuego "toques": mantener la pokeball en el aire
 bool gameOpen = false;
 uint32_t gameOverUntil = 0;
+// The ball game used to run until you missed three times or walked away, so a
+// session had no length and the reward no shape. The bag is 10 s and the
+// reaction test 15 s; this sits between them, and whichever comes first --
+// the clock or three misses -- ends it.
+#define GAME_MS 20000UL
+uint32_t gameUntil = 0;
 float ballX, ballY, ballVX, ballVY, gamePetX;
 uint8_t gameScore, gameMisses;
 float hitX, hitY;             // ultimo golpe (anillo de impacto)
@@ -239,10 +245,18 @@ uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
 // too, so the button looks like the size it actually is rather than hiding a
 // generous hit area behind a small graphic.
 #define BOXBTN_X 146
-#define BOXBTN_Y 332
+#define BOXBTN_Y 320
 #define BOXBTN_W 174
 #define BOXBTN_H 40
 #define BOXBTN_PAD 8
+// CLOSE sits below BOX with a real gap between them. They used to touch at
+// y=372, and BOX's padding then reached to 380 -- so the top of CLOSE was
+// inside BOX's hit area and taps there opened the box instead of closing the
+// screen. Padding one button into its neighbour just moves the problem along.
+#define PARTYCLOSE_Y 376
+#define PARTYCLOSE_H 44
+#define PARTYCLOSE_X 133
+#define PARTYCLOSE_W 200
 
 uint8_t gymRegion = 0;
 uint8_t btlRegion = 0;
@@ -1029,6 +1043,15 @@ void renderPartyDetail() {
   gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 404);
   gfx->print(T(S_BACK));
   gfx->flush();
+}
+
+// The two buttons' hit areas, so a test can prove they do not overlap without
+// copying the geometry -- a test that restates the numbers drifts from them.
+void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot) {
+  if (boxTop) *boxTop = BOXBTN_Y - BOXBTN_PAD;
+  if (boxBot) *boxBot = BOXBTN_Y + BOXBTN_H + BOXBTN_PAD;
+  if (closeTop) *closeTop = PARTYCLOSE_Y;
+  if (closeBot) *closeBot = PARTYCLOSE_Y + PARTYCLOSE_H;
 }
 
 void partyTap(int16_t x, int16_t y) {
@@ -1858,6 +1881,7 @@ void startGame() {
   if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
   gameOpen = true;
   gameOverUntil = 0;
+  gameUntil = millis() + GAME_MS;
   gameScore = 0;
   gameMisses = 0;
   gameNewHi = false;
@@ -1938,6 +1962,14 @@ void stepGame() {
     }
     ballX = CX + nx * 205;
     ballY = CY + ny * 205;
+  }
+  // the clock, or three misses, whichever lands first
+  if (gameUntil && millis() >= gameUntil && !gameOverUntil) {
+    gameNewHi = (gameScore > pet.gameHi);
+    pet.playResult(gameScore);
+    sfxPlay(gameNewHi && gameScore > 0 ? SFX_MEDAL : SFX_LEVEL);
+    gameOverUntil = millis() + 4000;
+    return;
   }
   if (ballY > 384) {  // al suelo
     if (++gameMisses >= 3) {
@@ -2132,6 +2164,17 @@ void renderGame() {
   for (int i = 0; i < 3; i++) {
     if (i < 3 - gameMisses) gfx->fillCircle(180 + i * 28, 104, 6, UI_BAR_BAD);
     else gfx->drawCircle(180 + i * 28, 104, 6, UI_TRACK);
+  }
+  // The clock, drawn like the bag's and the reaction test's so all three games
+  // read the same way. Thin and near the rim: the middle belongs to the ball.
+  if (!gameOverUntil) {
+    uint32_t now2 = millis();
+    uint32_t left = (gameUntil > now2) ? gameUntil - now2 : 0;
+    int bw = 200, fw = (int)((uint32_t)bw * left / GAME_MS);
+    gfx->fillRoundRect(CX - bw / 2, 124, bw, 10, 4, UI_TRACK);
+    if (fw > 2)
+      gfx->fillRoundRect(CX - bw / 2, 124, fw, 10, 4,
+                         left < 5000 ? UI_BAR_WARN : UI_BAR_OK);
   }
 
   if (pmd.loaded) {
@@ -4586,7 +4629,7 @@ void renderParty() {
     gfx->drawRoundRect(BOXBTN_X, BOXBTN_Y, BOXBTN_W, BOXBTN_H, 10, UI_INK);
     gfx->setTextColor(UI_INK);
     gfx->setTextSize(2);
-    gfx->setCursor(233 - (int)strlen(bl) * 6, 344);
+    gfx->setCursor(233 - (int)strlen(bl) * 6, BOXBTN_Y + 12);
     gfx->print(bl);
   }
 
@@ -4617,11 +4660,12 @@ void renderParty() {
 
   // exit: an explicit button, always in the same place
   const char *ex = partyPick ? T(S_PARTY_LETGO) : T(S_CLOSE);
-  gfx->fillRoundRect(133, 372, 200, 44, 12, partyPick ? UI_BAR_BAD : UI_TRACK);
-  gfx->drawRoundRect(133, 372, 200, 44, 12, UI_INK);
+  gfx->fillRoundRect(PARTYCLOSE_X, PARTYCLOSE_Y, PARTYCLOSE_W, PARTYCLOSE_H, 12,
+                     partyPick ? UI_BAR_BAD : UI_TRACK);
+  gfx->drawRoundRect(PARTYCLOSE_X, PARTYCLOSE_Y, PARTYCLOSE_W, PARTYCLOSE_H, 12, UI_INK);
   gfx->setTextColor(partyPick ? UI_WHITE : UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - (int)strlen(ex) * 6, 386);
+  gfx->setCursor(CX - (int)strlen(ex) * 6, PARTYCLOSE_Y + 14);
   gfx->print(ex);
   gfx->flush();
 }

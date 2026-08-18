@@ -29,6 +29,7 @@ extern uint8_t btlMenu;
 extern Combatant btlYou;
 void startBattle(int16_t dex, uint8_t lvl);
 int btlCellIndexAt(int16_t x, int16_t y);
+void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot);
 
 static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
@@ -97,6 +98,20 @@ int main(){
   uint8_t before = btlMenu;
   battleTap(150, 390);
   ck(btlMenu != before, "a low tap in the move grid is actually accepted");
+
+  // The party screen's BOX and CLOSE buttons must not share a pixel. Padding
+  // BOX to make it easier to hit pushed its hit area 8 px into CLOSE, so taps
+  // meant to close the screen opened the box instead -- fixing one target by
+  // stealing from its neighbour.
+  {
+    int boxTop, boxBot, clTop, clBot;
+    partyButtonRects(&boxTop, &boxBot, &clTop, &clBot);
+    ck(boxBot < clTop, "BOX and CLOSE hit areas do not overlap");
+    ck(clTop - boxBot >= 4, "and there is a real gap between them");
+    ck(clBot < 466 && boxTop > 0, "both stay on the panel");
+    printf("      BOX %d..%d, CLOSE %d..%d, gap %d px\n",
+           boxTop, boxBot, clTop, clBot, clTop - boxBot);
+  }
 
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
