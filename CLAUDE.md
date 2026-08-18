@@ -184,6 +184,29 @@ is a `uint8_t` under `"avtr"`, now taken modulo `AVATAR_COUNT` in all three
 places that used to mask it with `& 3`, and `pet.cpp` clamps an out-of-range
 value so a save from the four-avatar era still loads.
 
+### First bring-up, actually done (2026-08-17)
+
+Two boards flashed with v2.4. What was learned, all of it invisible from here:
+
+- **A stock board does not appear as a serial port at all.** The factory firmware
+  does not enable USB CDC, so `ls /dev/cu.*` shows nothing and it looks dead or
+  like a bad cable. It enumerates only in DOWNLOAD MODE, as
+  `USB JTAG_serial debug unit`: **hold BOOT, tap RESET, release BOOT**. Once our
+  firmware is on (built `CDCOnBoot=cdc`) the port stays up while it runs. This is
+  the single biggest trap for anyone flashing the first time.
+- **Resetting drops the USB device**, because the port IS the firmware. A serial
+  monitor opened before the reset holds a stale handle and sees nothing forever;
+  reconnect after ~3 s instead of concluding the board hung. It cost a while.
+- Boots clean, `heap=255760` and flat over five minutes. PSRAM reads 3.8 MB in
+  the factory log, so the OPI part is live.
+- **`EXPORT` works on real NVS** (596 bytes on a fresh save) -- the save backup's
+  first run outside the emulator.
+- A 120 GB card mounts fine: `SD montada: 119850 MB`, `sd=1`.
+- **`sin thumbs.bin (galeria sin miniaturas)`** led straight to a real bug: the
+  region split silently dropped `thumbs.bin`, because it has no dex number in its
+  name and so fell in no region. The Kanto pack was 302 files instead of 303.
+  Files with no dex number are shared and now ride with the first pack.
+
 ### Hardware bring-up order (boards arriving)
 
 Nothing below this line has ever run on a board. Work down it -- each step can

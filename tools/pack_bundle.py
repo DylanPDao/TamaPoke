@@ -58,9 +58,16 @@ def main():
     files = sorted(glob.glob(os.path.join(MONS, '*.bin')))
     if not files:
         raise SystemExit('no hay sprites en ' + MONS)
+    # Files with no dex number in the name -- thumbs.bin -- are SHARED, not part
+    # of any region, and ride along with the first pack. Splitting by dex range
+    # alone dropped thumbs.bin on the floor and the board says so at boot:
+    # "sin thumbs.bin (galeria sin miniaturas)".
+    shared = [f for f in files if dex_of(f) == 0]
     made = 0
     for name, lo, hi in REGIONS:
         mine = [f for f in files if lo <= dex_of(f) <= hi]
+        if mine and not made:
+            mine = sorted(mine + shared)
         if not mine:
             print(f'{name}: no sprites packed yet, skipped')
             continue
@@ -73,6 +80,8 @@ def main():
         made += 1
     if not made:
         raise SystemExit('nothing packed')
+    packed = sum(1 for _ in glob.glob(os.path.join(MONS, '*.bin')))
+    print(f'{len(shared)} shared file(s) rode along with the first pack')
 
 
 if __name__ == '__main__':
