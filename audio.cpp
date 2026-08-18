@@ -223,7 +223,10 @@ static void audioTask(void *) {
     if (m != playing) { playing = m; mi1 = mi2 = 0; at1 = at2 = clock = 0; }
     if (!ampOn) { digitalWrite(PA, HIGH); delay(6); ampOn = true; }
 
-    const MusicTrack &t = MUSIC_TBL[(m == MUS_VICTORY) ? 2 : 0];
+    // 0 = the gym leader battle, 3 = the victory fanfare. Winning used to play
+    // index 2, which is the WILD BATTLE theme -- so a win sounded like the fight
+    // had started again.
+    const MusicTrack &t = MUSIC_TBL[(m == MUS_VICTORY) ? 3 : 0];
     // start whichever channel is due
     if (clock >= at1) {
       if (mi1 >= t.n1) {                       // loop, or stop a one-shot

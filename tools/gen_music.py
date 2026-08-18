@@ -44,6 +44,9 @@ TUNES = [
     ('gymleaderbattle', 'GYM',  'Music_GymLeaderBattle'),
     ('trainerbattle',   'TRN',  'Music_TrainerBattle'),
     ('wildbattle',      'WILD', 'Music_WildBattle'),
+    # The victory fanfare. Without it a win played another BATTLE theme, which
+    # sounded like the fight had restarted rather than ended.
+    ('defeatedgymleader', 'WIN', 'Music_DefeatedGymLeader'),
 ]
 
 NOTE_NAMES = ['C_', 'C#', 'D_', 'D#', 'E_', 'F_', 'F#', 'G_', 'G#', 'A_', 'A#', 'B_']

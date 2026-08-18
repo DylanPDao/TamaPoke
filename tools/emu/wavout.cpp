@@ -82,9 +82,9 @@ int wavMain(const char *path, const char *demo) {
       syn.note(1, gbNote(bass[i] - 12), 2, 9, 0, 0, 260);
       run(syn, out, 270);
     }
-  } else if (d == "gym" || d == "trainer" || d == "wild") {
+  } else if (d == "gym" || d == "trainer" || d == "wild" || d == "win") {
     // A REAL battle theme, both pulse channels, exactly as the data says.
-    int t = (d == "gym") ? 0 : (d == "trainer") ? 1 : 2;
+    int t = (d == "gym") ? 0 : (d == "trainer") ? 1 : (d == "wild") ? 2 : 3;
     const MusicTrack &m = MUSIC_TBL[t];
     printf("playing %s (%u + %u events)\n", m.name, m.n1, m.n2);
     uint32_t at1 = 0, at2 = 0;      // ms consumed on each channel
