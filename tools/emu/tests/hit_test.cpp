@@ -31,6 +31,7 @@ void startBattle(int16_t dex, uint8_t lvl);
 int btlCellIndexAt(int16_t x, int16_t y);
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot);
 void uiButtonHeights(int *out, int max, int *n);
+void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop);
 
 static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
@@ -126,6 +127,13 @@ int main(){
     for (int i = 0; i < n; i++) printf(" %d", h[i]);
     printf(" px\n");
     ck(small == 0, "every primary button is at least 44 px tall");
+  }
+
+  {
+    int pt, pb, rt;
+    gymHeaderRects(&pt, &pb, &rt);
+    ck(pb < rt, "the gym difficulty pill does not sit on the first leader row");
+    printf("      pill %d..%d, first row at %d\n", pt, pb, rt);
   }
 
   printf("%s\n", bad?"FAILURES":"all good");

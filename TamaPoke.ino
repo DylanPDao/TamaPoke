@@ -378,7 +378,10 @@ uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 // BACK, under the grid: the move and switch screens had no way out except
 // choosing something.
 // The gym list's EASY/HARD pill. It was 24 px tall, which is half a fingertip.
-#define GYMDIF_Y 72
+// Sits between the title and the first leader row. At 72 with a 44 px height it
+// ran to 116 and overlapped the first row, which begins at 110 -- introduced
+// when the pill was enlarged to a real tap target.
+#define GYMDIF_Y 60
 #define GYMDIF_H UI_TAP_MIN
 #define BTL_BACK_W 190
 #define BTL_BACK_H UI_TAP_MIN
@@ -1085,6 +1088,15 @@ void uiButtonHeights(int *out, int max, int *n) {
   if (c > max) c = max;
   for (int i = 0; i < c; i++) out[i] = h[i];
   if (n) *n = c;
+}
+
+// The gym list's difficulty pill against its first leader row. Enlarging the
+// pill to a real tap target once pushed it straight over that row -- the third
+// overlap of this kind, after BOX/CLOSE and the battle grid against BACK.
+void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop) {
+  if (pillTop) *pillTop = GYMDIF_Y;
+  if (pillBot) *pillBot = GYMDIF_Y + GYMDIF_H;
+  if (rowTop) *rowTop = GYM_ROW_Y(0);
 }
 
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot) {
@@ -4191,11 +4203,9 @@ void renderGyms() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(title) * 6, 42);
   gfx->print(title);
-  char sub[24];
-  snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCountIn(gymRegion, gymHard));
-  gfx->setTextSize(1);
-  gfx->setCursor(CX - (int)strlen(sub) * 3, 66);
-  gfx->print(sub);
+  // The badge count used to sit here, directly behind the difficulty pill. The
+  // region chooser already shows it per region, which is where you are choosing
+  // from, so it was both redundant and in the way.
   // difficulty pill: hard caps YOUR team to the leader's size and level, so it
   // is a different ladder with its own badges rather than a damage multiplier
   const char *dif = T(gymHard ? S_HARD : S_EASY);
