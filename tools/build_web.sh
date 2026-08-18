@@ -31,6 +31,12 @@ python3 - "$FW" <<'PYEOF'
 import json, sys
 m = json.load(open('web/manifest.json'))
 m['version'] = sys.argv[1]
+# NEVER true. It makes ESP Web Tools offer a full chip erase, which wipes NVS
+# and with it the pet -- weeks of real time, gone, with no undo. It cost a real
+# save once. A plain install writes the app and leaves NVS alone, which is what
+# an update must do; anyone who genuinely wants a clean slate has WIPE on the
+# serial console.
+m['new_install_prompt_erase'] = False
 json.dump(m, open('web/manifest.json', 'w'), indent=2)
 print('manifest version -> ' + sys.argv[1])
 PYEOF
