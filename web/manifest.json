@@ -1,12 +1,15 @@
 {
   "name": "TamaPoke",
-  "version": "1.7",
+  "version": "2.5",
   "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",
       "parts": [
-        { "path": "firmware/tamapoke.bin", "offset": 0 }
+        {
+          "path": "firmware/tamapoke.bin",
+          "offset": 0
+        }
       ]
     }
   ]

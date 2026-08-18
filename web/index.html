@@ -193,6 +193,7 @@ document.getElementById('connect').onclick = async () => {
       if (b) b.disabled = false;
     }
     document.getElementById('files').disabled = false;
+    probeRegions();      // grey out any region that has no bundle to download
     document.getElementById('connect').disabled = true;
   } catch (e) { log('Could not connect: ' + e.message); }
 };
@@ -210,10 +211,13 @@ document.getElementById('connect').onclick = async () => {
 // paks sitting there works for local testing without touching this.
 const PAK_RELEASE = 'https://github.com/DylanPDao/TamaPoke/releases/latest/download';
 
+function pakUrls(region) {
+  return [`sprites-${region}.pak`, `${PAK_RELEASE}/sprites-${region}.pak`];
+}
+
 async function fetchPak(region) {
-  const tries = [`sprites-${region}.pak`, `${PAK_RELEASE}/sprites-${region}.pak`];
   let last;
-  for (const url of tries) {
+  for (const url of pakUrls(region)) {
     try {
       const resp = await fetch(url);
       if (resp.ok) return await resp.arrayBuffer();
@@ -221,6 +225,33 @@ async function fetchPak(region) {
     } catch (e) { last = e; }
   }
   throw last || new Error('not found');
+}
+
+// HEAD, not a ranged GET: a ranged GET against a server that ignores Range --
+// python's http.server does -- starts streaming all 40 MB just to find out the
+// file exists. HEAD sends headers only, and both a local server and GitHub
+// releases support it.
+// A region whose sprites have not been packed yet should not present a button
+// that can only fail -- "Failed to fetch" means nothing to somebody installing
+// this for the first time.
+async function probeRegions() {
+  for (const id of ['auto', 'autoj', 'autoh']) {
+    const b = document.getElementById(id);
+    if (!b) continue;
+    const region = b.dataset.region;
+    let found = false;
+    for (const url of pakUrls(region)) {
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        if (r.ok) { found = true; break; }
+      } catch (e) { /* try the next */ }
+    }
+    if (!found) {
+      b.disabled = true;
+      b.textContent = b.textContent.replace(/^⬇️ /, '') .replace(/ \(.*\)$/, '') + ' — not published yet';
+      b.title = 'No sprite bundle exists for this region yet. See web/README.md.';
+    }
+  }
 }
 
 async function loadRegion(btn) {
