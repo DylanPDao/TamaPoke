@@ -29,6 +29,51 @@ and complete them all (shinies included).
 
 🔴 **3D-printed Pokéball case + print profiles → [on MakerWorld](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)** · flash it in your browser → **[web installer](https://dylanpdao.github.io/TamaPoke/web/)**
 
+## Screens
+
+All shots are straight off the 466x466 round panel, rendered headlessly by the
+emulator (`tools/emu/tamapoke-emu --shot <name>`), so they are exactly what the
+hardware draws.
+
+### Raising one
+
+| Your creature | Its egg | Moves it knows |
+|---|---|---|
+| <img src="docs/screens/main.png" width="240"> | <img src="docs/screens/egg.png" width="240"> | <img src="docs/screens/moves.png" width="240"> |
+
+The egg carries a **region pill** — pick whether it hatches from Kanto, Johto,
+Hoenn or all three. Switching keeps the rarity it was granted and remembers each
+region's answer, so it cannot be flipped to farm a legendary.
+
+### Battling
+
+| The fight | Choosing a team | Winning |
+|---|---|---|
+| <img src="docs/screens/btlmenu.png" width="240"> | <img src="docs/screens/pick.png" width="240"> | <img src="docs/screens/win.png" width="240"> |
+
+Turn- and move-based, with the real type chart, ailments and STAB. Real Game Boy
+battle music plays throughout.
+
+### Three regions
+
+| Pick a ladder | Johto's gyms | LAN battle |
+|---|---|---|
+| <img src="docs/screens/gympick.png" width="240"> | <img src="docs/screens/gymsj.png" width="240"> | <img src="docs/screens/lanready.png" width="240"> |
+
+Kanto, Johto and Hoenn each have eight leaders, an Elite 4 and a champion, on
+easy and hard. The teams are the games' own, checked against the pokecrystal and
+pokeemerald disassemblies.
+
+### Collecting
+
+| Pick a region | Kanto | Johto |
+|---|---|---|
+| <img src="docs/screens/dexpick.png" width="240"> | <img src="docs/screens/gallery.png" width="240"> | <img src="docs/screens/gallery2.png" width="240"> |
+
+| Trainer card | Johto badges | The box |
+|---|---|---|
+| <img src="docs/screens/player.png" width="240"> | <img src="docs/screens/player2.png" width="240"> | <img src="docs/screens/box.png" width="240"> |
+
 ## Status
 
 Running on hardware. Implemented: 386 species + shinies animated from microSD, full

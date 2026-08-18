@@ -32,3 +32,9 @@ tools/pokeapi_cache/
 # CREDITS.md already recommends exactly this: ship the code and the scripts and
 # let each user package the sprites from the original sources.
 tools/sdcard/mons/*.bin
+
+# Emulator save files and downloaded generator intermediates: local scratch, not
+# artefacts. They were committed by accident once.
+tamapoke.nvs
+tamapoke.nvs.*
+tools/_*.svg
