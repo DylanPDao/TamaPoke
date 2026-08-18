@@ -20,3 +20,15 @@ tools/pokeapi_cache/
 # all, so a browser can never fetch() one, however convenient it would be to
 # keep them out of the repo. Tested with an Origin header; there is no header
 # to be had. Pages sends access-control-allow-origin: *.
+
+# The loose per-species sprite packs are build INTERMEDIATES, not artefacts.
+# They are what pack_bundle.py reads to build web/sprites-*.pak, and the .pak
+# files are what actually gets distributed -- so tracking both puts the same
+# ~105 MB of sprite data in the repo twice. Regenerate with:
+#
+#   python3 tools/pack_pmd.py            # or: kanto / johto / hoenn
+#   python3 tools/make_thumbs.py
+#
+# CREDITS.md already recommends exactly this: ship the code and the scripts and
+# let each user package the sprites from the original sources.
+tools/sdcard/mons/*.bin
