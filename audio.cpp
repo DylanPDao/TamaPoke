@@ -1,4 +1,6 @@
 #include "audio.h"
+#include "gbsynth.h"
+#include "music.h"
 #include "pin_config.h"
 #include <Arduino.h>
 #include <Wire.h>
@@ -126,6 +128,16 @@ static volatile uint8_t gMusic = MUS_NONE;
 static volatile uint8_t gVol = 7;
 
 static int16_t buf[256 * 2];  // estéreo intercalado (L=R)
+static int16_t mono[256];
+static GbSynth gSyn;
+
+// The SFX tables are written in Hz; the synth speaks the Game Boy's frequency
+// register. Converting here means the cues did not have to be rewritten.
+static uint16_t hzToGb(uint16_t hz) {
+  if (!hz) return 0;
+  int32_t f = 2048 - (int32_t)(131072u / hz);
+  return (f < 0 || f > 2047) ? 0 : (uint16_t)f;
+}
 
 // reproduce un tono (o silencio si f==0) con rampa de ataque/caida anti-click
 static void playTone(uint16_t f, uint16_t ms) {
@@ -153,37 +165,89 @@ static void playTone(uint16_t f, uint16_t ms) {
   }
 }
 
+// Renders `ms` of audio and pushes it to the codec. Everything sounds through
+// here now -- there is no separate "play a tone" path any more, which is what
+// lets music keep going while an effect cuts across it.
+static void pump(uint32_t ms) {
+  uint32_t left = (uint32_t)((uint64_t)ms * GB_RATE / 1000);
+  while (left) {
+    size_t n = left > 256 ? 256 : left;
+    gSyn.render(mono, n, gVol);
+    for (size_t i = 0; i < n; i++) { buf[i * 2] = mono[i]; buf[i * 2 + 1] = mono[i]; }
+    i2s.write((uint8_t *)buf, n * 4);
+    left -= n;
+  }
+}
+
 static void audioTask(void *) {
   uint8_t id;
-  uint8_t mi = 0;              // where the tune has got to
+  // where each music channel has got to, and when its current note ends
+  uint16_t mi1 = 0, mi2 = 0;
+  uint32_t at1 = 0, at2 = 0, clock = 0;
+  uint8_t playing = MUS_NONE;
+  bool ampOn = false;
+
   for (;;) {
-    // Wait briefly rather than forever, so the tune can advance between
-    // effects. An effect that arrives mid-note simply plays after it -- with
-    // one voice, cutting through cleanly beats mixing badly.
-    TickType_t wait = (gMusic != MUS_NONE) ? pdMS_TO_TICKS(5) : portMAX_DELAY;
-    if (xQueueReceive(gQ, &id, wait) == pdTRUE) {
+    uint8_t m = gMusic;
+    bool wantAudio = (m != MUS_NONE) || gSyn.busy();
+    if (!gOn || !gReady) { gSyn.allOff(); m = MUS_NONE; wantAudio = false; }
+
+    // An effect always wins the melody voice. With three voices a cue that
+    // mixed politely underneath would just be mud; cutting through is both
+    // simpler and the right priority.
+    if (xQueueReceive(gQ, &id, wantAudio ? 0 : pdMS_TO_TICKS(40)) == pdTRUE) {
       if (gOn && gReady && id < SFX_COUNT) {
-        digitalWrite(PA, HIGH);
-        delay(8);
+        if (!ampOn) { digitalWrite(PA, HIGH); delay(6); ampOn = true; }
         const SfxDef &d = SFX[id];
-        for (uint8_t i = 0; i < d.len; i++) playTone(d.n[i].f, d.n[i].ms);
-        delay(60);
-        digitalWrite(PA, LOW);
+        for (uint8_t i = 0; i < d.len; i++) {
+          uint16_t f = hzToGb(d.n[i].f);
+          // percussion for the impact cues, a pulse for everything else
+          if (id == SFX_HIT || id == SFX_FAINT)
+            gSyn.noise(13, -1, 2, d.n[i].ms, (uint16_t)(4 + i * 4));
+          else if (f)
+            gSyn.note(0, f, 1, 14, -1, 4, d.n[i].ms);
+          else
+            gSyn.silence(0);
+          pump(d.n[i].ms);
+        }
       }
       continue;
     }
-    uint8_t m = gMusic;
-    if (m == MUS_NONE || !gOn || !gReady) { mi = 0; continue; }
-    const TuneDef &t = MUSIC[m];
-    if (!t.n || mi >= t.len) {
-      if (!t.loop) { gMusic = MUS_NONE; mi = 0; continue; }
-      mi = 0;
+
+    if (m == MUS_NONE) {
+      if (ampOn && !gSyn.busy()) { digitalWrite(PA, LOW); ampOn = false; }
+      playing = MUS_NONE; mi1 = mi2 = 0; at1 = at2 = clock = 0;
+      continue;
     }
-    digitalWrite(PA, HIGH);
-    delay(4);
-    playTone(t.n[mi].f, t.n[mi].ms);
-    digitalWrite(PA, LOW);
-    mi++;
+
+    if (m != playing) { playing = m; mi1 = mi2 = 0; at1 = at2 = clock = 0; }
+    if (!ampOn) { digitalWrite(PA, HIGH); delay(6); ampOn = true; }
+
+    const MusicTrack &t = MUSIC_TBL[(m == MUS_VICTORY) ? 2 : 0];
+    // start whichever channel is due
+    if (clock >= at1) {
+      if (mi1 >= t.n1) {                       // loop, or stop a one-shot
+        if (m == MUS_VICTORY) { gMusic = MUS_NONE; continue; }
+        mi1 = 0; at1 = clock;
+      }
+      const MusicNote &n = t.ch1[mi1++];
+      if (n.freq) gSyn.note(0, n.freq, n.duty, n.vol, n.envDir, n.envPeriod, n.ms);
+      else gSyn.silence(0);
+      at1 = clock + n.ms;
+    }
+    if (clock >= at2) {
+      if (mi2 >= t.n2) { mi2 = 0; at2 = clock; }
+      const MusicNote &n = t.ch2[mi2++];
+      if (n.freq) gSyn.note(1, n.freq, n.duty, n.vol, n.envDir, n.envPeriod, n.ms);
+      else gSyn.silence(1);
+      at2 = clock + n.ms;
+    }
+    uint32_t next = (at1 < at2) ? at1 : at2;
+    if (next <= clock) next = clock + 5;
+    uint32_t step = next - clock;
+    if (step > 60) step = 60;                  // stay responsive to an effect
+    pump(step);
+    clock += step;
   }
 }
 

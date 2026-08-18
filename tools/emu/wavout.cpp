@@ -10,6 +10,7 @@
 // It drives the same GbSynth the firmware uses, so what comes out of the
 // speaker should be what comes out of this file.
 #include "../../gbsynth.h"
+#include "../../music.h"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -80,6 +81,35 @@ int wavMain(const char *path, const char *demo) {
       syn.note(0, gbNote(mel[i]), 1, 13, -1, 6, 260);
       syn.note(1, gbNote(bass[i] - 12), 2, 9, 0, 0, 260);
       run(syn, out, 270);
+    }
+  } else if (d == "gym" || d == "trainer" || d == "wild") {
+    // A REAL battle theme, both pulse channels, exactly as the data says.
+    int t = (d == "gym") ? 0 : (d == "trainer") ? 1 : 2;
+    const MusicTrack &m = MUSIC_TBL[t];
+    printf("playing %s (%u + %u events)\n", m.name, m.n1, m.n2);
+    uint32_t at1 = 0, at2 = 0;      // ms consumed on each channel
+    uint16_t i1 = 0, i2 = 0;
+    uint32_t clock = 0;
+    const uint32_t LIMIT = 30000;   // 30 s is plenty to judge it
+    while (clock < LIMIT && (i1 < m.n1 || i2 < m.n2)) {
+      if (i1 < m.n1 && clock >= at1) {
+        const MusicNote &n = m.ch1[i1];
+        if (n.freq) syn.note(0, n.freq, n.duty, n.vol, n.envDir, n.envPeriod, n.ms);
+        else syn.silence(0);
+        at1 += n.ms; i1++;
+      }
+      if (i2 < m.n2 && clock >= at2) {
+        const MusicNote &n = m.ch2[i2];
+        if (n.freq) syn.note(1, n.freq, n.duty, n.vol, n.envDir, n.envPeriod, n.ms);
+        else syn.silence(1);
+        at2 += n.ms; i2++;
+      }
+      uint32_t next = LIMIT;
+      if (i1 < m.n1 && at1 < next) next = at1;
+      if (i2 < m.n2 && at2 < next) next = at2;
+      if (next <= clock) next = clock + 5;
+      run(syn, out, next - clock);
+      clock = next;
     }
   } else {
     // the tour: everything at once, in the order it was built
