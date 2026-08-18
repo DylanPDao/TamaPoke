@@ -1,5 +1,18 @@
 # Credits
 
+## The original project
+
+TamaPoke was created by **Quique Tortosa** — [socquique/TamaPoke](https://github.com/socquique/TamaPoke),
+MIT licensed, © 2026. The firmware, the PMD sprite pipeline, the six-language
+UI, the ES8311 audio bring-up and the browser installer are all his work, and
+this repository is a fork that builds on them.
+
+Everything added in this fork — the move-based battle system, the gym ladders,
+the party and box, the peer-to-peer link, the save backup, the Game Boy synth
+and the expansion to 386 species — sits on top of that foundation and would not
+exist without it.
+
+
 TamaPoke is a **non-commercial, personal-use** project. It does not sell or
 commercially redistribute any copyrighted material. Pokémon and all related
 names, designs and characters are trademarks and © of **Nintendo / Game Freak /
@@ -40,7 +53,9 @@ Huge thanks to that whole community for an enormous amount of work.
 | Web installer | [ESP Web Tools](https://esphome.github.io/esp-web-tools/) (Nabu Casa) |
 | 5x7 bitmap font in `tools/emu/font.cpp` | [Adafruit_GFX](https://github.com/adafruit/Adafruit-GFX-Library) © 2012 Adafruit Industries, BSD licence |
 
-TamaPoke's own code (firmware and tools) is original work.
+TamaPoke's own code (firmware and tools) is original work by Quique Tortosa and
+the contributors to this fork, MIT licensed. It contains no decompiled or
+extracted game code.
 
 ## Player avatars
 
