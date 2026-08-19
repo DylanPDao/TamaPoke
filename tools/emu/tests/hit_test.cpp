@@ -32,6 +32,11 @@ int btlCellIndexAt(int16_t x, int16_t y);
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot);
 void uiButtonHeights(int *out, int max, int *n);
 void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop);
+int uiSleepButton(int *cx, int *cy);
+bool uiButtonDisabled(int i);
+void uiButtonAt(int i, int *cx, int *cy, int *half);
+extern Pet pet;
+void onTap(int16_t x, int16_t y);
 
 static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
@@ -134,6 +139,54 @@ int main(){
     gymHeaderRects(&pt, &pb, &rt);
     ck(pb < rt, "the gym difficulty pill does not sit on the first leader row");
     printf("      pill %d..%d, first row at %d\n", pt, pb, rt);
+  }
+
+  // While the pet sleeps only ONE home icon works, and it must be the LIGHT.
+  // Removing the ball icon shifted every index by one and left drawButtons()
+  // lighting index 2, which had become the BATH -- so the wash button looked
+  // like the wake-up button.
+  {
+    battleOpen = false;        // the battle above owns every tap until it closes
+    const int BTN_LIGHT_IDX = uiSleepButton(nullptr, nullptr);
+    int lx = 0, ly = 0;
+    uiSleepButton(&lx, &ly);
+    if (pet.awaitingStarter()) pet.chooseStarter(4);
+    if (pet.isEgg()) pet.dbgHatchAs(6, false);
+    while (pet.hasLearnOffer()) pet.declineLearn();
+    if (!pet.sleeping) pet.toggleLight();
+    ck(pet.sleeping, "the pet is asleep");
+    // the bath icon must NOT wake it
+    int bx = 0, by = 0;
+    uiButtonAt(2, &bx, &by, nullptr);
+    onTap((int16_t)bx, (int16_t)by);
+    ck(pet.sleeping, "the bath icon does not wake a sleeping pet");
+    // and what is drawn greyed is exactly what is refused: one answer, so the
+    // dimming can never point at a different icon than the tap handler does
+    bool grey[4];
+    for (int i = 0; i < 4; i++) grey[i] = uiButtonDisabled(i);
+    ck(!grey[BTN_LIGHT_IDX] && grey[0] && grey[2] && grey[3],
+       "and it is the only icon drawn lit while asleep");
+
+    // the light icon must
+    onTap((int16_t)lx, (int16_t)ly);
+    ck(!pet.sleeping, "the light icon does");
+    for (int i = 0; i < 4; i++)
+      if (uiButtonDisabled(i)) bad++, printf("FAIL  icon %d still greyed awake\n", i);
+    ck(true, "and awake, every icon is live again");
+  }
+
+  // the home icons must not overlap each other now that they are bigger
+  {
+    int worst = 9999;
+    for (int i = 0; i + 1 < 4; i++) {
+      int ax, ay, ah, bx2, by2, bh;
+      uiButtonAt(i, &ax, &ay, &ah);
+      uiButtonAt(i + 1, &bx2, &by2, &bh);
+      int gap = (bx2 - bh) - (ax + ah);
+      if (gap < worst) worst = gap;
+    }
+    printf("      smallest gap between home icons: %d px\n", worst);
+    ck(worst >= 0, "the home icons do not overlap");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");

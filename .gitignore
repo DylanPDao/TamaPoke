@@ -38,3 +38,4 @@ tools/sdcard/mons/*.bin
 tamapoke.nvs
 tamapoke.nvs.*
 tools/_*.svg
+backups/
