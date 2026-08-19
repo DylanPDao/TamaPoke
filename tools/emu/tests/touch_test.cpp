@@ -94,13 +94,21 @@ int main(int argc, char **argv) {
   if (!pet.awaitingStarter()) { printf("FAIL: not on the starter screen\n"); return 1; }
   printf("on starter screen, awaitingStarter=1\n");
 
+  // First boot is two steps now: the region, then its starters. Pick KANTO so
+  // row 0 below is Bulbasaur, exactly as it was before the region step existed.
+  click(233, 108 + 30);
+  pump(2);
+  if (pet.region != 0) { printf("FAIL: region tap did not land\n"); return 1; }
+  if (!pet.awaitingStarter()) { printf("FAIL: the region tap chose a starter\n"); return 1; }
+  printf("picked KANTO, still on the starter flow\n");
+
   // Negative control: below the three rows (they span y 110..344). If this
   // "selects" a starter the test proves nothing about coordinate routing.
   click(233, 420);
   if (!pet.awaitingStarter()) { printf("FAIL: off-row click selected a starter\n"); return 1; }
   printf("click at (233,420) off the rows: correctly ignored\n");
 
-  // row 0 == STARTER_DEX[0] == Bulbasaur. Centre of the row: x 70..396, y 110..180.
+  // row 0 == Kanto's first starter == Bulbasaur. Centre of the row: x 70..396, y 110..180.
   click(233, 145);
   printf("click at (233,145) on row 0: awaitingStarter=%d\n", (int)pet.awaitingStarter());
 

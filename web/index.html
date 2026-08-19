@@ -67,14 +67,21 @@
       <span slot="not-allowed">Needs HTTPS.</span>
     </esp-web-install-button>
     <p class="note" style="border-left:4px solid #e8503a;padding-left:10px">
-       🔄 <b>Updating? Your pet is kept automatically.</b> This installer never erases
-       your save. If you are ever offered an <b>erase</b> option by any other tool,
-       say no — erasing wipes the pet, and there is no undo. Back it up first with
-       <code>EXPORT</code> on the serial console if it matters to you.</p>
-    <p class="note">🔄 <b>Updating to a new version? Install <u>without</u> erasing</b> to keep
-       your Pokémon — the save lives in flash and the sprites on the microSD, so a normal
-       install keeps both. Only a full <b>Erase</b> wipes your saved pet (the SD sprites
-       survive even that). First time on a fresh board? You can erase, no problem.</p>
+       🔄 <b>Updating? Leave "Erase device" unchecked.</b> The installer asks
+       once, with the box already unchecked — click <b>Next</b> without ticking
+       it and your creature, Pokédex and badges all survive, because the
+       firmware is written around the save rather than over it. Tick that box
+       and everything is gone, with no undo. The sprites on the microSD are
+       untouched either way.<br><br>
+       <b>Installers before v2.7 erased it every time, without asking.</b>
+       They shipped one image covering the whole start of flash, the save
+       included, and were configured to wipe the chip before writing. Both are
+       fixed here. Even so, <code>EXPORT</code> on the serial console is the
+       only real safety net: it prints your whole save as a block of
+       <code>IMPORT</code> lines, and pasting that block back restores it.
+       Worth doing before any update you care about.<br><br>
+       A fresh board with nothing on it can be erased safely, and on a board
+       that has never run TamaPoke it makes no difference either way.</p>
   </div>
 
   <h2><span class="num">2</span>Load the sprites onto the microSD</h2>

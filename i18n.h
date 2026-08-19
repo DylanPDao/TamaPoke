@@ -117,6 +117,7 @@ enum StrId : uint8_t {
   S_EGG_REGION,     // hint under the egg's region pill
   S_WIN_TRAIN_FMT,  // "%s +%u" -- the training a gym win is worth
   S_WIN_MAXED,      // ... or that there is nowhere left to train
+  S_CHOOSE_REGION,  // first boot: pick the region your starter comes from
   STR_COUNT
 };
 
