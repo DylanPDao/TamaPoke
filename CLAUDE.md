@@ -163,6 +163,22 @@ missing flush is invisible to every capture. One test opens all 13 screens and
 asserts each flushes; another checks the 6 x N i18n table for nulls and
 non-ASCII. Both live in the scratchpad, NOT the repo -- see below.
 
+### Landed 2026-08-18 (v2.6, merged, installer rebuilt)
+
+The home row's four icons are named constants now (`BTN_FOOD`/`LIGHT`/`BATH`/
+`TRAIN`). Dropping the ball icon had shifted every index by one and left
+`drawButtons()` reading `i != 2` meaning LIGHT, which had become BATH -- so
+asleep, the bath was the only lit icon AND its handler had no sleep guard, so it
+really did start a bath. Draw and tap now ask one predicate, `uiButtonDisabled()`,
+so a greyed button cannot still be tappable. Icons went 52x52 -> 60x60 and 54 px
+apart -> 66, still on the panel arc (`y = 406 - dx^2/729`, outer corner at radius
+229.7 of 233). `TR <atk> <def> <spe>` joins `IV` on the console, clamped to
+`trMaxFor(iv)`. Three debug prints left the touch path (`BTN n`, `PET`, a
+commented `TOUCH x y`) -- they flooded the console while the panel was in use.
+
+**Soak test running from 2026-08-18.** Baseline at up=240s: `heap=254476
+min=249568`. Watch the trend, not the value.
+
 ### Next up, roughly in order
 
 ~~**Trainer avatars need redrawing.**~~ **done** -- and the licensing call was
