@@ -37,6 +37,8 @@ enum : uint16_t {
 };
 #define MED_COUNT 8
 
+uint8_t moveUnlockLevel(int16_t dex, uint8_t idx);
+
 class Pet {
 public:
   // Estadisticas 0..100
@@ -132,6 +134,14 @@ public:
   // The newest MOVE_SLOTS moves this species has learned by its current level,
   // newest last. Used on hatch, on a fresh save, and to backfill empty slots.
   void relearnFromLevel();
+  // The level at which `dex` may legally use learnset entry `i`. A level-up
+  // move carries its own; a level-0 entry is a TM/tutor/egg move, which the
+  // data gives no level at all, and those unlock together at TM_LEVEL.
+  //
+  // It is a free function, not a Pet method, because the move PICKER needs the
+  // identical answer for a banked party member. Having its own gate is what let
+  // a level 22 Charmeleon be offered FIRE BLAST.
+
   // Moves reachable at this level that are not already known, for the learn
   // prompt. Returns how many were written into out (at most max).
   uint8_t pendingLearnables(uint8_t *out, uint8_t max) const;

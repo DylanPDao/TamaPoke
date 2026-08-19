@@ -40,3 +40,32 @@ static inline const char *typeName(uint8_t t) {
   };
   return (t < TYPE_COUNT) ? N[t] : "?";
 }
+
+// One colour per type, for the chips on move rows and the battle grid. The move
+// list used to print the type as grey 6px text, which on a 466px round panel at
+// arm's length is unreadable -- and type is the single most important thing
+// about a move in a game whose whole combat model is the type chart.
+//
+// These are the standard series type colours converted to RGB565. They are
+// hand-written rather than generated because they are not derived from anything:
+// DexEntry.accent is per SPECIES and says nothing about a move.
+static const uint16_t TYPE_COL[TYPE_COUNT] = {
+  0xAD4F, 0xF406, 0x6C9E,     // NORMAL, FIRE, WATER
+  0xFE86, 0x7E4A, 0x9EDB,     // ELECTRIC, GRASS, ICE
+  0xC185, 0xA214, 0xE60D,     // FIGHTING, POISON, GROUND
+  0xAC9E, 0xFAD1, 0xADC4,     // FLYING, PSYCHIC, BUG
+  0xBD07, 0x72D3, 0x71DF,     // ROCK, GHOST, DRAGON
+  0x72C9, 0xBDDA, 0xECD5,     // DARK, STEEL, FAIRY
+};
+
+// Whether a type's colour is light enough to need dark text on it. Precomputed
+// from the same luminance the eye uses (0.299/0.587/0.114) so the label never
+// comes out grey-on-yellow.
+static const uint8_t TYPE_COL_LIGHT[TYPE_COUNT] = { 1, 1, 0, 1, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1 };
+
+static inline uint16_t typeColor(uint8_t t) {
+  return t < TYPE_COUNT ? TYPE_COL[t] : 0x8410;
+}
+static inline bool typeColorIsLight(uint8_t t) {
+  return t < TYPE_COUNT && TYPE_COL_LIGHT[t];
+}

@@ -539,6 +539,16 @@ static uint8_t tmLevelFor(const MoveEntry &m) {
   return TM_LEVEL;
 }
 
+// THE single answer, used by relearnFromLevel(), by the STAB fallback and by
+// the move picker in the sketch. Three call sites once had three opinions.
+uint8_t moveUnlockLevel(int16_t dex, uint8_t idx) {
+  uint8_t at = learnLevel(dex, idx);
+  if (at > 0) return at;                 // a real level-up move
+  uint8_t mv = learnMove(dex, idx);
+  if (!mv || mv >= MOVE_COUNT) return 255;
+  return tmLevelFor(MOVE_TBL[mv]);       // a TM: no natural level, so the gate
+}
+
 void Pet::relearnFromLevel() {
   for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = 0;
   if (isEgg()) return;

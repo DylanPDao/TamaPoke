@@ -2683,6 +2683,19 @@ void renderCardStats() {
 // Draws one move as a row: name, its type in the type's own colour, and either
 // power or a STATUS marker. Shared by the moves page and the picker so a move
 // looks the same wherever you meet it.
+// A filled chip in the type's own colour, label in whichever of black/white
+// reads on it. Returns its width so a caller can lay out beside it.
+int drawTypeChip(int x, int y, uint8_t type) {
+  const char *nm = typeName(type);
+  int w = (int)strlen(nm) * 6 + 10;
+  gfx->fillRoundRect(x, y, w, 15, 4, typeColor(type));
+  gfx->setTextSize(1);
+  gfx->setTextColor(typeColorIsLight(type) ? UI_INK : UI_WHITE);
+  gfx->setCursor(x + 5, y + 4);
+  gfx->print(nm);
+  return w;
+}
+
 void drawMoveRow(int y, uint8_t mv, bool highlight, int16_t dex) {
   gfx->fillRoundRect(70, y, 326, 50, 12, highlight ? UI_BAR_WARN : UI_BG_DAY);
   gfx->drawRoundRect(70, y, 326, 50, 12, UI_INK);
@@ -2702,16 +2715,23 @@ void drawMoveRow(int y, uint8_t mv, bool highlight, int16_t dex) {
   // one by hand would duplicate what gen_dex.py generates. Colouring same-type
   // moves in the species accent is more useful anyway: STAB is a 1.5x damage
   // bonus, so this marks the moves that actually hit hardest for this creature.
+  // The chip carries the TYPE; STAB moved onto the power figure, where it
+  // belongs -- STAB is a damage bonus, so saying it next to the damage reads
+  // straight, and it leaves the type free to be its own colour.
   bool stab = hasStab(dex, m.type) && m.cat != MC_STATUS;
-  gfx->setTextColor(stab ? DEX_TBL[dex].accent : UI_TRACK);
-  gfx->setTextSize(1);
-  gfx->setCursor(82, y + 32);
-  gfx->print(typeName(m.type));
+  int cw = drawTypeChip(82, y + 29, m.type);
+  if (stab) {
+    gfx->setTextColor(DEX_TBL[dex].accent);
+    gfx->setTextSize(1);
+    gfx->setCursor(82 + cw + 6, y + 33);
+    gfx->print("STAB");
+  }
   char pw[16];
   if (m.cat == MC_STATUS) snprintf(pw, sizeof(pw), "%s", T(S_MOVE_STATUS));
   else snprintf(pw, sizeof(pw), T(S_MOVE_PWR), m.power);
-  gfx->setTextColor(UI_INK);
-  gfx->setCursor(384 - (int)strlen(pw) * 6, y + 32);
+  gfx->setTextColor(stab ? DEX_TBL[dex].accent : UI_INK);
+  gfx->setTextSize(1);
+  gfx->setCursor(384 - (int)strlen(pw) * 6, y + 33);
   gfx->print(pw);
 }
 
@@ -2734,7 +2754,11 @@ uint8_t learnableFor(int16_t dex, uint8_t lvl, uint8_t *out, uint8_t max) {
   if (dex < 1 || dex > DEX_COUNT) return 0;
   uint8_t n = learnCount(dex), w = 0;
   for (uint8_t i = 0; i < n && w < max; i++) {
-    if (learnLevel(dex, i) > lvl) continue;
+    // moveUnlockLevel(), NOT learnLevel(): a TM is stored as level 0 and would
+    // otherwise clear this check at level 1. That is how a level 22 Charmeleon
+    // came to be offered FIRE BLAST -- the same class of bug as the level 1
+    // Squirtle with SURF, in the one path that fix did not reach.
+    if (moveUnlockLevel(dex, i) > lvl) continue;
     uint8_t mv = learnMove(dex, i);
     if (!mv || mv >= MOVE_COUNT) continue;
     bool dup = false;
@@ -3508,12 +3532,16 @@ void renderBattle() {
       gfx->setTextSize(1);
       gfx->setCursor(x + 10, y + 12);
       gfx->print(MOVE_TBL[mv].name);
-      gfx->setTextColor(hasStab(btlYou.dex, MOVE_TBL[mv].type) &&
-                                MOVE_TBL[mv].cat != MC_STATUS
-                            ? DEX_TBL[btlYou.dex].accent
-                            : UI_TRACK);
-      gfx->setCursor(x + 10, y + 28);
-      gfx->print(typeName(MOVE_TBL[mv].type));
+      // Same chip as the move list: in a fight the type IS the decision, and
+      // grey 6px text was the least visible thing on the busiest screen.
+      int cw = drawTypeChip(x + 10, y + 26, MOVE_TBL[mv].type);
+      if (hasStab(btlYou.dex, MOVE_TBL[mv].type) &&
+          MOVE_TBL[mv].cat != MC_STATUS) {
+        gfx->setTextSize(1);
+        gfx->setTextColor(DEX_TBL[btlYou.dex].accent);
+        gfx->setCursor(x + 10 + cw + 4, y + 30);
+        gfx->print("+");
+      }
     }
   }
   gfx->flush();

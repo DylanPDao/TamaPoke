@@ -6,6 +6,7 @@
 #include "Arduino_GFX_Library.h"
 #include "Preferences.h"
 #include "pet.h"
+#include "moves.h"
 #include "party.h"
 #include <cstdio>
 uint32_t g_seed=2; FakeSerial Serial; FakeESP ESP; FakeWire Wire;
@@ -43,6 +44,8 @@ static void check(const char *name, bool *open, uint8_t *page){
   if (*page != 1) { printf("FAIL  %-10s did not advance a page (page=%u)\n", name, *page); bad++; return; }
   printf("PASS  %-10s pages on a horizontal swipe\n", name);
 }
+uint8_t learnableFor(int16_t dex, uint8_t lvl, uint8_t *out, uint8_t max);
+
 int main(){
   setup();
   for (int i=0;i<4;i++) render();
@@ -144,6 +147,26 @@ int main(){
     onSwipe(1);
     if (!galleryPick || !galleryOpen) { printf("FAIL  gallery    paging back does not return to the chooser\n"); bad++; }
     else printf("PASS  %-10s paging back returns to the chooser\n", "gallery");
+  }
+
+  // The rule lives in moveUnlockLevel() and moves_test pins it -- but the
+  // PICKER has to actually ask it. It once kept its own copy of the check,
+  // which IS the bug, so this drives the screen's own list, not the rule.
+  {
+    uint8_t l[64];
+    uint8_t n = learnableFor(5, 22, l, sizeof(l));    // a Charmeleon at 22
+    bool blast = false, ember = false;
+    for (uint8_t i = 0; i < n; i++) {
+      if (!strcmp(MOVE_TBL[l[i]].name, "FIRE BLAST")) blast = true;
+      if (!strcmp(MOVE_TBL[l[i]].name, "EMBER")) ember = true;
+    }
+    if (blast) { printf("FAIL  picker     offers a level 22 Charmeleon FIRE BLAST\n"); bad++; }
+    else printf("PASS  picker     no FIRE BLAST for a level 22 Charmeleon\n");
+    if (!ember) { printf("FAIL  picker     lost the moves it really knows\n"); bad++; }
+    else printf("PASS  picker     still offers what it really knows\n");
+    if (learnableFor(5, 40, l, sizeof(l)) <= n) {
+      printf("FAIL  picker     TMs never arrive at all\n"); bad++;
+    } else printf("PASS  picker     and the TMs arrive once it is built\n");
   }
 
   printf("%s\n", bad?"FAILURES":"every paged screen pages");
