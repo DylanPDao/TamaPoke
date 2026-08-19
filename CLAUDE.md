@@ -179,6 +179,27 @@ commented `TOUCH x y`) -- they flooded the console while the panel was in use.
 **Soak test running from 2026-08-18.** Baseline at up=240s: `heap=254476
 min=249568`. Watch the trend, not the value.
 
+### First boot picks a region, then a starter (v2.7)
+
+A new game opens on the region chooser and then shows that region's three
+starters; the choice also sets `pet.region`, so the eggs that follow come from
+where you started. `starterPick` is `registeredCount() == 0`, so no existing
+save ever sees it.
+
+**Do not "tidy" `REGIONS[].starters` to match that screen.** It is also the pool
+`rollInRegion()` draws a region's FIRST EGG from, where Kanto's five
+deliberately include Pikachu and Eevee. The screen shows the front three;
+`starter_test` pins those three per region AND asserts Kanto's pool is still
+longer than what is shown, so a reorder or a trim fails a test instead of
+silently changing the first screen anyone sees.
+
+The region step is not persisted -- a reset between the two lands back on the
+region, which is the harmless direction: nothing has been chosen yet.
+`renderRegionPick()` took a mode (`RPICK_FOR_GYMS/DEX/START`) instead of a bool;
+at first boot every progress count would read zero, so it shows each region's
+first starter as the subtitle and drops the BACK label, there being nowhere to
+go back to.
+
 ### Next up, roughly in order
 
 ~~**Trainer avatars need redrawing.**~~ **done** -- and the licensing call was

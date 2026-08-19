@@ -89,6 +89,7 @@ extern Combatant btlYou, btlFoe;
 extern uint32_t btlLungeUntil[2], btlHitUntil[2];
 extern uint8_t btlMenu;
 void startTrainerBattle(uint8_t idx, bool hard);
+void onTap(int16_t x, int16_t y);   // the first-boot shots tap their way in
 extern bool gymOpen, playerOpen;
 extern bool galleryDirty;
 extern uint8_t galleryRegion;
@@ -147,14 +148,18 @@ static void writePPM(const char *path) {
 static int shotMode(const char *screen, const char *out, int lvl, int iv, int dex) {
   setup();
   for (int i = 0; i < 4; i++) loop();          // let the sketch settle
-  if (pet.awaitingStarter() && strcmp(screen, "starter")) pet.chooseStarter(4);
+  bool firstBoot = !strcmp(screen, "starter") || !strcmp(screen, "starterj") ||
+                   !strcmp(screen, "region");
+  if (pet.awaitingStarter() && !firstBoot) pet.chooseStarter(4);
   if (!strcmp(screen, "egg")) {
     // a few species registered, so the lottery is past the starter case and the
     // region pill has something to switch between
     for (int d = 1; d <= 40; d++) pet.dbgHatchAs(d, false);
     pet.newEgg();
   }
-  if (pet.isEgg() && strcmp(screen, "egg")) pet.dbgHatchAs(dex, false);
+  // dbgHatchAs() clears starterPick, so hatching here would skip the very
+  // screen the first-boot shots are trying to photograph.
+  if (pet.isEgg() && !firstBoot && strcmp(screen, "egg")) pet.dbgHatchAs(dex, false);
   if (lvl > 0) pet.ageMinutes = (uint32_t)(lvl - 1) * MINUTES_PER_LEVEL;
   if (iv >= 0) {
     pet.ivAtk = pet.ivDef = pet.ivSpe = pet.ivHp = iv;
@@ -164,6 +169,10 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   // It started firing for every shot once dex_moves.py gained the cheap early
   // attacks, because a creature now genuinely has moves waiting.
   while (pet.hasLearnOffer()) pet.declineLearn();
+  // "region" is step one of the first boot and "starter" is step two, so the
+  // second one gets there the way a player does: by tapping a region.
+  if (!strcmp(screen, "starter")) onTap(233, 108 + 30);        // KANTO
+  if (!strcmp(screen, "starterj")) onTap(233, 108 + 72 + 30);  // JOHTO
   for (int i = 0; i < 2; i++) loop();          // pick up the sprite for the new species
   cardOpen = galleryOpen = clockOpen = kbOpen = false;
   menuOpen = partyOpen = partyPick = trainOpen = movePickOpen = false;

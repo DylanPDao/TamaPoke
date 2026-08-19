@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.6-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.7-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -34,6 +34,18 @@ and complete them all (shinies included).
 All shots are straight off the 466x466 round panel, rendered headlessly by the
 emulator (`tools/emu/tamapoke-emu --shot <name>`), so they are exactly what the
 hardware draws.
+
+### Starting out
+
+| Pick a region | ...then its starter | Johto's three |
+|---|---|---|
+| <img src="docs/screens/region.png" width="240"> | <img src="docs/screens/starter.png" width="240"> | <img src="docs/screens/starterj.png" width="240"> |
+
+A new game asks which region you are playing before it asks which creature you
+want. The choice sets both: you pick from that region's three starters, and it
+becomes where your eggs come from afterwards (changeable later on the egg's
+region pill). Existing saves never see this screen -- it only appears when the
+Pokedex is empty.
 
 ### Raising one
 
@@ -251,6 +263,10 @@ region moves the egg you are holding. Two rules stop that being a re-roll button
 |---|---|
 | Rarity | the tier the egg was granted is **kept** — only which species of that tier changes, so flipping can never fish for a legendary |
 | Memory | each region's answer is **remembered** for the current egg, so switching back shows the same creature |
+
+The region is first chosen at the **very start of a new game**, on the screen
+before the starter -- so the creature you begin with and the eggs that follow
+come from the same place. Everything below is about changing it afterwards.
 
 A region is decided by the **base** species, and evolutions follow wherever they
 lead — a Kanto run still reaches Crobat and Blissey.

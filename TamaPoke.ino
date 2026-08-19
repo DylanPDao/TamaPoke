@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.6"
+#define FW_VERSION "2.7"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -223,7 +223,13 @@ bool gymHard = false;   // which ladder the list is showing
 // normal battle screen takes over with btlLink set.
 bool lanOpen = false;
 Link lan;
-static void renderRegionPick(bool forGyms);   // the region chooser, defined below
+// What the shared region chooser is being used FOR. It only changes the
+// subtitle and whether there is a way back: at first boot every count would
+// read zero, which tells the player nothing, and there is nowhere to go back to.
+#define RPICK_FOR_GYMS  0
+#define RPICK_FOR_DEX   1
+#define RPICK_FOR_START 2
+static void renderRegionPick(uint8_t mode);   // the region chooser, defined below
 static int regionPickTap(int16_t x, int16_t y);
 static void drawEggRegion();          // defined with the egg screen helpers
 static bool eggRegionTap(int16_t x, int16_t y);
@@ -465,7 +471,27 @@ static const uint16_t STARS[][2] = { {120,140},{330,120},{370,210},{95,230},{280
 
 bool wasPressed = false;
 // eleccion de inicial (primera partida): Bulbasaur / Charmander / Squirtle, 3 filas
-static const int16_t STARTER_DEX[3] = { 1, 4, 7 };
+// The first-boot starter list is the FRONT of each region's starter array in
+// dex.h -- not a copy of it. That array is also the pool a region's first egg
+// is drawn from (pet.cpp rollInRegion), where Kanto's five deliberately include
+// Pikachu and Eevee; the choice screen shows the canonical three and leaves the
+// rest to the egg. starter_test pins the first three of every region, so
+// reordering that array cannot silently change the first screen anyone sees.
+#define STARTER_SHOWN 3
+int16_t starterOf(uint8_t region, uint8_t i) {
+  const RegionInfo &rg = REGIONS[region % REGION_COUNT];
+  if (i >= rg.starterCount) i = 0;
+  return rg.starters[i];
+}
+uint8_t starterCountShown(uint8_t region) {
+  uint8_t n = REGIONS[region % REGION_COUNT].starterCount;
+  return n < STARTER_SHOWN ? n : STARTER_SHOWN;
+}
+
+// First boot runs region -> starter. This is NOT persisted: a reset between the
+// two lands back on the region, which is the harmless direction to fail in --
+// nothing has been chosen yet, and pet.setRegion() is idempotent.
+static bool starterRegionDone = false;
 #define STARTER_ROW_Y 110
 #define STARTER_ROW_H 70
 #define STARTER_ROW_GAP 8
@@ -1319,11 +1345,20 @@ void onSwipe(int dir) {
 }
 
 void onTap(int16_t x, int16_t y) {
-  if (pet.awaitingStarter()) {  // primera partida: elegir inicial
-    for (int i = 0; i < 3; i++) {
+  if (pet.awaitingStarter()) {  // primera partida: region y luego inicial
+    if (!starterRegionDone) {
+      int r = regionPickTap(x, y);
+      if (r >= 0) {
+        pet.setRegion((uint8_t)r);   // the region picked here is where eggs come from too
+        starterRegionDone = true;
+        sfxPlay(SFX_TAP);
+      }
+      return;
+    }
+    for (int i = 0; i < starterCountShown(pet.region); i++) {
       int ry = STARTER_ROW_Y + i * (STARTER_ROW_H + STARTER_ROW_GAP);
       if (x >= 70 && x <= 396 && y >= ry && y <= ry + STARTER_ROW_H) {
-        pet.chooseStarter(STARTER_DEX[i]);
+        pet.chooseStarter(starterOf(pet.region, (uint8_t)i));
         sfxPlay(SFX_TAP);
         break;
       }
@@ -1741,8 +1776,8 @@ void renderStarterSelect() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(t) * 6, 68);
   gfx->print(t);
-  for (int i = 0; i < 3; i++) {
-    int16_t d = STARTER_DEX[i];
+  for (int i = 0; i < starterCountShown(pet.region); i++) {
+    int16_t d = starterOf(pet.region, i);
     const DexEntry &de = DEX_TBL[d];
     int ry = STARTER_ROW_Y + i * (STARTER_ROW_H + STARTER_ROW_GAP);
     gfx->fillRoundRect(70, ry, 326, STARTER_ROW_H, 14, lerp565(de.accent, UI_WHITE, 6, 8));
@@ -1758,12 +1793,13 @@ void renderStarterSelect() {
 }
 
 void render() {
-  if (pet.awaitingStarter()) {  // primera partida: elegir inicial (prioridad total)
-    renderStarterSelect();
+  if (pet.awaitingStarter()) {  // primera partida: region y luego inicial
+    if (!starterRegionDone) renderRegionPick(RPICK_FOR_START);
+    else renderStarterSelect();
     return;
   }
   if (galleryOpen) {
-    if (galleryPick) { renderRegionPick(false); return; }
+    if (galleryPick) { renderRegionPick(RPICK_FOR_DEX); return; }
     renderGallery();
     return;
   }
@@ -1815,7 +1851,7 @@ void render() {
     return;
   }
   if (gymOpen) {
-    if (gymPick) renderRegionPick(true);
+    if (gymPick) renderRegionPick(RPICK_FOR_GYMS);
     else renderGyms();
     return;
   }
@@ -4345,11 +4381,13 @@ static bool eggRegionTap(int16_t x, int16_t y) {
 #define RPICK_H 62
 #define RPICK_Y(i) (108 + (i) * 72)
 
-static void renderRegionPick(bool forGyms) {
+static void renderRegionPick(uint8_t mode) {
+  bool forGyms = (mode == RPICK_FOR_GYMS);
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
-  char ttl[32];
-  if (forGyms) snprintf(ttl, sizeof(ttl), "%s", T(S_GYMS));
+  char ttl[40];
+  if (mode == RPICK_FOR_START) snprintf(ttl, sizeof(ttl), "%s", T(S_CHOOSE_REGION));
+  else if (forGyms) snprintf(ttl, sizeof(ttl), "%s", T(S_GYMS));
   else snprintf(ttl, sizeof(ttl), T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
@@ -4366,7 +4404,9 @@ static void renderRegionPick(bool forGyms) {
     gfx->setCursor(RPICK_X + 18, y + 12);
     gfx->print(nm);
     char sub[28];
-    if (forGyms)
+    if (mode == RPICK_FOR_START)
+      snprintf(sub, sizeof(sub), "%s", DEX_TBL[starterOf(i, 0)].name);
+    else if (forGyms)
       snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCountIn(i, gymHard));
     else
       snprintf(sub, sizeof(sub), "%u/%u",
@@ -4385,10 +4425,12 @@ static void renderRegionPick(bool forGyms) {
     gfx->setCursor(CX - strlen(T(S_LAN)) * 6, LANBTN_Y + 14);
     gfx->print(T(S_LAN));
   }
-  gfx->setTextColor(UI_TRACK);
-  gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
-  gfx->print(T(S_BACK));
+  if (mode != RPICK_FOR_START) {          // first boot has nowhere to go back to
+    gfx->setTextColor(UI_TRACK);
+    gfx->setTextSize(2);
+    gfx->setCursor(CX - strlen(T(S_BACK)) * 6, 392);
+    gfx->print(T(S_BACK));
+  }
   gfx->flush();
 }
 
