@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.7"
+#define FW_VERSION "2.8"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -109,12 +109,15 @@ bool menuOpen = false;
 // Four rows: PARTY and GYMS came out, since a swipe right and a swipe left now
 // reach them directly. Sized to the bezel -- the panel is 320 wide, so 160 from
 // the centre, and sqrt(233^2 - 160^2) = 169 means it can only span y 64..402.
-#define MENU_Y 104
+#define MENU_Y 75
 #define MENU_W 320
-#define MENU_H 258
+#define MENU_H 316
 #define MENU_ROW_H 52
 #define MENU_ROW_GAP 6
-#define MENU_ROWS 4
+// 5 rows: STATS / POKEDEX / SETTINGS / RETIRE / CLOSE. At MENU_Y 75 the panel
+// spans 75..391 and the round display gives a half-width of 171 there against
+// the 160 a row needs, so the corners stay on glass.
+#define MENU_ROWS 5
 #define MENU_ROW_Y(i) (MENU_Y + 16 + (i) * (MENU_ROW_H + MENU_ROW_GAP))
 
 // Party screen. partyPick != 0 means the newcomer needs a slot: the player
@@ -1492,7 +1495,11 @@ void onTap(int16_t x, int16_t y) {
       if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
       else if (i == 1) { galleryOpen = true; galleryPick = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
       else if (i == 2) { openClock(); }
-      return;                                     // i == 3 is CLOSE: just shut
+      else if (i == 3) {
+        if (!pet.canRetireNow()) { sfxPlay(SFX_DENY); return; }
+        choiceKind = 3; choiceUntil = millis() + 12000;
+      }
+      return;                                     // i == 4 is CLOSE: just shut
     }
     return;
   }
@@ -1582,6 +1589,9 @@ void onTap(int16_t x, int16_t y) {
     if (choiceKind == 1) {                 // evolucion
       if (b1) { int16_t old = pet.speciesId; pet.evolve(); evoPmd.load(old, pet.shiny); }
       else if (b2) pet.declineEvolve();
+    } else if (choiceKind == 3) {          // retirada a peticion
+      if (b1) pet.startRetire();
+      // b2 is simply "no": nothing to decline, the row is always there
     } else if (choiceKind == 2) {          // despedida
       if (b1) pet.startFarewell();
       else if (b2) pet.declineFarewell();
@@ -4543,7 +4553,10 @@ void renderCardProgress() {
   if (d.evolvesTo == 0) {
     evo = T(S_FINAL_FORM);
   } else {
-    int needed = d.evolveLevel + pet.careMistakes;
+    // The SAME sum canEvolveNow() uses -- including the day owed for retiring
+    // the previous creature early. A card that left evoPenalty() out would
+    // promise an evolution that then does not happen.
+    int needed = d.evolveLevel + pet.careMistakes + pet.evoPenalty();
     if (pet.level() >= needed) {
       if (pet.lowestStat() >= 40) { evo = T(S_EVO_READY); evoCol = UI_BAR_OK; }
       else { evo = T(S_EVO_BLOCKED); evoCol = UI_BAR_BAD; }
@@ -4555,6 +4568,16 @@ void renderCardProgress() {
   gfx->setTextColor(evoCol);
   gfx->setCursor(CX - strlen(evo) * 6, 256);
   gfx->print(evo);
+
+  // the day inherited from an early retire, said out loud -- otherwise this
+  // creature simply evolves late and the player has no way to know why
+  if (pet.evoPenalty()) {
+    gfx->setTextSize(1);
+    gfx->setTextColor(UI_BAR_WARN);
+    gfx->setCursor(CX - (int)strlen(T(S_EVO_SLOW)) * 3, 286);
+    gfx->print(T(S_EVO_SLOW));
+    gfx->setTextSize(2);
+  }
 
   // descuidos (retrasan la evolucion)
   char ms[24];
@@ -4593,6 +4616,7 @@ static void menuRowLabel(int i, char *out, size_t n) {
     case 0: snprintf(out, n, "%s", T(S_STATS)); break;
     case 1: snprintf(out, n, T(S_POKEDEX_FMT), pet.registeredCount(), DEX_COUNT); break;
     case 2: snprintf(out, n, "%s", T(S_SETTINGS)); break;
+    case 3: snprintf(out, n, "%s", T(S_RETIRE)); break;
     default: snprintf(out, n, "%s", T(S_CLOSE)); break;
   }
 }
@@ -4609,8 +4633,9 @@ void drawMenu() {
   for (int i = 0; i < MENU_ROWS; i++) {
     int y = MENU_ROW_Y(i);
     bool close = (i == MENU_ROWS - 1);
+    bool dead = (i == 3 && !pet.canRetireNow());   // an egg or a companion
     gfx->fillRoundRect(MENU_X + 18, y, MENU_W - 36, MENU_ROW_H, 12,
-                       close ? UI_TRACK : UI_BG_DAY);
+                       close || dead ? UI_TRACK : UI_BG_DAY);
     gfx->drawRoundRect(MENU_X + 18, y, MENU_W - 36, MENU_ROW_H, 12, UI_INK);
     char lbl[28];
     menuRowLabel(i, lbl, sizeof(lbl));
@@ -5169,6 +5194,9 @@ void drawChoiceDialog() {
   if (choiceKind == 1) {  // evolucion
     q = T(S_EVO_Q); o1 = T(S_EVO_TAP); o2 = T(S_EVO_KEEP);
     c1 = UI_BAR_BAD; t1 = UI_WHITE; c2 = UI_TRACK; t2 = UI_INK;
+  } else if (choiceKind == 3) {   // retirada a peticion
+    q = T(S_RETIRE_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
+    c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_BAR_OK; t2 = UI_WHITE;
   } else {                // despedida
     q = T(S_FAR_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
     c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_BAR_OK; t2 = UI_WHITE;
@@ -5179,6 +5207,17 @@ void drawChoiceDialog() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(q) * 6, 176);
   gfx->print(q);
+  // The price, spelled out, and only when there is one: retiring a creature
+  // that has already earned its farewell costs nothing and must not claim to.
+  if (choiceKind == 3 && !pet.retireIsFree()) {
+    const char *cost = T(S_RETIRE_COST);
+    gfx->setTextSize(1);
+    gfx->setTextColor(UI_BAR_BAD);
+    gfx->setCursor(CX - (int)strlen(cost) * 3, 194);
+    gfx->print(cost);
+    gfx->setTextSize(2);
+    gfx->setTextColor(UI_INK);
+  }
   gfx->fillRoundRect(93, 206, 280, 52, 12, c1);     // boton accion
   gfx->setTextColor(t1);
   gfx->setCursor(CX - (int)strlen(o1) * 6, 224);

@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.7-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v2.8-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -253,6 +253,24 @@ quietly leaning on TMs to fill the gap.
 
 **Gym wins train too**, which is what makes the ladder worth replaying rather than
 a checklist you tick once:
+
+### Retiring a creature early
+
+The farewell is only *offered* at final form and three days. **RETIRE** on the
+menu ends a creature whenever you like -- it is the same ceremony, and it banks
+the creature into your party exactly as a farewell does.
+
+| | |
+|---|---|
+| Retiring one that has earned its farewell | free |
+| Retiring one that has not | the **next** creature evolves a day later |
+
+The penalty is `EVO_PENALTY_LEVELS` (24 at `MINUTES_PER_LEVEL 60`) added to
+every evolution threshold, the same sum `careMistakes` moves. It lands on the
+creature that hatches next, is spent by hatching it, and does **not** compound:
+three early retires in a row still cost one day. The creature's card says
+"evolves a day later" while it carries the debt, and the confirm dialog says the
+price before you accept it.
 
 ### Choosing your egg's region
 
