@@ -712,6 +712,22 @@ void handleSerial() {
   } else if (line.startsWith("LVL ")) {
     pet.ageMinutes = (uint32_t)line.substring(4).toInt() * MINUTES_PER_LEVEL;
     Serial.println("DONE");
+  } else if (line.startsWith("TR ")) {
+    // TR <atk> <def> <spe>: sets the TRAINING (this game's EVs), for testing a
+    // fully-raised creature without playing the minigames for an hour. Each is
+    // clamped to trMaxFor(iv), the same IV-bound ceiling the games enforce, so
+    // this cannot produce a creature the player could not have raised.
+    int v[3] = { 0, 0, 0 };
+    int n = sscanf(line.c_str() + 3, "%d %d %d", &v[0], &v[1], &v[2]);
+    if (n >= 1) {
+      int a = v[0], d = (n >= 2) ? v[1] : v[0], e = (n >= 3) ? v[2] : v[0];
+      pet.trAtk = (uint8_t)(a < 0 ? 0 : (a > pet.trMaxAtk() ? pet.trMaxAtk() : a));
+      pet.trDef = (uint8_t)(d < 0 ? 0 : (d > pet.trMaxDef() ? pet.trMaxDef() : d));
+      pet.trSpe = (uint8_t)(e < 0 ? 0 : (e > pet.trMaxSpe() ? pet.trMaxSpe() : e));
+      pet.flushSave();
+    }
+    Serial.printf("tr=%u/%u/%u topes=%u/%u/%u\n", pet.trAtk, pet.trDef, pet.trSpe,
+                  pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
   } else if (line.startsWith("IV ")) {
     // IV <fue> <def> <vel> <vit>: fija los valores individuales (pruebas).
     // Con "IV 31 31 31 31" se ve el techo; con "IV 8 8 8 8" el suelo.
@@ -1303,7 +1319,6 @@ void onSwipe(int dir) {
 }
 
 void onTap(int16_t x, int16_t y) {
-  // Serial.printf("TOUCH %d %d\n", x, y);  // diagnostico (silenciado: satura el log)
   if (pet.awaitingStarter()) {  // primera partida: elegir inicial
     for (int i = 0; i < 3; i++) {
       int ry = STARTER_ROW_Y + i * (STARTER_ROW_H + STARTER_ROW_GAP);
@@ -1578,7 +1593,6 @@ void onTap(int16_t x, int16_t y) {
   for (int i = 0; i < BTN_COUNT; i++) {
     int dx = x - buttons[i].cx, dy = y - buttons[i].cy;
     if (dx * dx + dy * dy <= BTN_HIT * BTN_HIT) {
-      Serial.printf("BTN %d\n", i);
       if (uiButtonDisabled(i)) { sfxPlay(SFX_DENY); return; }
       sfxPlay(SFX_TAP);
       if (i == BTN_FOOD) feedMenuUntil = millis() + 6000;
@@ -1597,7 +1611,6 @@ void onTap(int16_t x, int16_t y) {
   }
   // tocar al bicho = caricia
   if (inPetZone(x, y)) {
-    Serial.println("PET");
     pet.caress();
     if (!pet.sleeping) sfxPlay(SFX_HEART);
   }

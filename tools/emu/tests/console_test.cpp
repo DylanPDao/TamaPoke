@@ -143,6 +143,27 @@ int main(){
     ck(!strcmp(p4.trainerName,"ASH"), "and the save is still there");
   }
 
+  // TR sets the training, and is bounded by the same IV ceiling the game is --
+  // a debug command that could exceed trMaxFor() would let a test (or a curious
+  // player) build a creature the balance table says cannot exist.
+  {
+    pet.ivAtk = 31; pet.ivDef = 8; pet.ivSpe = 31;
+    pet.trAtk = pet.trDef = pet.trSpe = 0;
+    std::string out = runConsole({"TR 100 100 100"});
+    ck(pet.trAtk == pet.trMaxAtk(), "TR fills the training to the cap");
+    ck(pet.trDef == pet.trMaxDef() && pet.trDef < 100,
+       "and a low IV still gets its lower ceiling, not 100");
+    ck(out.find("tr=") != std::string::npos, "and it reports what it set");
+    runConsole({"TR 0"});
+    ck(pet.trAtk == 0 && pet.trDef == 0 && pet.trSpe == 0,
+       "one argument sets all three, so TR 0 clears them");
+    Pet again; again.begin();
+    ck(again.trAtk == 0, "and the change is persisted rather than lost on reload");
+    runConsole({"TR -5 999 20"});
+    ck(pet.trAtk == 0 && pet.trDef == pet.trMaxDef() && pet.trSpe == 20,
+       "nonsense arguments clamp instead of wrapping");
+  }
+
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
 }
