@@ -882,7 +882,11 @@ uint8_t Pet::playResult(uint8_t score) {
   weight = burn > 0 ? burn : 0;
   if (score >= 5) heartUntil = millis() + HEART_MS;
   if (score > gameHi) gameHi = score;  // nuevo record
-  addBond(2);
+  // Training bonds, and it scales with the session: a token effort is worth the
+  // base, a full one is worth more. The daily cap in addBond() still stops it
+  // being farmed -- this changes how fast a good session gets there, not the
+  // ceiling.
+  addBond((uint8_t)(2 + gain / 6));
   registerCare();
   save();
   return gain;
@@ -925,7 +929,11 @@ uint8_t Pet::trainSpeed(uint16_t hits) {
   weight = burn > 0 ? burn : 0;
   joy = clamp100(joy + 4);
   if (hits > spdHi) spdHi = hits;
-  addBond(1);
+  // Training bonds, and it scales with the session: a token effort is worth the
+  // base, a full one is worth more. The daily cap in addBond() still stops it
+  // being farmed -- this changes how fast a good session gets there, not the
+  // ceiling.
+  addBond((uint8_t)(2 + gain / 6));
   registerCare();
   save();
   return gain;
@@ -946,7 +954,11 @@ uint8_t Pet::trainStrength(uint16_t hits) {
   joy = clamp100(joy + 6);
   if (hits >= 20) heartUntil = millis() + HEART_MS;
   if (hits > strHi) strHi = hits;   // record de golpes
-  addBond(2);
+  // Training bonds, and it scales with the session: a token effort is worth the
+  // base, a full one is worth more. The daily cap in addBond() still stops it
+  // being farmed -- this changes how fast a good session gets there, not the
+  // ceiling.
+  addBond((uint8_t)(2 + gain / 6));
   registerCare();
   save();
   return gain;

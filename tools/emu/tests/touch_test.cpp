@@ -134,7 +134,7 @@ int main(int argc, char **argv) {
   // cheap early attacks: a level 1 creature now actually has things to learn.
   while (pet.hasLearnOffer()) pet.declineLearn();
   pump(2);
-  click(341, 390);                       // 5th icon (dumbbell)
+  click(314, 397);                       // the dumbbell, now the 4th of 4
   if (!trainOpen) { printf("FAIL: train icon did not open the submenu\n"); return 1; }
   printf("PASS: 5th icon opens the training submenu\n");
 
@@ -143,13 +143,13 @@ int main(int argc, char **argv) {
   printf("PASS: STRENGTH routes to the punching bag\n");
   sackOpen = false;
 
-  click(341, 390);
+  click(314, 397);
   click(233, 242);                       // row 1 == SPEED == TRAIN_ROW_Y(1)+28
   if (!spdOpen) { printf("FAIL: SPEED row did not start the reaction test\n"); return 1; }
   printf("PASS: SPEED routes to the reaction test\n");
   spdOpen = false;
 
-  click(341, 390);
+  click(314, 397);
   click(233, 306);                       // row 2 == DEFENCE -> the ball game
   if (!gameOpen) { printf("FAIL: DEFENCE row did not start the ball game\n"); return 1; }
   printf("PASS: DEFENCE routes to the ball game\n");

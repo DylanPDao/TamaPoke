@@ -436,13 +436,16 @@ struct Btn {
 // enough in to keep its old y. Lifting them instead would have run the row into
 // the ENE/HYG bars, which end at y=361 -- the buttons are 52 tall, so any centre
 // above 387 overlaps them.
-#define BTN_COUNT 5
+// Four, not five. The ball had its own icon here until it became DEFENCE's
+// trainer and moved into the training menu -- at which point tapping it just
+// opened the same menu the dumbbell does, two icons for one destination.
+// They sit on the panel's curve: y = 406 - dx^2/729.
+#define BTN_COUNT 4
 Btn buttons[BTN_COUNT] = {
-  { 125, 390, SPR_ICON_FOOD },   // comer
-  { 179, 402, SPR_ICON_PLAY },   // jugar
-  { 233, 406, SPR_ICON_LIGHT },  // luz
-  { 287, 402, SPR_ICON_CLEAN },  // bano
-  { 341, 390, SPR_ICON_TRAIN },  // entrenar
+  { 152, 397, SPR_ICON_FOOD },   // comer
+  { 206, 405, SPR_ICON_LIGHT },  // luz
+  { 260, 405, SPR_ICON_CLEAN },  // bano
+  { 314, 397, SPR_ICON_TRAIN },  // entrenar
 };
 #define BTN_HALF 26  // boton de 52x52
 #define BTN_HIT 36   // radio tactil (un poco mas generoso)
@@ -1552,12 +1555,8 @@ void onTap(int16_t x, int16_t y) {
       if (i == 0) {
         if (!pet.sleeping) feedMenuUntil = millis() + 6000;
       } else if (i == 1) {
-        // The ball used to live here. It is DEF's trainer now, so it belongs in
-        // the training menu with the other two rather than on the home row.
-        if (!pet.sleeping) trainOpen = true;
-      } else if (i == 2) {
         pet.toggleLight();
-      } else if (i == 3) {
+      } else if (i == 2) {
         startBath();
       } else {
         if (!pet.sleeping) trainOpen = true;

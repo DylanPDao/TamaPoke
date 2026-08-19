@@ -160,6 +160,10 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     pet.ivAtk = pet.ivDef = pet.ivSpe = pet.ivHp = iv;
     pet.trAtk = pet.trMaxAtk(); pet.trDef = pet.trMaxDef(); pet.trSpe = pet.trMaxSpe();
   }
+  // The learn prompt is modal and would cover whatever screen was asked for.
+  // It started firing for every shot once dex_moves.py gained the cheap early
+  // attacks, because a creature now genuinely has moves waiting.
+  while (pet.hasLearnOffer()) pet.declineLearn();
   for (int i = 0; i < 2; i++) loop();          // pick up the sprite for the new species
   cardOpen = galleryOpen = clockOpen = kbOpen = false;
   menuOpen = partyOpen = partyPick = trainOpen = movePickOpen = false;
