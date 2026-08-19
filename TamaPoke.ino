@@ -4403,19 +4403,23 @@ static void renderRegionPick(uint8_t mode) {
     gfx->setTextSize(3);
     gfx->setCursor(RPICK_X + 18, y + 12);
     gfx->print(nm);
+    // At first boot there is no subtitle: naming the starter here would give
+    // away the next screen, and the counts the other two modes show would all
+    // read zero on a new save anyway.
     char sub[28];
-    if (mode == RPICK_FOR_START)
-      snprintf(sub, sizeof(sub), "%s", DEX_TBL[starterOf(i, 0)].name);
-    else if (forGyms)
+    sub[0] = 0;
+    if (mode == RPICK_FOR_GYMS)
       snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCountIn(i, gymHard));
-    else
+    else if (mode == RPICK_FOR_DEX)
       snprintf(sub, sizeof(sub), "%u/%u",
                pet.registeredCountIn(REGIONS[i].lo, REGIONS[i].hi),
                (unsigned)(REGIONS[i].hi - REGIONS[i].lo + 1));
-    gfx->setTextColor(UI_TRACK);
-    gfx->setTextSize(2);
-    gfx->setCursor(RPICK_X + RPICK_W - 18 - (int)strlen(sub) * 12, y + 22);
-    gfx->print(sub);
+    if (sub[0]) {
+      gfx->setTextColor(UI_TRACK);
+      gfx->setTextSize(2);
+      gfx->setCursor(RPICK_X + RPICK_W - 18 - (int)strlen(sub) * 12, y + 22);
+      gfx->print(sub);
+    }
   }
   if (forGyms) {
     gfx->fillRoundRect(LANBTN_X, LANBTN_Y, LANBTN_W, LANBTN_H, 11, UI_BG_DAY);
