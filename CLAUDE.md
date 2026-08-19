@@ -88,6 +88,8 @@ On hardware, verify over the serial console (115200):
 
 - `STATS` full state · `HEALTH` uptime + heap (soak test) · `WIPE` factory reset
 - `SPEC <dex>` `LVL <n>` `IV <a> <d> <s> <h>` `HATCH` `SHINY` `EGGS` (20 eggs) `GAL`
+- `TR <atk> <def> <spe>` set the training (this game's EVs); clamped to
+  `trMaxFor(iv)`, so it cannot build a creature the player could not raise
 - `PARTY` / `PARTY <dex>` / `PARTY CLEAR` inspect, fill and empty the party
 - `BATTLE <dex> [lvl]` start a fight (debug entry until gyms exist)
 - `EGG <dex> [shiny]` hatch a chosen species: the legendary (3 perfect IVs) and

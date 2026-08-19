@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.5"
+#define FW_VERSION "2.6"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -441,14 +441,21 @@ struct Btn {
 // opened the same menu the dumbbell does, two icons for one destination.
 // They sit on the panel's curve: y = 406 - dx^2/729.
 #define BTN_COUNT 4
+// Referred to by NAME, never by literal index. Removing the ball icon shifted
+// every index by one and drawButtons() still had `i != 2` meaning LIGHT -- which
+// silently made the BATH button the one that wakes the pet.
+#define BTN_FOOD  0
+#define BTN_LIGHT 1
+#define BTN_BATH  2
+#define BTN_TRAIN 3
 Btn buttons[BTN_COUNT] = {
-  { 152, 397, SPR_ICON_FOOD },   // comer
-  { 206, 405, SPR_ICON_LIGHT },  // luz
-  { 260, 405, SPR_ICON_CLEAN },  // bano
-  { 314, 397, SPR_ICON_TRAIN },  // entrenar
+  { 134, 393, SPR_ICON_FOOD },   // comer
+  { 200, 405, SPR_ICON_LIGHT },  // luz
+  { 266, 405, SPR_ICON_CLEAN },  // bano
+  { 332, 393, SPR_ICON_TRAIN },  // entrenar
 };
-#define BTN_HALF 26  // boton de 52x52
-#define BTN_HIT 36   // radio tactil (un poco mas generoso)
+#define BTN_HALF 30  // boton de 60x60 -- mas grande y mas separado que antes
+#define BTN_HIT 40   // radio tactil (un poco mas generoso)
 
 // grietas del huevo (pixeles 'k' sobre el sprite)
 static const uint8_t CRACK1[][2] = { {15,8},{16,9},{15,10} };
@@ -705,6 +712,22 @@ void handleSerial() {
   } else if (line.startsWith("LVL ")) {
     pet.ageMinutes = (uint32_t)line.substring(4).toInt() * MINUTES_PER_LEVEL;
     Serial.println("DONE");
+  } else if (line.startsWith("TR ")) {
+    // TR <atk> <def> <spe>: sets the TRAINING (this game's EVs), for testing a
+    // fully-raised creature without playing the minigames for an hour. Each is
+    // clamped to trMaxFor(iv), the same IV-bound ceiling the games enforce, so
+    // this cannot produce a creature the player could not have raised.
+    int v[3] = { 0, 0, 0 };
+    int n = sscanf(line.c_str() + 3, "%d %d %d", &v[0], &v[1], &v[2]);
+    if (n >= 1) {
+      int a = v[0], d = (n >= 2) ? v[1] : v[0], e = (n >= 3) ? v[2] : v[0];
+      pet.trAtk = (uint8_t)(a < 0 ? 0 : (a > pet.trMaxAtk() ? pet.trMaxAtk() : a));
+      pet.trDef = (uint8_t)(d < 0 ? 0 : (d > pet.trMaxDef() ? pet.trMaxDef() : d));
+      pet.trSpe = (uint8_t)(e < 0 ? 0 : (e > pet.trMaxSpe() ? pet.trMaxSpe() : e));
+      pet.flushSave();
+    }
+    Serial.printf("tr=%u/%u/%u topes=%u/%u/%u\n", pet.trAtk, pet.trDef, pet.trSpe,
+                  pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
   } else if (line.startsWith("IV ")) {
     // IV <fue> <def> <vel> <vit>: fija los valores individuales (pruebas).
     // Con "IV 31 31 31 31" se ve el techo; con "IV 8 8 8 8" el suelo.
@@ -1096,6 +1119,27 @@ void uiButtonHeights(int *out, int max, int *n) {
 // The gym list's difficulty pill against its first leader row. Enlarging the
 // pill to a real tap target once pushed it straight over that row -- the third
 // overlap of this kind, after BOX/CLOSE and the battle grid against BACK.
+// Which home icon is the only one live while the pet sleeps, and where it is.
+// Exposed so a test can prove it is the LIGHT: removing an icon once shifted
+// every index and quietly made the BATH button the wake-up button.
+// Asleep, the LIGHT is the only live icon -- it is what wakes the pet. Both the
+// draw path and the tap path ask THIS, so a greyed button can never still be
+// tappable and the greying can never point at the wrong icon.
+bool uiButtonDisabled(int i) { return pet.sleeping && i != BTN_LIGHT; }
+
+int uiSleepButton(int *cx, int *cy) {
+  if (cx) *cx = buttons[BTN_LIGHT].cx;
+  if (cy) *cy = buttons[BTN_LIGHT].cy;
+  return BTN_LIGHT;
+}
+
+void uiButtonAt(int i, int *cx, int *cy, int *half) {
+  if (i < 0 || i >= BTN_COUNT) return;
+  if (cx) *cx = buttons[i].cx;
+  if (cy) *cy = buttons[i].cy;
+  if (half) *half = BTN_HALF;
+}
+
 void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop) {
   if (pillTop) *pillTop = GYMDIF_Y;
   if (pillBot) *pillBot = GYMDIF_Y + GYMDIF_H;
@@ -1275,7 +1319,6 @@ void onSwipe(int dir) {
 }
 
 void onTap(int16_t x, int16_t y) {
-  // Serial.printf("TOUCH %d %d\n", x, y);  // diagnostico (silenciado: satura el log)
   if (pet.awaitingStarter()) {  // primera partida: elegir inicial
     for (int i = 0; i < 3; i++) {
       int ry = STARTER_ROW_Y + i * (STARTER_ROW_H + STARTER_ROW_GAP);
@@ -1550,17 +1593,12 @@ void onTap(int16_t x, int16_t y) {
   for (int i = 0; i < BTN_COUNT; i++) {
     int dx = x - buttons[i].cx, dy = y - buttons[i].cy;
     if (dx * dx + dy * dy <= BTN_HIT * BTN_HIT) {
-      Serial.printf("BTN %d\n", i);
+      if (uiButtonDisabled(i)) { sfxPlay(SFX_DENY); return; }
       sfxPlay(SFX_TAP);
-      if (i == 0) {
-        if (!pet.sleeping) feedMenuUntil = millis() + 6000;
-      } else if (i == 1) {
-        pet.toggleLight();
-      } else if (i == 2) {
-        startBath();
-      } else {
-        if (!pet.sleeping) trainOpen = true;
-      }
+      if (i == BTN_FOOD) feedMenuUntil = millis() + 6000;
+      else if (i == BTN_LIGHT) pet.toggleLight();
+      else if (i == BTN_BATH) startBath();
+      else trainOpen = true;
       return;
     }
   }
@@ -1573,7 +1611,6 @@ void onTap(int16_t x, int16_t y) {
   }
   // tocar al bicho = caricia
   if (inPetZone(x, y)) {
-    Serial.println("PET");
     pet.caress();
     if (!pet.sleeping) sfxPlay(SFX_HEART);
   }
@@ -5502,7 +5539,7 @@ void drawBar(int x, int y, const char *label, uint8_t val) {
 
 void drawButtons() {
   for (int i = 0; i < BTN_COUNT; i++) {
-    bool off = pet.sleeping && i != 2;  // durmiendo solo funciona LUZ
+    bool off = uiButtonDisabled(i);   // durmiendo solo funciona LUZ
     int bx = buttons[i].cx - BTN_HALF, by = buttons[i].cy - BTN_HALF;
     if (!pet.sleeping) gfx->fillRoundRect(bx, by, 2 * BTN_HALF, 2 * BTN_HALF, 14, UI_WHITE);
     gfx->drawRoundRect(bx, by, 2 * BTN_HALF, 2 * BTN_HALF, 14, inkColor());
