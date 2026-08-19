@@ -1,7 +1,7 @@
 {
   "name": "TamaPoke",
   "version": "2.7",
-  "new_install_prompt_erase": false,
+  "new_install_prompt_erase": true,
   "builds": [
     {
       "chipFamily": "ESP32-S3",

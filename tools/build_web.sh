@@ -57,12 +57,21 @@ m['builds'] = [{
         {'path': 'firmware/app.bin',        'offset': 0x10000},
     ],
 }]
-# NEVER true. It makes ESP Web Tools offer a full chip erase, which wipes NVS
-# and with it the pet -- weeks of real time, gone, with no undo. It cost a real
-# save once. A plain install writes the app and leaves NVS alone, which is what
-# an update must do; anyone who genuinely wants a clean slate has WIPE on the
-# serial console.
-m['new_install_prompt_erase'] = False
+# ALWAYS true, and the name is the exact opposite of what it does. In
+# esp-web-tools' no-Improv path -- ours, since this firmware speaks no Improv --
+# the Install button reads:
+#
+#   new_install_prompt_erase ? state = "ASK_ERASE" : _startInstall(true)
+#
+# So FALSE means "do not ask, just erase", and it calls eraseFlash(), a WHOLE
+# CHIP erase that takes NVS with it no matter which parts the manifest lists.
+# TRUE shows a screen with an "Erase device" checkbox that starts UNCHECKED, and
+# leaving it unchecked installs without erasing -- which, with the four parts
+# above, leaves the save untouched.
+#
+# This was set to False on purpose once, on the belief that the name meant what
+# it says. It destroyed two real saves. Do not "fix" it back.
+m['new_install_prompt_erase'] = True
 json.dump(m, open('web/manifest.json', 'w'), indent=2)
 print('manifest version -> ' + sys.argv[1])
 PYEOF

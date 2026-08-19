@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
 """Proves the web installer cannot erase a player's pet.
 
-The save lives in the NVS partition. Nothing the installer writes may touch it,
-or every update silently destroys weeks of somebody's real time -- which is
-exactly what shipped: web/firmware/tamapoke.bin was a single image starting at
-offset 0, and esptool's merge-bin pads the gaps, so it wrote 0xFF straight over
-NVS at 0x9000. The `new_install_prompt_erase: false` flag does NOT prevent that;
-it only governs the extra full-chip erase prompt.
+The save lives in the NVS partition, and TWO separate things were destroying it.
+Both are checked here because fixing either one alone still loses the save.
 
-So this reads the partition table out of the build itself (never a hardcoded
-offset -- a partition scheme change would move NVS and this must follow it),
-works out the byte span each manifest part covers, and fails if any of them
-overlaps NVS.
+1. WHAT IS WRITTEN. web/firmware/tamapoke.bin was a single image starting at
+   offset 0, and esptool's merge-bin pads the gaps, so it wrote 0xFF straight
+   over NVS at 0x9000. The manifest must ship the four parts at their own
+   offsets instead, leaving 0x9000..0xE000 alone.
+
+2. WHETHER THE CHIP IS ERASED FIRST, which no arrangement of parts can survive.
+   In esp-web-tools' no-Improv path -- ours, this firmware speaks no Improv --
+   the Install button is:
+
+       new_install_prompt_erase ? state = "ASK_ERASE" : _startInstall(true)
+
+   The name is the exact opposite of what it does. FALSE means "do not ask,
+   just erase", and _startInstall(true) calls eraseFlash(), a whole-chip erase.
+   TRUE shows a screen with an "Erase device" checkbox that starts UNCHECKED.
+   It was set false deliberately, reading the name at face value, and that
+   destroyed two real saves.
+
+The partition table is read out of the build itself rather than hardcoded, so a
+partition scheme change moves the check with it.
 
     python3 tools/check_installer.py            # checks web/manifest.json
 
-Run by build_web.sh on every build, so the merged image cannot come back.
+Run by build_web.sh on every build, so neither cause can come back.
 """
 import json
 import os
@@ -97,9 +108,15 @@ def main():
                           "the player's pet.")
                 bad += 1
 
-    if manifest.get("new_install_prompt_erase"):
-        print("\nFAIL: new_install_prompt_erase is true -- it offers a full "
-              "chip erase, which takes NVS with it")
+    # The name lies. In esp-web-tools' no-Improv path (ours), the Install button
+    # is `new_install_prompt_erase ? ASK_ERASE : _startInstall(true)` -- so
+    # FALSE means erase the whole chip without asking, and TRUE means show a
+    # checkbox that defaults to not erasing. Setting it false to "stop it
+    # erasing" is what destroyed two real saves.
+    if not manifest.get("new_install_prompt_erase"):
+        print("\nFAIL: new_install_prompt_erase is false, which in the "
+              "no-Improv path means a SILENT full chip erase -- it must be "
+              "true, which offers an unchecked 'Erase device' box instead")
         bad += 1
 
     print("\n%s" % ("FAILURES" if bad else "the save is out of the blast radius"))
