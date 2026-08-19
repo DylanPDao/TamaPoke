@@ -67,14 +67,19 @@
       <span slot="not-allowed">Needs HTTPS.</span>
     </esp-web-install-button>
     <p class="note" style="border-left:4px solid #e8503a;padding-left:10px">
-       🔄 <b>Updating? Your pet is kept automatically.</b> This installer never erases
-       your save. If you are ever offered an <b>erase</b> option by any other tool,
-       say no — erasing wipes the pet, and there is no undo. Back it up first with
-       <code>EXPORT</code> on the serial console if it matters to you.</p>
-    <p class="note">🔄 <b>Updating to a new version? Install <u>without</u> erasing</b> to keep
-       your Pokémon — the save lives in flash and the sprites on the microSD, so a normal
-       install keeps both. Only a full <b>Erase</b> wipes your saved pet (the SD sprites
-       survive even that). First time on a fresh board? You can erase, no problem.</p>
+       🔄 <b>Updating? Your pet is kept.</b> The installer writes the firmware
+       around your save rather than over it, so an update leaves the creature,
+       the Pokédex and the badges exactly as they were. The sprites on the
+       microSD are untouched too.<br><br>
+       <b>Installers before v2.7 did erase it</b> — they shipped one image
+       covering the whole start of flash, the save included, so every update
+       quietly reset the game. That is fixed here, and it protects you whatever
+       version you are coming from: what mattered was the image being written,
+       not the one being replaced. Backing up with <code>EXPORT</code> on the
+       serial console is still the only real safety net if a run matters to
+       you.<br><br>
+       If any tool ever offers you an <b>erase</b>, say no — that wipes the pet
+       and there is no undo. A fresh board with nothing on it can erase safely.</p>
   </div>
 
   <h2><span class="num">2</span>Load the sprites onto the microSD</h2>

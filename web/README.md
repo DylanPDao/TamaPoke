@@ -10,7 +10,14 @@ same one as `tools/send_sd.py`).
 
 - `index.html` — the page (flashing + sprite loader).
 - `manifest.json` — ESP Web Tools config (points at the firmware).
-- `firmware/tamapoke.bin` — combined firmware, flashable at `0x0`.
+- `firmware/bootloader.bin` `partitions.bin` `boot_app0.bin` `app.bin` — what the
+  installer actually writes, each at its own offset. **This is deliberate**: a
+  single image at `0x0` pads the gaps with `0xFF` and so blanks the NVS
+  partition at `0x9000`, which is the player's save. `tools/check_installer.py`
+  fails the build if anything the manifest ships would land on it.
+- `firmware/tamapoke.bin` — the same four merged into one image for flashing a
+  **blank** board from the command line. Not in the manifest, because installing
+  it over an existing game erases the pet.
 - `sprites-kanto.pak`, `sprites-johto.pak`, `sprites-hoenn.pak` — the sprites bundled
   (TPAK) **one file per region**, so the page sends a region in one click.
   **Generated** by `tools/pack_bundle.py` (gitignored by default — see
