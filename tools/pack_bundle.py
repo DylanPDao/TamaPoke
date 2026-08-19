@@ -59,14 +59,20 @@ def main():
     if not files:
         raise SystemExit('no hay sprites en ' + MONS)
     # Files with no dex number in the name -- thumbs.bin -- are SHARED, not part
-    # of any region, and ride along with the first pack. Splitting by dex range
-    # alone dropped thumbs.bin on the floor and the board says so at boot:
-    # "sin thumbs.bin (galeria sin miniaturas)".
+    # of any region. Splitting by dex range alone dropped thumbs.bin on the
+    # floor and the board says so at boot: "sin thumbs.bin (galeria sin
+    # miniaturas)".
+    #
+    # They go in EVERY pack, not just the first. Riding only with Kanto meant
+    # anyone who installed Johto or Hoenn WITHOUT Kanto -- which nothing stops
+    # them doing -- got no thumbnails at all: bare dex numbers in place of every
+    # sprite in the gallery, and no silhouettes. It costs 415 KB against a 27-40
+    # MB pack, so there is nothing to weigh up.
     shared = [f for f in files if dex_of(f) == 0]
     made = 0
     for name, lo, hi in REGIONS:
         mine = [f for f in files if lo <= dex_of(f) <= hi]
-        if mine and not made:
+        if mine:
             mine = sorted(mine + shared)
         if not mine:
             print(f'{name}: no sprites packed yet, skipped')
@@ -81,7 +87,7 @@ def main():
     if not made:
         raise SystemExit('nothing packed')
     packed = sum(1 for _ in glob.glob(os.path.join(MONS, '*.bin')))
-    print(f'{len(shared)} shared file(s) rode along with the first pack')
+    print(f'{len(shared)} shared file(s) went into EVERY pack, so any single region works alone')
 
 
 if __name__ == '__main__':

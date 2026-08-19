@@ -201,6 +201,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
   else if (!strcmp(screen, "battle2")) { startBattle(9, 50); }
   else if (!strcmp(screen, "btlmenu")) { startTrainerBattle(3, false); }
   else if (!strcmp(screen, "btlswitch")) { startTrainerBattle(3, false); btlMenu = 2; }
+  else if (!strcmp(screen, "btlmoves")) { startTrainerBattle(3, false); btlMenu = 1; }
   else if (!strcmp(screen, "battleanim")) {
     startBattle(9, 50);
     btlFoe.hp = btlFoe.maxHp / 3;      // bar mid-drain

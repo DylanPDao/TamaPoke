@@ -118,6 +118,10 @@ enum StrId : uint8_t {
   S_WIN_TRAIN_FMT,  // "%s +%u" -- the training a gym win is worth
   S_WIN_MAXED,      // ... or that there is nowhere left to train
   S_CHOOSE_REGION,  // first boot: pick the region your starter comes from
+  S_RETIRE,         // menu row: retire the creature on demand
+  S_RETIRE_Q,       // ...and the confirmation
+  S_RETIRE_COST,    // what retiring early costs the next creature
+  S_EVO_SLOW,       // shown on the card while a creature carries that debt
   STR_COUNT
 };
 

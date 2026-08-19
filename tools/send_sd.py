@@ -4,6 +4,11 @@
   python3 tools/send_sd.py                  # envia tools/sdcard/mons/*.bin
   python3 tools/send_sd.py --port /dev/cu.usbmodem101
   python3 tools/send_sd.py --ls             # lista lo que hay en la SD
+  python3 tools/send_sd.py --only thumbs    # send just the files matching
+
+--only exists because thumbs.bin changes every time the dex grows, and it is
+one 415 KB file against ~105 MB of sprites. Without it the only way to fix a
+stale gallery was to resend everything.
 """
 import argparse
 import glob
@@ -35,6 +40,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port')
     ap.add_argument('--ls', action='store_true')
+    ap.add_argument('--only', help='only send files whose name contains this')
     args = ap.parse_args()
 
     port = args.port or find_port()
@@ -51,6 +57,11 @@ def main():
     files = sorted(glob.glob(os.path.join(os.path.dirname(__file__), 'sdcard', 'mons', '*.bin')))
     if not files:
         sys.exit("no hay .bin; ejecuta antes tools/pack_pmd.py")
+    if args.only:
+        files = [f for f in files if args.only in os.path.basename(f)]
+        if not files:
+            sys.exit(f"nothing matches --only {args.only}")
+        print(f"--only {args.only}: {len(files)} file(s)")
 
     for path in files:
         size = os.path.getsize(path)

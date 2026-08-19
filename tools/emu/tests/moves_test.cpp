@@ -133,6 +133,38 @@ int main() {
   ck(aligned, "legacy party blob migrates with slots still aligned");
   ck(pty.count() == PARTY_SLOTS, "all 6 legacy members survive");
 
+  // The MOVE PICKER had its own gate and so its own opinion: it checked
+  // learnLevel() alone, and a TM is stored as level 0, so a level 22 Charmeleon
+  // was offered FIRE BLAST (110 power). Found by hand on the board, exactly
+  // like the level 1 Squirtle holding SURF -- the same bug in the one path that
+  // fix never reached. moveUnlockLevel() is the single answer now.
+  {
+    int zero = 0, tooEarly = 0;
+    for (int16_t d = 1; d <= DEX_COUNT; d++)
+      for (uint8_t i = 0; i < learnCount(d); i++) {
+        uint8_t at = moveUnlockLevel(d, i);
+        if (at == 0) zero++;
+        if (learnLevel(d, i) == 0 && at < 20) tooEarly++;
+      }
+    ck(zero == 0, "no learnset entry anywhere unlocks at level 0");
+    ck(tooEarly == 0, "and no TM is reachable before a creature is built");
+
+    const int16_t CHARMELEON = 5;
+    bool early = false, late = false, ember1 = false, flame34 = false;
+    for (uint8_t i = 0; i < learnCount(CHARMELEON); i++) {
+      uint8_t mv = learnMove(CHARMELEON, i);
+      if (mv >= MOVE_COUNT) continue;
+      uint8_t at = moveUnlockLevel(CHARMELEON, i);
+      if (!strcmp(MOVE_TBL[mv].name, "FIRE BLAST")) { early = at <= 22; late = at >= 40; }
+      if (!strcmp(MOVE_TBL[mv].name, "EMBER")) ember1 = (at == 1);
+      if (!strcmp(MOVE_TBL[mv].name, "FLAMETHROWER")) flame34 = (at == 34);
+    }
+    ck(!early, "a level 22 Charmeleon is NOT offered FIRE BLAST");
+    ck(late, "it waits for the TM level like every other TM");
+    ck(ember1 && flame34,
+       "while its real level-up moves keep their real levels (EMBER 1, FLAMETHROWER 34)");
+  }
+
   printf("%s\n", bad ? "FAILURES" : "all good");
   return bad ? 1 : 0;
 }

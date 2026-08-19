@@ -16,7 +16,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$OUT"
 
 # Keep this list in step with the tables in README.md § Screens.
-SHOTS="main region starter starterj btlmenu gympick gymsj dexpick gallery gallery2 player player2 box egg lanready pick moves win"
+SHOTS="main region starter starterj btlmenu btlmoves gympick gymsj dexpick gallery gallery2 player player2 box egg lanready pick moves win"
 
 echo "Building the emulator..."
 bash tools/emu/build.sh >/dev/null

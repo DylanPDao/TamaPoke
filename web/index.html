@@ -36,7 +36,7 @@
 <body>
 <div class="wrap">
   <h1>🐢 TamaPoke</h1>
-  <p class="sub">A 151-Pokémon tamagotchi for the Waveshare ESP32-S3-Touch-AMOLED-1.75.
+  <p class="sub">A 386-Pokémon tamagotchi for the Waveshare ESP32-S3-Touch-AMOLED-1.75.
      Install it from your browser — no Arduino, no drivers.</p>
 
   <p class="unsupported" id="unsupported">
@@ -87,8 +87,9 @@
   <h2><span class="num">2</span>Load the sprites onto the microSD</h2>
   <div class="step">
     <p>Put a microSD into the board (it formats itself). Press <b>Connect board</b>,
-       then a region. Kanto is the one to start with — the other two are optional and
-       can be added any time without redoing this one.</p>
+       then a region. Any one of them works on its own — pick Johto or Hoenn if
+       that is the game you want — and the others can be added later without
+       redoing this one. Kanto is simply the usual place to start.</p>
     <p class="note">⏱️ <b>This part is slow, and that is normal.</b> The sprites go over
        the USB serial link, so Kanto's 40 MB takes roughly <b>10–15 minutes</b>. Leave the
        tab open and the card in. The progress bar moves the whole time.</p>
@@ -98,7 +99,7 @@
       <button id="connect">🔌 Connect board</button>
       <button id="auto" data-region="kanto" disabled>⬇️ Kanto sprites (~40 MB)</button>
       <button id="autoj" data-region="johto" disabled>⬇️ Johto (~27 MB)</button>
-      <button id="autoh" data-region="hoenn" disabled>⬇️ Hoenn (~36 MB)</button>
+      <button id="autoh" data-region="hoenn" disabled>⬇️ Hoenn (~38 MB)</button>
     </div>
     <p class="note">Have your own <code>.bin</code> files? <label style="cursor:pointer;text-decoration:underline">pick them manually<input id="files" type="file" accept=".bin" multiple disabled hidden></label></p>
     <p class="note">🎨 Want to make your own sprites? See <a href="https://github.com/DylanPDao/TamaPoke#generate-and-load-the-sprites-yourself" target="_blank">how to generate &amp; load them</a> in the repo.</p>

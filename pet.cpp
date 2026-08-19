@@ -40,6 +40,10 @@ void Pet::newEgg() {
   int shinyBase = (lastEnd == CER_FAREWELL ? 24 : 48) - careBonus();
   if (shinyBase < 8) shinyBase = 8;
   eggShiny = (random(shinyBase) == 0);
+  // The debt lands on the creature about to hatch, and is spent doing so --
+  // it is a one-day penalty, not a running total that compounds each retire.
+  evoPen = retirePending ? EVO_PENALTY_LEVELS : 0;
+  retirePending = false;
   eggTaps = 0;
   fullness = 80;
   joy = 80;
@@ -535,6 +539,16 @@ static uint8_t tmLevelFor(const MoveEntry &m) {
   return TM_LEVEL;
 }
 
+// THE single answer, used by relearnFromLevel(), by the STAB fallback and by
+// the move picker in the sketch. Three call sites once had three opinions.
+uint8_t moveUnlockLevel(int16_t dex, uint8_t idx) {
+  uint8_t at = learnLevel(dex, idx);
+  if (at > 0) return at;                 // a real level-up move
+  uint8_t mv = learnMove(dex, idx);
+  if (!mv || mv >= MOVE_COUNT) return 255;
+  return tmLevelFor(MOVE_TBL[mv]);       // a TM: no natural level, so the gate
+}
+
 void Pet::relearnFromLevel() {
   for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = 0;
   if (isEgg()) return;
@@ -742,6 +756,21 @@ bool Pet::canRunawayNow() const {
   return !isEgg() && !sleeping && ceremony == CER_NONE && neglectTicks >= RUNAWAY_TICKS;
 }
 
+bool Pet::canRetireNow() const {
+  if (frozen) return false;     // a companion is never given up
+  return !isEgg() && !sleeping && ceremony == CER_NONE && !starterPick;
+}
+
+// The ceremony is the same one; only the debt differs. Marked BEFORE the
+// ceremony starts and spent by newEgg(), so a reset mid-ceremony loses the
+// penalty rather than applying it to a creature that never got retired.
+void Pet::startRetire() {
+  if (!canRetireNow()) return;
+  retirePending = !canFarewellNow();
+  save();
+  startFarewell();
+}
+
 void Pet::startFarewell() {
   if (isEgg() || ceremony != CER_NONE) return;
   lastEnd = CER_FAREWELL;
@@ -806,7 +835,11 @@ bool Pet::canEvolveNow() const {
   if (isEgg() || sleeping || ceremony != CER_NONE) return false;
   const DexEntry &d = DEX_TBL[speciesId];
   if (d.evolvesTo == 0) return false;
-  return level() >= (uint8_t)(d.evolveLevel + careMistakes) && lowestStat() >= 40;
+  // evoPen is the day owed for retiring the PREVIOUS creature early. It rides
+  // on the same threshold careMistakes already moves, so there is one rule for
+  // "this creature evolves later" rather than two that can disagree.
+  return level() >= (uint16_t)(d.evolveLevel + careMistakes + evoPen) &&
+         lowestStat() >= 40;
 }
 
 void Pet::evolve() {
@@ -1045,6 +1078,8 @@ void Pet::save() {
   prefs.putBool("shy", shiny);
   prefs.putBool("eshy", eggShiny);
   prefs.putBool("stpk", starterPick);
+  prefs.putUChar("evop", evoPen);
+  prefs.putBool("rtpn", retirePending);
   prefs.putBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   prefs.putUInt("age", ageMinutes);
   prefs.putShort("dexn", speciesId);
@@ -1100,6 +1135,8 @@ void Pet::load() {
   shiny = prefs.getBool("shy", false);
   eggShiny = prefs.getBool("eshy", false);
   starterPick = prefs.getBool("stpk", false);
+  evoPen = prefs.getUChar("evop", 0);
+  retirePending = prefs.getBool("rtpn", false);
   prefs.getBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   ageMinutes = prefs.getUInt("age", 0);
   if (prefs.isKey("dexn")) {

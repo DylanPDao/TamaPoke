@@ -17,6 +17,10 @@
 #define EVOLVE_ANIM_MS 5200UL              // animacion de evolucion (mas larga = mas epica)
 #define CEREMONY_MS 10000UL                // duracion de la despedida en pantalla
 #define FAREWELL_AGE_MIN (3UL * 24 * 60)   // se despide a los 3 dias de juego (en forma final)
+// Retiring a creature BEFORE it has earned its farewell costs the NEXT one a
+// day's worth of evolution. Derived from MINUTES_PER_LEVEL rather than written
+// as 24, so it stays "a day" if the level rate is ever retuned.
+#define EVO_PENALTY_LEVELS ((uint8_t)((24UL * 60) / MINUTES_PER_LEVEL))
 #define RUNAWAY_TICKS 60                   // se escapa tras 1 h con TODO a cero
 #define DEF_TRAIN_TICKS 60                 // minutos de bienestar por +1 de DEF
 
@@ -32,6 +36,8 @@ enum : uint16_t {
   MED_FINAL = 1 << 6, MED_FIT = 1 << 7,
 };
 #define MED_COUNT 8
+
+uint8_t moveUnlockLevel(int16_t dex, uint8_t idx);
 
 class Pet {
 public:
@@ -128,6 +134,14 @@ public:
   // The newest MOVE_SLOTS moves this species has learned by its current level,
   // newest last. Used on hatch, on a fresh save, and to backfill empty slots.
   void relearnFromLevel();
+  // The level at which `dex` may legally use learnset entry `i`. A level-up
+  // move carries its own; a level-0 entry is a TM/tutor/egg move, which the
+  // data gives no level at all, and those unlock together at TM_LEVEL.
+  //
+  // It is a free function, not a Pet method, because the move PICKER needs the
+  // identical answer for a banked party member. Having its own gate is what let
+  // a level 22 Charmeleon be offered FIRE BLAST.
+
   // Moves reachable at this level that are not already known, for the learn
   // prompt. Returns how many were written into out (at most max).
   uint8_t pendingLearnables(uint8_t *out, uint8_t max) const;
@@ -234,6 +248,14 @@ public:
   void syncClock(uint32_t nowEpoch);  // aplica el tiempo transcurrido apagado
   void setClock(uint32_t nowEpoch);   // fija la hora sin aplicar progresion
   void startFarewell();  // tambien usable desde la consola serie (BYE)
+  // Retire on demand. Before the farewell is earned this is the SAME ceremony
+  // -- the creature is banked exactly as it would be -- but it hands the next
+  // creature EVO_PENALTY_LEVELS on every evolution threshold. Retiring one that
+  // has already earned its farewell costs nothing: it is then just the button.
+  void startRetire();
+  bool canRetireNow() const;
+  bool retireIsFree() const { return canFarewellNow(); }
+  uint8_t evoPenalty() const { return evoPen; }
   void startRunaway();   // tambien usable desde la consola serie (RUN)
 
   bool isEgg() const { return speciesId < 0; }
@@ -335,6 +357,8 @@ private:
   uint8_t evoDeclinedLv = 0;    // "mantener forma": no ofrecer evolucion hasta subir de nivel
   uint32_t farDeclinedAge = 0;  // "quedaros juntos": no ofrecer despedida hasta esta edad
   bool starterPick = false;     // primera partida: esperando que el jugador elija inicial
+  uint8_t evoPen = 0;           // levels added to this creature's evolution gate
+  bool retirePending = false;   // an early retire is under way; newEgg() spends it
   uint8_t neglectTicks = 0;
   uint16_t goodTicks = 0;  // racha bien cuidado: forja la DEF
   uint32_t ceremonyUntil = 0;
