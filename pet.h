@@ -22,12 +22,9 @@
 // as 24, so it stays "a day" if the level rate is ever retuned.
 #define EVO_PENALTY_LEVELS ((uint8_t)((24UL * 60) / MINUTES_PER_LEVEL))
 #define RUNAWAY_TICKS 60                   // se escapa tras 1 h con TODO a cero
-// Night, by the RTC -- the same window the scene already dims for. The creature
-// puts itself to bed in it, because the LIVE tick is the only path with no
-// floor on the drain: a board left running overnight took an awake pet to zero
-// on everything and then to the point of running away, which is not a fair
-// price for going to sleep. Asleep, the stats floor at 30/35/45 and the neglect
-// check is skipped entirely, so a night is survivable by construction.
+// Night, by the RTC. Only the SCENE uses this now -- sleep follows the screen
+// instead, since the PWR button says "I am putting this down" outright and does
+// not depend on a clock that, on a board nobody has set, is months out.
 #define NIGHT_START 20
 #define NIGHT_END 6
 enum : uint8_t { SLEEP_NONE = 0, SLEEP_AUTO, SLEEP_PLAYER };
@@ -250,7 +247,10 @@ public:
   void play();
   void toggleLight();
   bool isNightHour() const;
+  void screenSleep(bool off);   // the PWR button decides, not the hour
   void dbgTick() { tick(); }   // tests drive minutes directly; tick() is private
+  // syncClock() reads "seen" back out of NVS, so a test has to put it there
+  void dbgSetSeen(uint32_t e) { lastSeenEpoch = e; prefs.putUInt("seen", e); }
   uint8_t sleepAuto = SLEEP_NONE;   // who decided the current sleep state  // dormir / despertar
   void clean();
   void caress();  // tocar al bicho

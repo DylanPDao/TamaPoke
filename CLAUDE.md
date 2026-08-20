@@ -816,10 +816,15 @@ creature:
 
 So leaving the board RUNNING overnight was punished where switching it OFF was
 not, and an awake creature hit zero on everything in 100 minutes and could run
-away at 160. The fix is that the creature now puts itself to bed at night
-(`NIGHT_START`/`NIGHT_END`, 20:00-06:00 off the RTC), so the sleep floors do the
-work rather than a special case in the drain. `night_test` simulates ten hours
-and fails if it comes back.
+away at 160. The fix is `Pet::screenSleep()`: **turning the screen off with PWR
+puts the creature to sleep**, so the sleep floors do the work rather than a new
+rule in the drain. `sleep_test` simulates ten hours and fails if it comes back.
+
+It is tied to the SCREEN rather than to an hour on purpose. A clock-based
+bedtime was built first and thrown away: the RTC on a board nobody has set is
+months out, so it would have fired at the wrong time for exactly the people most
+likely to leave a board running overnight. The PWR button says "I am putting
+this down" outright.
 
 The runaway deliberately does **not** ask for confirmation -- a pet you have to
 authorise to leave is not at stake. A confirmation was added when this was first

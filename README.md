@@ -142,8 +142,9 @@ While **awake**, per minute:
 - 👆 **Pet it:** +5 JOY + bond.
 - 🌙 **Sleep:** rest — ENE **+6/min**, needs drain ~**4× slower** with floors
   (FOOD 30 / JOY 35 / HYG 45). No poops, no slip-ups, can't run away while asleep.
-  **It goes to bed by itself at 20:00 and gets up at 06:00**; the light button
-  overrides either way and your choice stands until morning.
+  **Turning the screen off with PWR puts it to sleep**, and waking the screen
+  wakes it. The light button still works by hand and beats the screen: a
+  creature you sent to bed stays there until you say otherwise.
 
 ### Eggs & who you get (spawn odds)
 - **First ever pet:** you pick a starter — **Bulbasaur / Charmander / Squirtle**.
@@ -433,11 +434,15 @@ witness it), each opening a two-option dialog:
   ending in the rain — caring for the creature cancels it.
 
   **It does not ask, and that is the point** -- a creature you have to authorise
-  to leave is not really at stake. What it must never be is the price of going
-  to bed, so **the creature puts itself to sleep at night** (20:00-06:00 by the
-  RTC) and sleep floors the stats at FOOD 30 / JOY 35 / HYG 45 with the neglect
-  check skipped entirely. A night left running now costs you a hungry, grubby
-  creature at breakfast instead of an empty screen.
+  to leave is not really at stake. What it must never be is the price of putting
+  the device down, so **turning the screen off puts the creature to sleep**, and
+  sleep floors the stats at FOOD 30 / JOY 35 / HYG 45 with the neglect check
+  skipped entirely. A night with the screen off costs you a hungry, grubby
+  creature at breakfast instead of an empty one.
+
+  Tied to the **screen**, not to a clock: pressing PWR is a deliberate "I am
+  putting this down", and it does not depend on the RTC, which on a board nobody
+  has set is months out.
 
   This was a real loss: a player left the board running overnight and came back
   to a Dratini that had gone. The live tick was the only drain path with no

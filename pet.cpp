@@ -140,22 +140,6 @@ void Pet::tick() {
     return;
   }
 
-  // Bedtime. Checked before the sleeping branch below so it takes effect on the
-  // same tick, and only ever undone by the clock if the CLOCK is what did it --
-  // a creature the player put to bed stays there.
-  {
-    bool night = isNightHour();
-    if (night) {
-      if (!sleeping && sleepAuto != SLEEP_PLAYER) {
-        sleeping = true;
-        sleepAuto = SLEEP_AUTO;
-        pendingSave = true;
-      }
-    } else {
-      if (sleeping && sleepAuto == SLEEP_AUTO) { sleeping = false; pendingSave = true; }
-      sleepAuto = SLEEP_NONE;   // morning clears the player's override too
-    }
-  }
 
   // el sueño es descanso: la energia se recupera y las necesidades bajan MUCHO
   // mas lento que despierto y con suelo (amanece pidiendo algo de mimo, no a
@@ -1032,6 +1016,27 @@ bool Pet::isNightHour() const {
   if (!lastSeenEpoch) return false;
   int h = (int)((lastSeenEpoch / 3600) % 24);
   return h >= NIGHT_START || h < NIGHT_END;
+}
+
+// Sleep follows the SCREEN, not the clock.
+//
+// The screen going off is a deliberate press of the PWR button -- "I am putting
+// this down" -- which is a far better statement of intent than any hour, and it
+// does not depend on the RTC being right (on a board that has never been set,
+// it is months out). Asleep, the stats floor at 30/35/45 and the neglect check
+// is skipped, so putting the device away can never cost you the creature.
+//
+// Only what the SCREEN put to sleep is woken by the screen: a creature the
+// player sent to bed with the light button stays there.
+void Pet::screenSleep(bool off) {
+  if (isEgg() || ceremony != CER_NONE) return;
+  if (off) {
+    if (!sleeping) { sleeping = true; sleepAuto = SLEEP_AUTO; save(); }
+  } else if (sleeping && sleepAuto == SLEEP_AUTO) {
+    sleeping = false;
+    sleepAuto = SLEEP_NONE;
+    save();
+  }
 }
 
 void Pet::toggleLight() {
