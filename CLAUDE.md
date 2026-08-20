@@ -853,6 +853,33 @@ authorise to leave is not at stake. A confirmation was added when this was first
 reported and then removed: the bug was that a night's sleep could reach that
 state at all, not that the ending was too easy to trigger.
 
+### Adding a generation
+
+Phase 0 is built (`feat/dex-expansion-phase0`): the guarantees that make the
+data change provable.
+
+- **`gen_dex_data.py --check`** now diffs the WHOLE committed table, not just
+  Gen 1. Every entry below the old `DEX_COUNT` must come back byte-identical.
+  Run it before and after any expansion; it reported the six missing
+  cross-generation evolutions the first time it was pointed at 386.
+- **`gen_dex_data.py --link`** fills in evolutions whose target has since joined
+  the table, touching only rows whose committed value is 0. Re-run it after every
+  expansion -- Sinnoh brings ELECTIVIRE, MAGMORTAR and RHYPERIOR needing it.
+- **`tools/check_sprites.py`** reports art coverage per generation. Sinnoh and
+  Kalos are 100%; Unova and Galar 91.7%, Paldea 85%. A species with no art
+  anywhere stays in the dex at its own number -- dropping one renumbers
+  everything after it -- but must be kept out of the egg pool.
+- **`dexdata_test`** sweeps every species: names, typings, six non-zero base
+  stats, evolutions that stay in range and terminate, learnsets that index real
+  moves, regions tiling the dex exactly once, and both directions of the rarity
+  invariant (an evolution target never hatches; an evolution-only species is
+  always somebody's target, bar EEVEE's 134-136 which pet.cpp reaches by
+  special case).
+
+The nine species with no same-type attack are listed in that test rather than
+tolerated, because 77 hand-picked moves against a new generation's typings is
+exactly how a creature ends up unable to attack.
+
 ### Player-wide vs per-creature state
 
 Badges (easy and hard), the avatar, the daily streak, the Pokedex bitmaps and

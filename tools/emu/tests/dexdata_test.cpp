@@ -144,6 +144,40 @@ int main(){
     ck(!q.isRegistered(DEX_COUNT - 1), "without spilling into its neighbour");
   }
 
+  // --- an evolution TARGET must never hatch from an egg, or the same creature
+  //     arrives two ways and the chain stops meaning anything. gen_dex.py
+  //     derives R_EVO from being somebody's target, so this locks that
+  //     derivation rather than restating it.
+  {
+    bool isTarget[DEX_COUNT + 1] = { false };
+    for (int16_t d = 1; d <= DEX_COUNT; d++)
+      if (DEX_TBL[d].evolvesTo >= 1 && DEX_TBL[d].evolvesTo <= DEX_COUNT)
+        isTarget[DEX_TBL[d].evolvesTo] = true;
+
+    int hatchable = 0;
+    for (int16_t d = 1; d <= DEX_COUNT; d++)
+      if (isTarget[d] && DEX_TBL[d].rarity != R_EVO) {
+        if (hatchable < 3) printf("      %s (%d) is an evolution AND hatches\n",
+                                  DEX_TBL[d].name, d);
+        hatchable++;
+      }
+    ck(hatchable == 0, "no evolution target also hatches straight from an egg");
+
+    // and the reverse: R_EVO means "only ever reached by evolving", so a
+    // species nothing evolves into would be unreachable entirely. EEVEE's
+    // three branches are the exception -- pet.cpp reaches 134-136 by special
+    // case, which no table scan can see.
+    int stranded = 0;
+    for (int16_t d = 1; d <= DEX_COUNT; d++) {
+      if (DEX_TBL[d].rarity != R_EVO || isTarget[d]) continue;
+      if (d >= 134 && d <= 136) continue;          // the EEVEE branch
+      printf("      %s (%d) can be neither hatched nor evolved into\n",
+             DEX_TBL[d].name, d);
+      stranded++;
+    }
+    ck(stranded == 0, "and every evolution-only species is reachable by evolving");
+  }
+
   printf("%s\n", bad?"FAILURES":"all good");
   return bad?1:0;
 }

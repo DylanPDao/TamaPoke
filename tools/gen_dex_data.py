@@ -2,6 +2,7 @@
 """Build the Pokedex source data for dex 1..N from PokeAPI.
 
     python3 tools/gen_dex_data.py --check      # compare against the hand data
+    python3 tools/gen_dex_data.py --link       # link evolutions whose target now exists
     python3 tools/gen_dex_data.py --emit 386   # write the new dex_data/dex_types
 
 dex_data.py and dex_types.py were hand-written for the 151. Extending them to
@@ -214,6 +215,56 @@ NEW_ACCENTS = [
 ]
 
 
+def link(limit=None):
+    """Fill in evolutions whose TARGET has since joined the table.
+
+    A species whose committed evolvesTo is 0 means "does not evolve", and for a
+    handful that is simply wrong: when the dex reached 386, GOLBAT's CROBAT and
+    SCYTHER's SCIZOR arrived with it and nothing connected them. The rule that
+    Gen 1 is never regenerated exists to protect its hand-tuned evolution
+    LEVELS, which are deliberately inconsistent -- it was never meant to freeze
+    in a missing link.
+
+    This is additive by construction: it only ever touches rows whose committed
+    value is 0, so it cannot retune an evolution somebody already has, and no
+    save stores evolution data at all. Rarity follows automatically, because
+    gen_dex.py derives R_EVO from being somebody's target.
+
+    Re-run it after every expansion. Sinnoh brings ELECTIVIRE, MAGMORTAR,
+    RHYPERIOR and more, all waiting on exactly this.
+    """
+    from dex_data import DEX
+    if limit is None:
+        limit = max(d[0] for d in DEX)
+    gen, _, _, _ = build(limit)
+    generated = {e[0]: e for e in gen}
+    dd = os.path.join(HERE, 'dex_data.py')
+    src = open(dd, encoding='utf-8').read()
+
+    done = 0
+    for row in DEX:
+        num, slug, disp, typ, evo, lvl = row
+        g = generated.get(num)
+        if evo or not g or not g[4] or g[4] > limit:
+            continue                      # already linked, or nowhere to link to
+        old = "    (%d, %r, %r, %r, %d, %d)," % row
+        new = "    (%d, %r, %r, %r, %d, %d)," % (num, slug, disp, typ, g[4], g[5])
+        if old not in src:
+            print('  %s (%d): cannot find its row to patch' % (disp, num))
+            continue
+        src = src.replace(old, new, 1)
+        tgt = generated.get(g[4])
+        print('  %-12s (%3d) -> %-12s (%3d) at level %d'
+              % (disp, num, tgt[2] if tgt else '?', g[4], g[5]))
+        done += 1
+
+    if done:
+        open(dd, 'w', encoding='utf-8').write(src)
+    print('%d evolution%s linked. Re-run gen_dex.py to rebuild dex.h.'
+          % (done, '' if done == 1 else 's'))
+    return done
+
+
 def emit(limit):
     """Rewrite dex_data.py and dex_types.py, keeping 1..151 byte for byte.
 
@@ -279,6 +330,10 @@ def emit(limit):
 
 
 if __name__ == '__main__':
+    if '--link' in sys.argv:
+        at = sys.argv.index('--link')
+        lim = int(sys.argv[at + 1]) if len(sys.argv) > at + 1 and sys.argv[at + 1].isdigit() else None
+        sys.exit(0 if link(lim) >= 0 else 1)
     if '--check' in sys.argv:
         # optional explicit limit: --check 151 to look at Gen 1 alone
         at = sys.argv.index('--check')

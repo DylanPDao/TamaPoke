@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v3.0-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v3.1-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -171,6 +171,21 @@ While **awake**, per minute:
 - Every hatch rolls unique **IVs** (see below) — no two are identical.
 
 ### Evolution
+
+**Cross-generation evolutions are linked.** When the dex reached 386 the targets
+arrived but nothing connected them, so six Kanto species could not evolve into
+creatures that were sitting right there in the Pokedex: GOLBAT -> CROBAT,
+ONIX -> STEELIX, CHANSEY -> BLISSEY, SEADRA -> KINGDRA, SCYTHER -> SCIZOR and
+PORYGON -> PORYGON2. Those six now evolve (friendship pairs at 25, trade pairs
+at 40), and the six targets stopped hatching straight from eggs -- rarity is
+derived from being somebody's evolution, so they became evolution-only the way
+every other evolved form already was.
+
+`gen_dex_data.py --link` is the rule rather than a one-off edit: it fills in any
+evolution whose target has since joined the table, and only ever touches rows
+whose value is 0, so it cannot retune an evolution anybody already has. Sinnoh
+brings ELECTIVIRE, MAGMORTAR and RHYPERIOR waiting on exactly the same thing.
+
 - Triggers when **level ≥ its evolution level** (16 for most base forms; ~30 for
   stone-style, ~40 for trade-style) **and every stat ≥ 40** at that moment.
 - **Never automatic** — a button appears and **you tap to witness it** (with a
