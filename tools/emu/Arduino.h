@@ -108,8 +108,19 @@ extern FakeSerial Serial;
 struct FakeESP {
   uint32_t getFreeHeap() { return 294024; }
   uint32_t getMinFreeHeap() { return 281000; }
+  uint32_t getFreePsram() { return 4L * 1024 * 1024; }
   void restart();
 };
+
+// The crash breadcrumb (see bootReport() in the sketch). On the board these
+// live in RTC memory, which survives a panic reset; here they are ordinary
+// globals, which is enough for the tests to exercise the same code.
+#define RTC_NOINIT_ATTR
+typedef int esp_reset_reason_t;
+enum { ESP_RST_UNKNOWN = 0, ESP_RST_POWERON, ESP_RST_EXT, ESP_RST_SW,
+       ESP_RST_PANIC, ESP_RST_INT_WDT, ESP_RST_TASK_WDT, ESP_RST_WDT,
+       ESP_RST_DEEPSLEEP, ESP_RST_BROWNOUT, ESP_RST_SDIO };
+inline esp_reset_reason_t esp_reset_reason() { return ESP_RST_POWERON; }
 extern FakeESP ESP;
 
 struct FakeWire {

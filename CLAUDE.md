@@ -168,7 +168,15 @@ pressure, audio, battery. Those still need the board.
 
 On hardware, verify over the serial console (115200):
 
-- `STATS` full state · `HEALTH` uptime + heap (soak test) · `WIPE` factory reset
+- `STATS` full state · `HEALTH` uptime, heap, **PSRAM**, the current screen and
+  whether the two battle sprites are resident · `WIPE` factory reset
+- **Every boot prints why the last run ended** (`boot: reset=...`). After a
+  panic, a watchdog or a brownout it also prints `CRASH: it died on the '<screen>'
+  screen with heap=N` -- a breadcrumb kept in RTC memory, which survives a reset
+  but not a power cycle. This exists because "it has a mini crash" is not
+  actionable: the board never used to say what it was doing. `flush_test`
+  asserts the crumb names the screen actually on the panel, since a report that
+  points at the wrong screen is worse than none.
 - `SPEC <dex>` `LVL <n>` `IV <a> <d> <s> <h>` `HATCH` `SHINY` `EGGS` (20 eggs) `GAL`
 - `MISS <n>` set the care mistakes (`desc=` on STATS); each one delays every
   evolution by a level, so `MISS 0` forgives a neglected start
