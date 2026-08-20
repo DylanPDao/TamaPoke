@@ -7,7 +7,7 @@
 // creature to zero on all four stats in 100 minutes and to the point of running
 // away in 160.
 //
-// Auto-sleep needs BOTH the screen off and the night window (22:00-06:00).
+// Auto-sleep needs BOTH the screen off and the night window (00:00-06:00).
 // Screen-off alone paused the game whenever the device was put down, and the
 // creature is meant to get hungry during the day. The hour alone sent it to bed
 // while somebody was still playing with it.
@@ -59,27 +59,36 @@ int main(){
     ck(p.fullness == 0, "it still gets hungry with the screen off during the day");
   }
 
-  // --- THE NIGHT: screen off after 22:00 and it sleeps
+  // --- THE NIGHT: screen off after midnight and it sleeps
+  {
+    Pet p; fresh(p, 1);
+    p.setScreenOff(true);
+    ck(p.sleeping, "screen off at 01:00 puts it to sleep");
+  }
+
+  // --- put down BEFORE midnight: it nods off when the hour comes
   {
     Pet p; fresh(p, 23);
     p.setScreenOff(true);
-    ck(p.sleeping, "screen off at 23:00 puts it to sleep");
+    ck(!p.sleeping, "put down at 23:00, still awake -- the evening is yours");
+    liveMinutes(p, 23, 70);              // through midnight
+    ck(p.sleeping, "and it goes to bed by itself once midnight arrives");
   }
 
-  // --- put down BEFORE bedtime: it nods off when the hour comes
+  // --- the whole evening still drains, which is the point of a narrow window
   {
-    Pet p; fresh(p, 21);
+    Pet p; fresh(p, 20);
     p.setScreenOff(true);
-    ck(!p.sleeping, "put down at 21:00, still awake");
-    liveMinutes(p, 21, 70);              // through 22:00
-    ck(p.sleeping, "and it goes to bed by itself once 22:00 arrives");
+    liveMinutes(p, 20, 120);             // 20:00 -> 22:00, screen off
+    ck(!p.sleeping, "screen off at 20:00 does not sleep it");
+    ck(p.fullness == 0, "and the evening drains like any other hour");
   }
 
   // --- THE ONE THAT MATTERS: the whole night costs nothing
   {
-    Pet p; fresh(p, 22);
+    Pet p; fresh(p, 0);
     p.setScreenOff(true);
-    liveMinutes(p, 22, 8 * 60 - 5);      // 22:00 -> 05:55
+    liveMinutes(p, 0, 6 * 60 - 5);       // 00:00 -> 05:55
     printf("      at 05:55: food=%u joy=%u ene=%u hyg=%u ready=%d\n",
            p.fullness, p.joy, p.energy, p.hygiene, (int)p.canRunawayNow());
     ck(p.fullness >= 30 && p.joy >= 35 && p.hygiene >= 45,
@@ -108,12 +117,12 @@ int main(){
 
   // --- waking it at night keeps it awake rather than fighting the rule
   {
-    Pet p; fresh(p, 23);
+    Pet p; fresh(p, 1);
     p.setScreenOff(true);
-    ck(p.sleeping, "asleep at 23:00");
+    ck(p.sleeping, "asleep at 01:00");
     p.toggleLight();                     // the player wants to play
     ck(!p.sleeping, "the light wakes it");
-    liveMinutes(p, 23, 30);
+    liveMinutes(p, 1, 30);
     ck(!p.sleeping, "and it stays awake rather than nodding straight off again");
   }
 

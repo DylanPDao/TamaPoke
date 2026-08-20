@@ -1017,6 +1017,11 @@ void Pet::play() {
 bool Pet::isNightHour() const {
   if (!lastSeenEpoch) return false;
   int h = (int)((lastSeenEpoch / 3600) % 24);
+  // The window may or may not cross midnight, and it must keep working either
+  // way: with NIGHT_START 0 the old `h >= START || h < END` was true for every
+  // hour of the day, which put the creature to sleep the moment the screen went
+  // off at noon. sleep_test catches it, and did.
+  if (NIGHT_START < NIGHT_END) return h >= NIGHT_START && h < NIGHT_END;
   return h >= NIGHT_START || h < NIGHT_END;
 }
 

@@ -820,12 +820,17 @@ away at 160. The fix is `Pet::screenSleep()`: **turning the screen off with PWR
 puts the creature to sleep**, so the sleep floors do the work rather than a new
 rule in the drain. `sleep_test` simulates ten hours and fails if it comes back.
 
-It needs BOTH the screen off and the night window (22:00-06:00), and both halves
+It needs BOTH the screen off and the night window (00:00-06:00), and both halves
 were arrived at by getting it wrong first. A clock-only bedtime sends the
 creature to bed while somebody is still playing with it. A screen-only rule
 pauses the game every time the device is pocketed, and the creature is meant to
 get hungry during the day. The rule is re-checked every tick rather than only on
-the button, so a device put down at 21:00 goes to bed at 22:00.
+the button, so a device put down at 23:00 goes to bed at midnight.
+
+`isNightHour()` must keep working whether or not the window crosses midnight.
+With `NIGHT_START 0` the plain `h >= START || h < END` is true for EVERY hour,
+which put the creature to sleep the moment the screen went off at noon --
+caught by `sleep_test` the same minute the window was narrowed.
 
 A board whose RTC was never set reads months out and so never auto-sleeps. That
 fails in the safe direction -- it keeps draining and the light button still

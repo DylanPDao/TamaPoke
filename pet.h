@@ -22,14 +22,15 @@
 // as 24, so it stays "a day" if the level rate is ever retuned.
 #define EVO_PENALTY_LEVELS ((uint8_t)((24UL * 60) / MINUTES_PER_LEVEL))
 #define RUNAWAY_TICKS 60                   // se escapa tras 1 h con TODO a cero
-// Night, by the RTC. Auto-sleep needs BOTH: the screen off AND this window.
+// Night, by the RTC: midnight to 06:00. Auto-sleep needs BOTH: the screen off
+// AND this window.
 // The screen alone would pause the game every time you put the device in a
 // pocket -- the creature is supposed to get hungry during the day. The hour
 // alone would send it to bed while you were playing. Set the clock in SETTINGS
 // or over the console with RTCSET; an unset board reads months out and simply
 // never auto-sleeps, which fails in the safe direction (it still drains, and
 // the light button still works by hand).
-#define NIGHT_START 22
+#define NIGHT_START 0
 #define NIGHT_END 6
 enum : uint8_t { SLEEP_NONE = 0, SLEEP_AUTO, SLEEP_PLAYER };
 #define DEF_TRAIN_TICKS 60                 // minutos de bienestar por +1 de DEF

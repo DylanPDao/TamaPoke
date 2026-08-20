@@ -142,9 +142,11 @@ While **awake**, per minute:
 - 👆 **Pet it:** +5 JOY + bond.
 - 🌙 **Sleep:** rest — ENE **+6/min**, needs drain ~**4× slower** with floors
   (FOOD 30 / JOY 35 / HYG 45). No poops, no slip-ups, can't run away while asleep.
-  **Screen off + between 22:00 and 06:00 puts it to sleep**; it gets up at 06:00
-  even if the screen is still off, so the day drains normally. Re-checked every
-  minute, so a device put down at 21:00 nods off when 22:00 comes. The light
+  **Screen off + between midnight and 06:00 puts it to sleep**; it gets up at
+  06:00 even if the screen is still off, so the day drains normally. Re-checked
+  every minute, so a device put down at 23:00 nods off when midnight comes. The
+  evening is deliberately outside the window -- a six-hour night is the only part
+  of the day you are not expected to be around. The light
   button beats both: a creature you sent to bed stays there.
 
 ### Eggs & who you get (spawn odds)
@@ -436,7 +438,7 @@ witness it), each opening a two-option dialog:
 
   **It does not ask, and that is the point** -- a creature you have to authorise
   to leave is not really at stake. What it must never be is the price of going
-  to bed, so **the screen being off between 22:00 and 06:00 puts the creature to
+  to bed, so **the screen being off between midnight and 06:00 puts the creature to
   sleep**, and sleep floors the stats at FOOD 30 / JOY 35 / HYG 45 with the
   neglect check skipped entirely. A night costs you a hungry, grubby creature at
   breakfast instead of an empty one.
