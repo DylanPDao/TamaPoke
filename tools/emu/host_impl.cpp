@@ -145,3 +145,9 @@ void audioSetVolume(uint8_t v) { g_emuVol = v > 10 ? 10 : v; }
 uint8_t audioVolume() { return g_emuVol; }
 void audioSetEnabled(bool on) { (void)on; }
 bool audioEnabled() { return true; }
+
+// Why the last run ended. The tests link this file but not main_sdl.cpp, so the
+// state lives here and the GUI sets it after reading a simulated crash.
+static int g_resetReason = ESP_RST_POWERON;
+esp_reset_reason_t emuResetReason() { return g_resetReason; }
+void emuSetResetReason(int r) { g_resetReason = r; }

@@ -170,6 +170,11 @@ On hardware, verify over the serial console (115200):
 
 - `STATS` full state · `HEALTH` uptime, heap, **PSRAM**, the current screen and
   whether the two battle sprites are resident · `WIPE` factory reset
+- The emulator can **fake a crash**: type `PANIC` or `WDT` at it and it parks
+  the breadcrumb in a file beside the save, re-execs itself, and comes up
+  reporting the crash exactly as the board would. Both are intercepted in
+  `main_sdl.cpp` and never reach the firmware -- a serial command that fakes a
+  crash has no business existing on hardware.
 - **Every boot prints why the last run ended** (`boot: reset=...`). After a
   panic, a watchdog or a brownout it also prints `CRASH: it died on the '<screen>'
   screen with heap=N` -- a breadcrumb kept in RTC memory, which survives a reset
