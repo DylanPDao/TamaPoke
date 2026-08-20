@@ -7,15 +7,20 @@ bool sdReady = false;
 bool sdDirty = false;
 SdThumbs thumbs;
 
-bool PmdMon::load(uint8_t dexNum, bool shiny) {
+bool PmdMon::load(int16_t dexNum, bool shiny) {
+  // int16_t, NOT uint8_t. The dex reached 386 and this did not follow, so
+  // everything from 256 up wrapped into Kanto: MARSHTOMP (258) opened
+  // p002.bin and drew an IVYSAUR. Same trap that caught DexEntry::evolvesTo
+  // and TrainerMon::dex when the expansion landed.
+  if (dexNum < 1 || dexNum > 999) return false;
   unload();
   if (!sdReady) return false;
 
   char path[28];
-  snprintf(path, sizeof(path), "/mons/p%s%03u.bin", shiny ? "s" : "", dexNum);
+  snprintf(path, sizeof(path), "/mons/p%s%03u.bin", shiny ? "s" : "", (unsigned)dexNum);
   File f = SD_MMC.open(path, FILE_READ);
   if (!f && shiny) {  // sin shiny PMD: usa el normal
-    snprintf(path, sizeof(path), "/mons/p%03u.bin", dexNum);
+    snprintf(path, sizeof(path), "/mons/p%03u.bin", (unsigned)dexNum);
     f = SD_MMC.open(path, FILE_READ);
   }
   if (!f) return false;
@@ -30,6 +35,7 @@ bool PmdMon::load(uint8_t dexNum, bool shiny) {
   }
   f.close();
 
+  dex = dexNum;                  // what is actually in here, for the tests
   uint8_t nActs = blob[4];
   memcpy(&palCount, blob + 5, 2);
   if (palCount > 256 || (uint32_t)7 + palCount * 2 > size) { unload(); return false; }
@@ -125,15 +131,16 @@ bool sdBegin() {
   return sdReady;
 }
 
-bool SdMon::load(uint8_t dexNum, bool shiny) {
+bool SdMon::load(int16_t dexNum, bool shiny) {
+  if (dexNum < 1 || dexNum > 999) return false;
   unload();
   if (!sdReady) return false;
 
   char path[24];
-  snprintf(path, sizeof(path), "/mons/%s%03u.bin", shiny ? "s" : "", dexNum);
+  snprintf(path, sizeof(path), "/mons/%s%03u.bin", shiny ? "s" : "", (unsigned)dexNum);
   File f = SD_MMC.open(path, FILE_READ);
   if (!f && shiny) {  // sin variante shiny: usa la normal
-    snprintf(path, sizeof(path), "/mons/%03u.bin", dexNum);
+    snprintf(path, sizeof(path), "/mons/%03u.bin", (unsigned)dexNum);
     f = SD_MMC.open(path, FILE_READ);
   }
   if (!f) {

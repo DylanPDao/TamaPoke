@@ -12,7 +12,7 @@ struct SdMon {
   uint16_t pal[256];
   uint8_t *data = nullptr;  // frames * w * h indices (0xFF = transparente)
 
-  bool load(uint8_t dexNum, bool shiny = false);
+  bool load(int16_t dexNum, bool shiny = false);
   void unload();
 };
 
@@ -33,12 +33,17 @@ struct PmdAct {
 // sprite PMD multi-accion cargado de la SD a PSRAM
 struct PmdMon {
   bool loaded = false;
+  // WHICH species is actually in here. It exists so a test can prove the file
+  // that got opened matches the dex that was asked for: dexNum was a uint8_t,
+  // so every species past 255 wrapped -- 258 MARSHTOMP loaded p002.bin and a
+  // Hoenn creature appeared on screen as IVYSAUR.
+  int16_t dex = 0;
   uint16_t palCount = 0;
   uint16_t pal[256];
   uint8_t *blob = nullptr;
   PmdAct acts[PMD_NACTS];
 
-  bool load(uint8_t dexNum, bool shiny = false);
+  bool load(int16_t dexNum, bool shiny = false);
   void unload();
   bool has(uint8_t a) const { return loaded && a < PMD_NACTS && acts[a].frames > 0; }
 };

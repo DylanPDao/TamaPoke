@@ -2876,7 +2876,7 @@ static void btlSyncSprite(uint8_t who, const Combatant &c) {
   btlPmd[who].unload();
   btlPmdDex[who] = 0;
   if (c.dex < 1 || c.dex > DEX_COUNT) return;
-  if (btlPmd[who].load((uint8_t)c.dex, c.shiny)) btlPmdDex[who] = key;
+  if (btlPmd[who].load(c.dex, c.shiny)) btlPmdDex[who] = key;   // NOT (uint8_t): Hoenn runs past 255
 }
 
 static void btlFreeSprites() {
