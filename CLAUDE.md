@@ -132,8 +132,15 @@ Timing, DMA tearing, PSRAM pressure, audio, battery, the radio -- and two more
 that have each cost a real bug:
 
 - **Touch accuracy.** Synthetic taps are exact coordinates, so a target that is
-  hard to hit with a finger tests perfectly. The battle grid's bottom row and
-  the party BOX button were both reported from a board.
+  hard to hit with a finger tests perfectly. The battle grid's bottom row, the
+  party BOX button and the egg's region pill were all reported from a board.
+
+  **A small target next to an irreversible action is the dangerous shape.**
+  Missing the region pill fell through to `pet.eggTap()`, and three taps hatch
+  an egg -- so fumbling at the selector hatched the egg you were re-aiming.
+  Where a miss would do something you cannot undo, swallow it: the pill has a
+  hit area larger than its graphic AND a dead guard band beyond that, and
+  `hit_test` fails if either goes away.
 - **A missing `gfx->flush()`.** `--shot` reads `gfx->buffer()` directly and
   never consults `frameReady`, so a frozen panel photographs perfectly. That is
   what `flush_test` is for.
@@ -161,7 +168,20 @@ pressure, audio, battery. Those still need the board.
 
 On hardware, verify over the serial console (115200):
 
-- `STATS` full state · `HEALTH` uptime + heap (soak test) · `WIPE` factory reset
+- `STATS` full state · `HEALTH` uptime, heap, **PSRAM**, the current screen and
+  whether the two battle sprites are resident · `WIPE` factory reset
+- The emulator can **fake a crash**: type `PANIC` or `WDT` at it and it parks
+  the breadcrumb in a file beside the save, re-execs itself, and comes up
+  reporting the crash exactly as the board would. Both are intercepted in
+  `main_sdl.cpp` and never reach the firmware -- a serial command that fakes a
+  crash has no business existing on hardware.
+- **Every boot prints why the last run ended** (`boot: reset=...`). After a
+  panic, a watchdog or a brownout it also prints `CRASH: it died on the '<screen>'
+  screen with heap=N` -- a breadcrumb kept in RTC memory, which survives a reset
+  but not a power cycle. This exists because "it has a mini crash" is not
+  actionable: the board never used to say what it was doing. `flush_test`
+  asserts the crumb names the screen actually on the panel, since a report that
+  points at the wrong screen is worse than none.
 - `SPEC <dex>` `LVL <n>` `IV <a> <d> <s> <h>` `HATCH` `SHINY` `EGGS` (20 eggs) `GAL`
 - `MISS <n>` set the care mistakes (`desc=` on STATS); each one delays every
   evolution by a level, so `MISS 0` forgives a neglected start

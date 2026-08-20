@@ -197,6 +197,21 @@ uint8_t movePickPage = 0;
 // has to fit both creatures, both HP bars and the menu, and four full-width
 // rows do not leave room for the sprites.
 bool battleOpen = false;
+
+enum : uint8_t {
+  SCR_STARTER = 0, SCR_REGION, SCR_GALLERY, SCR_DEXPICK, SCR_MOVEPICK, SCR_BOX,
+  SCR_PARTY, SCR_KEYBOARD, SCR_CARD, SCR_PLAYER, SCR_CLOCK, SCR_GYM, SCR_GYMPICK,
+  SCR_LAN, SCR_PICK, SCR_BATTLE, SCR_WIN, SCR_LEARN, SCR_TRAIN, SCR_MENU,
+  SCR_GAME, SCR_MAIN, SCR_COUNT
+};
+extern const char *const SCREEN_NAME[SCR_COUNT];   // const is internal linkage in C++
+const char *const SCREEN_NAME[SCR_COUNT] = {
+  "starter", "region", "gallery", "dexpick", "movepick", "box",
+  "party", "keyboard", "card", "player", "clock", "gym", "gympick",
+  "lan", "pick", "battle", "win", "learn", "train", "menu",
+  "minigame", "main"
+};
+
 Combatant btlYou, btlFoe;
 bool btlOver = false;
 bool btlWon = false;
@@ -235,7 +250,7 @@ Link lan;
 static void renderRegionPick(uint8_t mode);   // the region chooser, defined below
 static int regionPickTap(int16_t x, int16_t y);
 static void drawEggRegion();          // defined with the egg screen helpers
-static bool eggRegionTap(int16_t x, int16_t y);
+static int eggRegionTap(int16_t x, int16_t y);
 static void drawBtlBack();
 static void btlLinkPoll();   // defined with the battle code, called from render()
 static void btlSwitchTo(uint8_t i);
@@ -533,6 +548,7 @@ void setup() {
   // y nadie lo vacia) -> con timeout 0 los mensajes se descartan
   Serial.setTxTimeoutMs(0);
   Serial.printf("TamaPoke fw v%s\n", FW_VERSION);
+  bootReport();   // why the last run ended, and what it was doing
   loadLang();  // idioma guardado (ES por defecto)
   Wire.begin(IIC_SDA, IIC_SCL);
   // CST9217 (tactil), AXP2101 (PMU) y PCF85063 (RTC) comparten este bus I2C.
@@ -955,6 +971,11 @@ void handleSerial() {
     Serial.printf("up=%lus heap=%u min=%u sd=%d mon=%d\n",
                   (unsigned long)(millis() / 1000), ESP.getFreeHeap(),
                   ESP.getMinFreeHeap(), sdReady, pmd.loaded || mon.loaded);
+    // PSRAM is where the sprites and the framebuffer live, so a memory problem
+    // shows up here long before it shows up in the heap figure above.
+    Serial.printf("psram=%u screen=%s btlspr=%d/%d\n", (unsigned)ESP.getFreePsram(),
+                  SCREEN_NAME[uiCurrentScreen() % SCR_COUNT],
+                  btlPmd[0].loaded ? 1 : 0, btlPmd[1].loaded ? 1 : 0);
     Serial.println("DONE");
   } else if (line == "STATS") {
     Serial.printf("spec=%d nv=%u com=%u fel=%u ene=%u lim=%u desc=%u sd=%d mon=%d bat=%d usb=%d rtc=%u\n",
@@ -1037,7 +1058,10 @@ void handleTouch() {
 }
 
 // deslizar vertical: abre/cierra la ficha del bicho
+
 void openClock();  // prototipo
+void bootReport();
+uint8_t uiCurrentScreen();
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
@@ -1635,7 +1659,8 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (pet.isEgg()) {
-    // the region pill first, or choosing a region would also crack the egg
+    // the region pill first, or choosing a region would also crack the egg --
+    // and a near miss is swallowed rather than counted, since three taps hatch
     if (eggRegionTap(x, y)) return;
     pet.eggTap();
     sfxPlay(SFX_TAP);
@@ -1820,7 +1845,85 @@ void renderStarterSelect() {
   gfx->flush();
 }
 
+// ---------- crash breadcrumbs ----------
+//
+// "It has a mini crash" is not a bug report you can act on, because the board
+// never says WHY it restarted. These three live in RTC memory, which survives
+// a panic, a watchdog and a software reset -- everything except pulling the
+// power -- so the next boot can say what the firmware was doing when it died.
+//
+// Written every frame. That is one word to RTC RAM per render, which costs
+// nothing next to a full-screen redraw, and it means the crumb always names
+// the screen that was actually on the panel rather than the last one opened.
+#define CRUMB_MAGIC 0x7AABE10C
+RTC_NOINIT_ATTR uint32_t gCrumbMagic;
+RTC_NOINIT_ATTR uint32_t gCrumbScreen;
+RTC_NOINIT_ATTR uint32_t gCrumbHeap;
+
+
+// Which screen is on the panel RIGHT NOW, in the same order render() tests.
+uint8_t uiCurrentScreen() {
+  if (pet.awaitingStarter()) return starterRegionDone ? SCR_STARTER : SCR_REGION;
+  if (galleryOpen) return galleryPick ? SCR_DEXPICK : SCR_GALLERY;
+  if (movePickOpen) return SCR_MOVEPICK;
+  if (partyOpen) return boxOpen ? SCR_BOX : SCR_PARTY;
+  if (kbOpen) return SCR_KEYBOARD;
+  if (cardOpen) return SCR_CARD;
+  if (playerOpen) return SCR_PLAYER;
+  if (clockOpen) return SCR_CLOCK;
+  if (btlWinUntil) return SCR_WIN;
+  if (battleOpen) return SCR_BATTLE;
+  if (pickOpen) return SCR_PICK;
+  if (lanOpen) return SCR_LAN;
+  if (gymOpen) return gymPick ? SCR_GYMPICK : SCR_GYM;
+  if (pet.hasLearnOffer()) return SCR_LEARN;
+  if (gameOpen || sackOpen || spdOpen) return SCR_GAME;
+  if (trainOpen) return SCR_TRAIN;
+  if (menuOpen) return SCR_MENU;
+  return SCR_MAIN;
+}
+
+static void crumbDrop() {
+  gCrumbMagic = CRUMB_MAGIC;
+  gCrumbScreen = uiCurrentScreen();
+  gCrumbHeap = ESP.getFreeHeap();
+}
+
+static const char *resetReasonName(int r) {
+  switch (r) {
+    case ESP_RST_POWERON:  return "power on";
+    case ESP_RST_EXT:      return "reset pin";
+    case ESP_RST_SW:       return "software (our own restart)";
+    case ESP_RST_PANIC:    return "PANIC -- a crash";
+    case ESP_RST_INT_WDT:  return "INTERRUPT WATCHDOG";
+    case ESP_RST_TASK_WDT: return "TASK WATCHDOG -- something blocked too long";
+    case ESP_RST_WDT:      return "watchdog";
+    case ESP_RST_BROWNOUT: return "BROWNOUT -- the supply sagged";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    default: return "unknown";
+  }
+}
+
+// Printed once at boot. On a clean start it is one line; after a crash it says
+// which screen was up and how much heap was left, which is the whole point.
+void bootReport() {
+  int r = (int)esp_reset_reason();
+  bool bad = (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT ||
+              r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT);
+  Serial.printf("boot: reset=%s heap=%u psram=%u\n", resetReasonName(r),
+                (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
+  if (bad && gCrumbMagic == CRUMB_MAGIC) {
+    Serial.printf("CRASH: it died on the '%s' screen with heap=%u\n",
+                  gCrumbScreen < SCR_COUNT ? SCREEN_NAME[gCrumbScreen] : "?",
+                  (unsigned)gCrumbHeap);
+  } else if (bad) {
+    Serial.println("CRASH: no breadcrumb (RTC memory was lost too)");
+  }
+  gCrumbMagic = 0;   // one report per crash, not on every later boot
+}
+
 void render() {
+  crumbDrop();   // so a crash can name the screen it happened on
   if (pet.awaitingStarter()) {  // primera partida: region y luego inicial
     if (!starterRegionDone) renderRegionPick(RPICK_FOR_START);
     else renderStarterSelect();
@@ -4404,6 +4507,17 @@ void renderGyms() {
 #define EGGREG_Y 374
 #define EGGREG_W 200
 #define EGGREG_H 34
+// The hit area is BIGGER than the pill, like the BOX button and the battle
+// grid, and for the same reason: a 34 px target is under UI_TAP_MIN and a
+// finger is not a stylus.
+//
+// The guard band matters more than the padding. Missing this pill fell through
+// to pet.eggTap(), and THREE taps hatch the egg -- so fumbling at the region
+// selector hatched the very egg you were trying to re-aim. A near miss now
+// does nothing at all, which is the correct answer for a control whose
+// neighbour is irreversible.
+#define EGGREG_PAD 16
+#define EGGREG_GUARD 14
 
 static void drawEggRegion() {
   char l[24];
@@ -4421,12 +4535,33 @@ static void drawEggRegion() {
 }
 
 // True if the tap was on the region pill, so the egg does not also get cracked.
-static bool eggRegionTap(int16_t x, int16_t y) {
-  if (!pet.isEgg() || x < EGGREG_X || x > EGGREG_X + EGGREG_W ||
-      y < EGGREG_Y || y > EGGREG_Y + EGGREG_H) return false;
-  pet.setRegion((pet.region + 1) % REGION_COUNT);
-  sfxPlay(SFX_TAP);
-  return true;
+// The egg's region pill: its graphic, and the area that actually accepts a tap.
+// Exposed so a test can prove the second is bigger than the first and that a
+// near miss does not reach pet.eggTap().
+void uiEggPillRect(int *x, int *y, int *w, int *h, bool hitArea) {
+  int pad = hitArea ? EGGREG_PAD : 0;
+  if (x) *x = EGGREG_X - pad;
+  if (y) *y = EGGREG_Y - pad;
+  if (w) *w = EGGREG_W + 2 * pad;
+  if (h) *h = EGGREG_H + 2 * pad;
+}
+
+// 1 = cycled the region, -1 = a near miss that must NOT reach the egg, 0 = not
+// ours at all.
+static int eggRegionTap(int16_t x, int16_t y) {
+  if (!pet.isEgg()) return 0;
+  int inset = EGGREG_PAD, guard = EGGREG_PAD + EGGREG_GUARD;
+  bool hit = x >= EGGREG_X - inset && x <= EGGREG_X + EGGREG_W + inset &&
+             y >= EGGREG_Y - inset && y <= EGGREG_Y + EGGREG_H + inset;
+  if (hit) {
+    pet.setRegion((uint8_t)((pet.region + 1) % REGION_COUNT));
+    sfxPlay(SFX_TAP);
+    return 1;
+  }
+  bool near = x >= EGGREG_X - guard && x <= EGGREG_X + EGGREG_W + guard &&
+              y >= EGGREG_Y - guard && y <= EGGREG_Y + EGGREG_H + guard;
+  if (near) { sfxPlay(SFX_DENY); return -1; }
+  return 0;
 }
 
 // The region chooser used by the Pokedex and the gym ladder. Each row carries

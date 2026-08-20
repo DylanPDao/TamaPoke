@@ -43,7 +43,59 @@ static void pumpStdin() {
     FD_ZERO(&fds); FD_SET(0, &fds); tv = { 0, 0 };
   }
 }
-int FakeSerial::available() { return g_lines.empty() ? 0 : 1; }
+// --- simulating a crash ---
+//
+// The board keeps its breadcrumb in RTC memory, which survives a panic but not
+// a power cycle. A process has no such thing, so the emulator parks the crumb
+// in a file beside the save and re-execs itself: the window closes and reopens
+// reporting the crash, which is exactly what a player sees.
+//
+// PANIC is handled HERE and never reaches the firmware, because a serial
+// command that fakes a crash has no business existing on real hardware.
+static std::string g_crashFile;
+void emuSetResetReason(int r);
+extern uint32_t gCrumbMagic, gCrumbScreen, gCrumbHeap;
+static char **g_argv = nullptr;
+
+static void crashArmAndReexec(int reason) {
+  FILE *f = fopen(g_crashFile.c_str(), "wb");
+  if (f) {
+    fprintf(f, "%d %u %u %u\n", reason, gCrumbMagic, gCrumbScreen, gCrumbHeap);
+    fclose(f);
+  }
+  printf("\nemu: simulating a %s -- restarting the way the board would\n\n",
+         reason == ESP_RST_PANIC ? "PANIC" : "TASK WATCHDOG");
+  fflush(stdout);
+  execv("/proc/self/exe", g_argv);      // linux
+  execv(g_argv[0], g_argv);             // macos and anything else
+  perror("emu: could not re-exec");
+  exit(1);
+}
+
+// Reads back what the "crash" left behind, so the firmware's bootReport() sees
+// exactly the state a real panic would have left in RTC memory.
+static void crashRestore() {
+  FILE *f = fopen(g_crashFile.c_str(), "rb");
+  if (!f) return;
+  unsigned magic = 0, screen = 0, heap = 0; int reason = 0;
+  if (fscanf(f, "%d %u %u %u", &reason, &magic, &screen, &heap) == 4) {
+    emuSetResetReason(reason);
+    gCrumbMagic = magic; gCrumbScreen = screen; gCrumbHeap = heap;
+  }
+  fclose(f);
+  remove(g_crashFile.c_str());
+}
+
+int FakeSerial::available() {
+  // intercept the emulator-only commands before the firmware ever sees them
+  while (!g_lines.empty()) {
+    const std::string &l = g_lines.front();
+    if (l == "PANIC") { g_lines.pop_front(); crashArmAndReexec(ESP_RST_PANIC); }
+    else if (l == "WDT") { g_lines.pop_front(); crashArmAndReexec(ESP_RST_TASK_WDT); }
+    else break;
+  }
+  return g_lines.empty() ? 0 : 1;
+}
 String FakeSerial::readStringUntil(char) {
   if (g_lines.empty()) return String("");
   String s(g_lines.front());
@@ -340,6 +392,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
 
 int main(int argc, char **argv) {
   int scale = 2;
+  g_argv = argv;
   const char *save = "tamapoke.nvs";
   const char *shot = nullptr, *shotOut = "shot.ppm";
   const char *wav = nullptr, *demo = nullptr;
@@ -361,6 +414,8 @@ int main(int argc, char **argv) {
   // Audio preview: no SDL, no board -- just a file you can listen to.
   if (wav) return wavMain(wav, demo);
   if (shot) return shotMode(shot, shotOut, shotLvl, shotIv, shotDex);   // headless: no SDL at all
+  g_crashFile = std::string(save) + ".crash";
+  crashRestore();     // a simulated panic left its breadcrumb here
   nvsLoad(save);
 
   if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 1; }
