@@ -675,7 +675,7 @@ void loop() {
     lastPwr = now;
     if (pwrShortPressed()) {
       screenOff = !screenOff;
-      pet.screenSleep(screenOff);   // putting it down puts it to sleep
+      pet.setScreenOff(screenOff);   // asleep only if it is also night
       if (!screenOff) lastInteract = now;
     }
   }
@@ -1033,7 +1033,7 @@ void handleTouch() {
     tStart = millis();
     holdFired = false;
     swallowGesture = (dimStage > 0) || screenOff;  // si estaba a oscuras, solo despierta
-    if (screenOff) pet.screenSleep(false);         // waking the screen wakes it
+    if (screenOff) pet.setScreenOff(false);        // waking the screen wakes it
     screenOff = false;
     lastInteract = millis();
   } else if (pressed) {  // sigue apoyado

@@ -140,6 +140,8 @@ void Pet::tick() {
     return;
   }
 
+  applyAutoSleep();   // put down at 21:00 still goes to bed at 22:00
+
 
   // el sueño es descanso: la energia se recupera y las necesidades bajan MUCHO
   // mas lento que despierto y con suelo (amanece pidiendo algo de mimo, no a
@@ -1018,25 +1020,39 @@ bool Pet::isNightHour() const {
   return h >= NIGHT_START || h < NIGHT_END;
 }
 
-// Sleep follows the SCREEN, not the clock.
+// Auto-sleep needs the screen off AND the night hours, and is re-checked every
+// tick rather than only on the button, so a device put down at 21:00 nods off
+// at 22:00 and gets up at 06:00 without anyone touching it.
 //
-// The screen going off is a deliberate press of the PWR button -- "I am putting
-// this down" -- which is a far better statement of intent than any hour, and it
-// does not depend on the RTC being right (on a board that has never been set,
-// it is months out). Asleep, the stats floor at 30/35/45 and the neglect check
-// is skipped, so putting the device away can never cost you the creature.
+// Both halves earn their place. Screen-off alone paused the game whenever you
+// put the device down, and the creature is meant to get hungry during the day.
+// The hour alone sent it to bed while you were still playing with it.
 //
-// Only what the SCREEN put to sleep is woken by the screen: a creature the
-// player sent to bed with the light button stays there.
-void Pet::screenSleep(bool off) {
+// Only what this put to sleep is woken by it: a creature the player sent to bed
+// with the light button stays there until the player says otherwise.
+void Pet::applyAutoSleep() {
   if (isEgg() || ceremony != CER_NONE) return;
-  if (off) {
-    if (!sleeping) { sleeping = true; sleepAuto = SLEEP_AUTO; save(); }
-  } else if (sleeping && sleepAuto == SLEEP_AUTO) {
+  bool night = isNightHour();
+  if (screenIsOff && night) {
+    if (!sleeping && sleepAuto != SLEEP_PLAYER) {
+      sleeping = true;
+      sleepAuto = SLEEP_AUTO;
+      pendingSave = true;
+    }
+    return;
+  }
+  if (sleeping && sleepAuto == SLEEP_AUTO) {
     sleeping = false;
     sleepAuto = SLEEP_NONE;
-    save();
+    pendingSave = true;
   }
+  if (!night && sleepAuto == SLEEP_PLAYER) sleepAuto = SLEEP_NONE;  // a new day
+}
+
+void Pet::setScreenOff(bool off) {
+  screenIsOff = off;
+  applyAutoSleep();
+  save();
 }
 
 void Pet::toggleLight() {
