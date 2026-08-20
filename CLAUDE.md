@@ -803,6 +803,29 @@ What changed for 386 species:
   option; Hoenn adds species that would need coverage added.
 - Johto/Hoenn gyms are pure data, in the shape `trainers.h` already uses.
 
+### The three drain paths, and why only one had no floor
+
+Worth knowing before touching balance, because the asymmetry cost a player a
+creature:
+
+| path | when | floor |
+|---|---|---|
+| `syncClock()` | the board was switched off | 15 |
+| `tick()`, asleep | any time | 30 / 35 / 45, and the neglect check is skipped |
+| `tick()`, awake | the board is left running | **none -- reaches zero** |
+
+So leaving the board RUNNING overnight was punished where switching it OFF was
+not, and an awake creature hit zero on everything in 100 minutes and could run
+away at 160. The fix is that the creature now puts itself to bed at night
+(`NIGHT_START`/`NIGHT_END`, 20:00-06:00 off the RTC), so the sleep floors do the
+work rather than a special case in the drain. `night_test` simulates ten hours
+and fails if it comes back.
+
+The runaway deliberately does **not** ask for confirmation -- a pet you have to
+authorise to leave is not at stake. A confirmation was added when this was first
+reported and then removed: the bug was that a night's sleep could reach that
+state at all, not that the ending was too easy to trigger.
+
 ### Player-wide vs per-creature state
 
 Badges (easy and hard), the avatar, the daily streak, the Pokedex bitmaps and

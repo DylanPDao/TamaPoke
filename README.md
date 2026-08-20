@@ -142,6 +142,8 @@ While **awake**, per minute:
 - 👆 **Pet it:** +5 JOY + bond.
 - 🌙 **Sleep:** rest — ENE **+6/min**, needs drain ~**4× slower** with floors
   (FOOD 30 / JOY 35 / HYG 45). No poops, no slip-ups, can't run away while asleep.
+  **It goes to bed by itself at 20:00 and gets up at 06:00**; the light button
+  overrides either way and your choice stands until morning.
 
 ### Eggs & who you get (spawn odds)
 - **First ever pet:** you pick a starter — **Bulbasaur / Charmander / Squirtle**.
@@ -430,12 +432,18 @@ witness it), each opening a two-option dialog:
 - **Runaway** (dark button, total neglect for 1 h): a somber "feels abandoned"
   ending in the rain — caring for the creature cancels it.
 
-  **It asks before it happens.** The button sits in a 408x58 band across the
-  middle of the screen -- where the creature itself is drawn -- and it used to
-  fire on the first tap while the *farewell*, the good ending, opened a dialog.
-  That was backwards for the one ending you cannot undo, and it cost a real
-  player their creature: they left the board running overnight, came back to a
-  neglected pet, tapped it to see how it was, and lost it.
+  **It does not ask, and that is the point** -- a creature you have to authorise
+  to leave is not really at stake. What it must never be is the price of going
+  to bed, so **the creature puts itself to sleep at night** (20:00-06:00 by the
+  RTC) and sleep floors the stats at FOOD 30 / JOY 35 / HYG 45 with the neglect
+  check skipped entirely. A night left running now costs you a hungry, grubby
+  creature at breakfast instead of an empty screen.
+
+  This was a real loss: a player left the board running overnight and came back
+  to a Dratini that had gone. The live tick was the only drain path with no
+  floor -- offline floors at 15, sleep at 30/35/45 -- so a board left *running*
+  was punished where a board switched *off* was not. `night_test` runs ten
+  simulated hours and fails if that ever comes back.
 
 ## Sprites: PMD SpriteCollab everywhere
 

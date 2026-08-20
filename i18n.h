@@ -122,7 +122,6 @@ enum StrId : uint8_t {
   S_RETIRE_Q,       // ...and the confirmation
   S_RETIRE_COST,    // what retiring early costs the next creature
   S_EVO_SLOW,       // shown on the card while a creature carries that debt
-  S_RUN_Q,          // confirming the runaway: the one ending you cannot undo
   STR_COUNT
 };
 

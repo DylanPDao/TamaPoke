@@ -1631,9 +1631,6 @@ void onTap(int16_t x, int16_t y) {
     if (choiceKind == 1) {                 // evolucion
       if (b1) { int16_t old = pet.speciesId; pet.evolve(); evoPmd.load(old, pet.shiny); }
       else if (b2) pet.declineEvolve();
-    } else if (choiceKind == 4) {          // escapada: el unico final sin vuelta
-      if (b1) pet.startRunaway();
-      // b2 keeps it: one moment of care resets neglectTicks anyway
     } else if (choiceKind == 3) {          // retirada a peticion
       if (b1) pet.startRetire();
       // b2 is simply "no": nothing to decline, the row is always there
@@ -1675,16 +1672,16 @@ void onTap(int16_t x, int16_t y) {
     choiceKind = 1; choiceUntil = millis() + 12000;
     return;
   }
-  // Los dos finales comparten recuadro y AMBOS preguntan.
+  // botones de final (mismo recuadro): escapada directa; despedida abre dialogo.
   //
-  // The runaway used to fire on the first tap, with no dialog -- while the
-  // FAREWELL, the good ending, asked. That is backwards: this is the ending you
-  // cannot undo, on a 408x58 band lying across the middle of the screen where
-  // the creature is drawn. A player who left the board running overnight came
-  // back to a neglected pet, tapped it to see how it was, and lost it.
+  // The runaway does NOT ask, deliberately. A pet you have to authorise to
+  // leave is not really at stake, and neglect having teeth is the whole premise.
+  // What was actually wrong is that a night's sleep could reach this state at
+  // all -- fixed where it belongs, in the drain, by having the creature put
+  // itself to bed (Pet::tick, autoSleep).
   if (x >= FAR_BTN_X && x <= FAR_BTN_X + FAR_BTN_W &&
       y >= FAR_BTN_Y && y <= FAR_BTN_Y + FAR_BTN_H) {
-    if (pet.canRunawayNow()) { choiceKind = 4; choiceUntil = millis() + 12000; return; }
+    if (pet.canRunawayNow()) { pet.startRunaway(); return; }
     if (pet.wantFarewellButton()) { choiceKind = 2; choiceUntil = millis() + 12000; return; }
   }
   for (int i = 0; i < BTN_COUNT; i++) {
@@ -5384,9 +5381,6 @@ void drawChoiceDialog() {
   if (choiceKind == 1) {  // evolucion
     q = T(S_EVO_Q); o1 = T(S_EVO_TAP); o2 = T(S_EVO_KEEP);
     c1 = UI_BAR_BAD; t1 = UI_WHITE; c2 = UI_TRACK; t2 = UI_INK;
-  } else if (choiceKind == 4) {   // escapada
-    q = T(S_RUN_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
-    c1 = UI_BAR_BAD; t1 = UI_WHITE; c2 = UI_BAR_OK; t2 = UI_WHITE;
   } else if (choiceKind == 3) {   // retirada a peticion
     q = T(S_RETIRE_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
     c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_BAR_OK; t2 = UI_WHITE;

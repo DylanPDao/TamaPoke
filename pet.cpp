@@ -140,6 +140,23 @@ void Pet::tick() {
     return;
   }
 
+  // Bedtime. Checked before the sleeping branch below so it takes effect on the
+  // same tick, and only ever undone by the clock if the CLOCK is what did it --
+  // a creature the player put to bed stays there.
+  {
+    bool night = isNightHour();
+    if (night) {
+      if (!sleeping && sleepAuto != SLEEP_PLAYER) {
+        sleeping = true;
+        sleepAuto = SLEEP_AUTO;
+        pendingSave = true;
+      }
+    } else {
+      if (sleeping && sleepAuto == SLEEP_AUTO) { sleeping = false; pendingSave = true; }
+      sleepAuto = SLEEP_NONE;   // morning clears the player's override too
+    }
+  }
+
   // el sueño es descanso: la energia se recupera y las necesidades bajan MUCHO
   // mas lento que despierto y con suelo (amanece pidiendo algo de mimo, no a
   // cero, sin descuidos ni escapadas). despierto: comida -2/min, hig/joy -1/min.
@@ -1009,10 +1026,22 @@ void Pet::play() {
   save();
 }
 
+// The hour off the RTC, the same source the scene uses. With no clock at all
+// there is no night, so a board that has never been set never auto-sleeps.
+bool Pet::isNightHour() const {
+  if (!lastSeenEpoch) return false;
+  int h = (int)((lastSeenEpoch / 3600) % 24);
+  return h >= NIGHT_START || h < NIGHT_END;
+}
+
 void Pet::toggleLight() {
   if (ceremony != CER_NONE) return;
   if (isEgg()) return;
   sleeping = !sleeping;
+  // The player's hand beats the clock until morning: waking it at 23:00 must
+  // not be undone a minute later by the auto-sleep, and neither must putting
+  // it to bed early.
+  sleepAuto = SLEEP_PLAYER;
   save();
 }
 
@@ -1079,6 +1108,7 @@ void Pet::save() {
   prefs.putBool("eshy", eggShiny);
   prefs.putBool("stpk", starterPick);
   prefs.putUChar("evop", evoPen);
+  prefs.putUChar("slpa", sleepAuto);
   prefs.putBool("rtpn", retirePending);
   prefs.putBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   prefs.putUInt("age", ageMinutes);
@@ -1136,6 +1166,7 @@ void Pet::load() {
   eggShiny = prefs.getBool("eshy", false);
   starterPick = prefs.getBool("stpk", false);
   evoPen = prefs.getUChar("evop", 0);
+  sleepAuto = prefs.getUChar("slpa", SLEEP_NONE);
   retirePending = prefs.getBool("rtpn", false);
   prefs.getBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   ageMinutes = prefs.getUInt("age", 0);

@@ -224,34 +224,20 @@ int main(){
     ck(!pet.isEgg(), "tapping the egg still hatches it");
   }
 
-  // THE ENDING YOU CANNOT UNDO MUST ASK. It used to fire on the first tap,
-  // while the farewell -- the good ending -- opened a dialog. The button is a
-  // 408x58 band across the middle of the screen, right where the creature is
-  // drawn, so a player checking on a neglected pet lost it to one tap.
+  // The runaway fires on the tap, with NO dialog, and that is deliberate: a
+  // creature you have to authorise to leave is not at stake, and neglect
+  // having teeth is the premise. What must never happen is REACHING this state
+  // by going to sleep -- night_test covers that end of it.
   {
-    battleOpen = false; choiceKind = 0;
+    battleOpen = false;
     if (pet.awaitingStarter()) pet.chooseStarter(4);
     if (pet.isEgg()) pet.dbgHatchAs(147, false);
     while (pet.hasLearnOffer()) pet.declineLearn();
     if (pet.sleeping) pet.toggleLight();
-    pet.dbgRunawayReady();                 // all four at zero, an hour of it
-    ck(pet.canRunawayNow(), "the creature is ready to run");
-
-    onTap(233, 200);                       // straight at the creature/button band
-    ck(pet.ceremony == CER_NONE,
-       "one tap does NOT let it go");
-    ck(choiceKind == 4, "it asks first");
-
-    // and answering "stay" keeps it
-    onTap(233, 294);                       // the lower button: keep
-    ck(pet.ceremony == CER_NONE, "answering stay keeps the creature");
-
-    // answering "go" is what actually ends it
     pet.dbgRunawayReady();
+    ck(pet.canRunawayNow(), "total neglect really does make it ready to leave");
     onTap(233, 200);
-    ck(choiceKind == 4, "asked again");
-    onTap(233, 232);                       // the upper button: let it go
-    ck(pet.ceremony != CER_NONE, "and only then does it leave");
+    ck(pet.ceremony != CER_NONE, "and the tap lets it go, without asking");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");
