@@ -140,6 +140,9 @@ void Pet::tick() {
     return;
   }
 
+  applyAutoSleep();   // put down at 21:00 still goes to bed at 22:00
+
+
   // el sueño es descanso: la energia se recupera y las necesidades bajan MUCHO
   // mas lento que despierto y con suelo (amanece pidiendo algo de mimo, no a
   // cero, sin descuidos ni escapadas). despierto: comida -2/min, hig/joy -1/min.
@@ -1009,10 +1012,65 @@ void Pet::play() {
   save();
 }
 
+// The hour off the RTC, the same source the scene uses. With no clock at all
+// there is no night, so a board that has never been set never auto-sleeps.
+bool Pet::isNightHour() const {
+  if (!lastSeenEpoch) return false;
+  int h = (int)((lastSeenEpoch / 3600) % 24);
+  // The window may or may not cross midnight, and it must keep working either
+  // way: with NIGHT_START 0 the old `h >= START || h < END` was true for every
+  // hour of the day, which put the creature to sleep the moment the screen went
+  // off at noon. sleep_test catches it, and did.
+  if (NIGHT_START < NIGHT_END) return h >= NIGHT_START && h < NIGHT_END;
+  return h >= NIGHT_START || h < NIGHT_END;
+}
+
+// Auto-sleep needs the screen off AND the night hours, and is re-checked every
+// tick rather than only on the button, so a device put down at 21:00 nods off
+// at 22:00 and gets up at 06:00 without anyone touching it.
+//
+// Both halves earn their place. Screen-off alone paused the game whenever you
+// put the device down, and the creature is meant to get hungry during the day.
+// The hour alone sent it to bed while you were still playing with it.
+//
+// Only what this put to sleep is woken by it: a creature the player sent to bed
+// with the light button stays there until the player says otherwise.
+void Pet::applyAutoSleep() {
+  if (isEgg() || ceremony != CER_NONE) return;
+  bool night = isNightHour();
+  if (screenIsOff && night && !sleeping && sleepAuto != SLEEP_PLAYER) {
+    sleeping = true;
+    sleepAuto = SLEEP_AUTO;
+    pendingSave = true;
+  }
+  // NOTHING wakes it here, and that is the whole point. Waking at 06:00 would
+  // reopen the hole this exists to close: from the sleep floors, food is empty
+  // by 06:15 and every stat by 07:40, so anyone who sleeps past eight would
+  // find the creature ready to run away again. It sleeps until YOU are up,
+  // which is the screen coming back on.
+  if (!night && sleepAuto == SLEEP_PLAYER) sleepAuto = SLEEP_NONE;  // a new day
+}
+
+void Pet::setScreenOff(bool off) {
+  screenIsOff = off;
+  // Coming back to the device is what wakes it -- only if the device is what
+  // put it to sleep. A creature sent to bed with the light stays there.
+  if (!off && sleeping && sleepAuto == SLEEP_AUTO) {
+    sleeping = false;
+    sleepAuto = SLEEP_NONE;
+  }
+  applyAutoSleep();
+  save();
+}
+
 void Pet::toggleLight() {
   if (ceremony != CER_NONE) return;
   if (isEgg()) return;
   sleeping = !sleeping;
+  // The player's hand beats the clock until morning: waking it at 23:00 must
+  // not be undone a minute later by the auto-sleep, and neither must putting
+  // it to bed early.
+  sleepAuto = SLEEP_PLAYER;
   save();
 }
 
@@ -1079,6 +1137,7 @@ void Pet::save() {
   prefs.putBool("eshy", eggShiny);
   prefs.putBool("stpk", starterPick);
   prefs.putUChar("evop", evoPen);
+  prefs.putUChar("slpa", sleepAuto);
   prefs.putBool("rtpn", retirePending);
   prefs.putBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   prefs.putUInt("age", ageMinutes);
@@ -1136,6 +1195,7 @@ void Pet::load() {
   eggShiny = prefs.getBool("eshy", false);
   starterPick = prefs.getBool("stpk", false);
   evoPen = prefs.getUChar("evop", 0);
+  sleepAuto = prefs.getUChar("slpa", SLEEP_NONE);
   retirePending = prefs.getBool("rtpn", false);
   prefs.getBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   ageMinutes = prefs.getUInt("age", 0);

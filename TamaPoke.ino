@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.9"
+#define FW_VERSION "3.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -675,6 +675,7 @@ void loop() {
     lastPwr = now;
     if (pwrShortPressed()) {
       screenOff = !screenOff;
+      pet.setScreenOff(screenOff);   // asleep only if it is also night
       if (!screenOff) lastInteract = now;
     }
   }
@@ -1032,6 +1033,7 @@ void handleTouch() {
     tStart = millis();
     holdFired = false;
     swallowGesture = (dimStage > 0) || screenOff;  // si estaba a oscuras, solo despierta
+    if (screenOff) pet.setScreenOff(false);        // waking the screen wakes it
     screenOff = false;
     lastInteract = millis();
   } else if (pressed) {  // sigue apoyado
@@ -1672,7 +1674,13 @@ void onTap(int16_t x, int16_t y) {
     choiceKind = 1; choiceUntil = millis() + 12000;
     return;
   }
-  // botones de final (mismo recuadro): escapada directa; despedida abre dialogo
+  // botones de final (mismo recuadro): escapada directa; despedida abre dialogo.
+  //
+  // The runaway does NOT ask, deliberately. A pet you have to authorise to
+  // leave is not really at stake, and neglect having teeth is the whole premise.
+  // What was actually wrong is that a night's sleep could reach this state at
+  // all -- fixed where it belongs, in the drain, by having the creature put
+  // itself to bed (Pet::tick, autoSleep).
   if (x >= FAR_BTN_X && x <= FAR_BTN_X + FAR_BTN_W &&
       y >= FAR_BTN_Y && y <= FAR_BTN_Y + FAR_BTN_H) {
     if (pet.canRunawayNow()) { pet.startRunaway(); return; }

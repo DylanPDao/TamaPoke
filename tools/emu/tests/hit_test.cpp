@@ -25,6 +25,7 @@ String FakeSerial::readStringUntil(char){return String("");}
 void setup(); void render(); void battleTap(int16_t,int16_t);
 extern Pet pet;
 extern bool battleOpen;
+extern uint8_t choiceKind;
 extern uint8_t btlMenu;
 extern Combatant btlYou;
 void startBattle(int16_t dex, uint8_t lvl);
@@ -221,6 +222,22 @@ int main(){
     // and the egg itself still hatches when you actually tap the egg
     for (int i = 0; i < 4; i++) onTap(233, 200);
     ck(!pet.isEgg(), "tapping the egg still hatches it");
+  }
+
+  // The runaway fires on the tap, with NO dialog, and that is deliberate: a
+  // creature you have to authorise to leave is not at stake, and neglect
+  // having teeth is the premise. What must never happen is REACHING this state
+  // by going to sleep -- night_test covers that end of it.
+  {
+    battleOpen = false;
+    if (pet.awaitingStarter()) pet.chooseStarter(4);
+    if (pet.isEgg()) pet.dbgHatchAs(147, false);
+    while (pet.hasLearnOffer()) pet.declineLearn();
+    if (pet.sleeping) pet.toggleLight();
+    pet.dbgRunawayReady();
+    ck(pet.canRunawayNow(), "total neglect really does make it ready to leave");
+    onTap(233, 200);
+    ck(pet.ceremony != CER_NONE, "and the tap lets it go, without asking");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");

@@ -803,6 +803,51 @@ What changed for 386 species:
   option; Hoenn adds species that would need coverage added.
 - Johto/Hoenn gyms are pure data, in the shape `trainers.h` already uses.
 
+### The three drain paths, and why only one had no floor
+
+Worth knowing before touching balance, because the asymmetry cost a player a
+creature:
+
+| path | when | floor |
+|---|---|---|
+| `syncClock()` | the board was switched off | 15 |
+| `tick()`, asleep | any time | 30 / 35 / 45, and the neglect check is skipped |
+| `tick()`, awake | the board is left running | **none -- reaches zero** |
+
+So leaving the board RUNNING overnight was punished where switching it OFF was
+not, and an awake creature hit zero on everything in 100 minutes and could run
+away at 160. The fix is `Pet::screenSleep()`: **turning the screen off with PWR
+puts the creature to sleep**, so the sleep floors do the work rather than a new
+rule in the drain. `sleep_test` simulates ten hours and fails if it comes back.
+
+It needs BOTH the screen off and the night window (00:00-06:00), and both halves
+were arrived at by getting it wrong first. A clock-only bedtime sends the
+creature to bed while somebody is still playing with it. A screen-only rule
+pauses the game every time the device is pocketed, and the creature is meant to
+get hungry during the day. The rule is re-checked every tick rather than only on
+the button, so a device put down at 23:00 goes to bed at midnight.
+
+**Nothing wakes it at 06:00, deliberately.** An auto-wake reopens the hole this
+exists to close: from the sleep floors, food is empty by 06:15 and every stat by
+07:40, so anyone who sleeps past eight finds the creature ready to run away
+again. It sleeps until the screen comes back on -- it wakes when the PLAYER
+does. `sleep_test` puts the auto-wake back and reads `food=0 joy=0 ene=0 hyg=0`
+at 09:00.
+
+`isNightHour()` must keep working whether or not the window crosses midnight.
+With `NIGHT_START 0` the plain `h >= START || h < END` is true for EVERY hour,
+which put the creature to sleep the moment the screen went off at noon --
+caught by `sleep_test` the same minute the window was narrowed.
+
+A board whose RTC was never set reads months out and so never auto-sleeps. That
+fails in the safe direction -- it keeps draining and the light button still
+works -- and the clock is settable from SETTINGS or `RTCSET`.
+
+The runaway deliberately does **not** ask for confirmation -- a pet you have to
+authorise to leave is not at stake. A confirmation was added when this was first
+reported and then removed: the bug was that a night's sleep could reach that
+state at all, not that the ending was too easy to trigger.
+
 ### Player-wide vs per-creature state
 
 Badges (easy and hard), the avatar, the daily streak, the Pokedex bitmaps and

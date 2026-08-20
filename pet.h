@@ -22,6 +22,17 @@
 // as 24, so it stays "a day" if the level rate is ever retuned.
 #define EVO_PENALTY_LEVELS ((uint8_t)((24UL * 60) / MINUTES_PER_LEVEL))
 #define RUNAWAY_TICKS 60                   // se escapa tras 1 h con TODO a cero
+// Night, by the RTC: midnight to 06:00. Auto-sleep needs BOTH: the screen off
+// AND this window.
+// The screen alone would pause the game every time you put the device in a
+// pocket -- the creature is supposed to get hungry during the day. The hour
+// alone would send it to bed while you were playing. Set the clock in SETTINGS
+// or over the console with RTCSET; an unset board reads months out and simply
+// never auto-sleeps, which fails in the safe direction (it still drains, and
+// the light button still works by hand).
+#define NIGHT_START 0
+#define NIGHT_END 6
+enum : uint8_t { SLEEP_NONE = 0, SLEEP_AUTO, SLEEP_PLAYER };
 #define DEF_TRAIN_TICKS 60                 // minutos de bienestar por +1 de DEF
 
 // ceremonias de fin de ciclo
@@ -239,7 +250,14 @@ public:
   uint8_t trMaxDef() const { return trMaxFor(ivDef); }
   uint8_t trMaxSpe() const { return trMaxFor(ivSpe); }
   void play();
-  void toggleLight();  // dormir / despertar
+  void toggleLight();
+  bool isNightHour() const;
+  void setScreenOff(bool off);  // the sketch reports the PWR button
+  bool screenIsOff = false;
+  void dbgTick() { tick(); }   // tests drive minutes directly; tick() is private
+  // syncClock() reads "seen" back out of NVS, so a test has to put it there
+  void dbgSetSeen(uint32_t e) { lastSeenEpoch = e; prefs.putUInt("seen", e); }
+  uint8_t sleepAuto = SLEEP_NONE;   // who decided the current sleep state  // dormir / despertar
   void clean();
   void caress();  // tocar al bicho
   void eggTap();  // tocar el huevo: 3 toques y eclosiona
@@ -376,6 +394,7 @@ private:
   void snapshotForParty();          // copy into endedMon before newEgg() wipes it
   void checkMedals();
   void tick();
+  void applyAutoSleep();
   void hatch();
   void registerSpecies(int16_t dex);
   void save();

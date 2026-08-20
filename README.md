@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.9-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v3.0-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -142,6 +142,13 @@ While **awake**, per minute:
 - 👆 **Pet it:** +5 JOY + bond.
 - 🌙 **Sleep:** rest — ENE **+6/min**, needs drain ~**4× slower** with floors
   (FOOD 30 / JOY 35 / HYG 45). No poops, no slip-ups, can't run away while asleep.
+  **Screen off + between midnight and 06:00 puts it to sleep**, and it stays
+  asleep until you turn the screen back on -- it wakes when *you* do, not at a
+  fixed hour. Re-checked every minute, so a device put down at 23:00 nods off
+  when midnight comes. The
+  evening is deliberately outside the window -- a six-hour night is the only part
+  of the day you are not expected to be around. The light
+  button beats both: a creature you sent to bed stays there.
 
 ### Eggs & who you get (spawn odds)
 - **First ever pet:** you pick a starter — **Bulbasaur / Charmander / Squirtle**.
@@ -429,6 +436,26 @@ witness it), each opening a two-option dialog:
   a day). Tension: a maxed-out friend vs. completing the Pokédex.
 - **Runaway** (dark button, total neglect for 1 h): a somber "feels abandoned"
   ending in the rain — caring for the creature cancels it.
+
+  **It does not ask, and that is the point** -- a creature you have to authorise
+  to leave is not really at stake. What it must never be is the price of going
+  to bed, so **the screen being off between midnight and 06:00 puts the creature to
+  sleep**, and sleep floors the stats at FOOD 30 / JOY 35 / HYG 45 with the
+  neglect check skipped entirely. A night costs you a hungry, grubby creature at
+  breakfast instead of an empty one.
+
+  **Both halves are needed.** The screen alone would pause the game every time
+  you pocketed the device, and the creature is meant to get hungry during the
+  day. The hour alone would send it to bed while you were still playing. Set the
+  clock in **SETTINGS** (or `RTCSET`); a board whose clock was never set simply
+  never auto-sleeps, which fails safe -- it keeps draining and the light button
+  still works by hand.
+
+  This was a real loss: a player left the board running overnight and came back
+  to a Dratini that had gone. The live tick was the only drain path with no
+  floor -- offline floors at 15, sleep at 30/35/45 -- so a board left *running*
+  was punished where a board switched *off* was not. `night_test` runs ten
+  simulated hours and fails if that ever comes back.
 
 ## Sprites: PMD SpriteCollab everywhere
 
