@@ -159,6 +159,25 @@ int main(){
        "one argument sets all three, so TR 0 clears them");
     Pet again; again.begin();
     ck(again.trAtk == 0, "and the change is persisted rather than lost on reload");
+
+    // These used flushSave(), which is `if (pendingSave) save()` -- a no-op
+    // unless the GAME had already marked itself dirty, so a console command
+    // could set a value, print it back, and write nothing at all. IV never
+    // even called that. Reload after each one, from a clean pendingSave.
+    pet.flushSave();                       // make sure nothing is pending
+    runConsole({"IV 31 31 31 31"});
+    { Pet r; r.begin();
+      ck(r.ivAtk == 31 && r.ivHp == 31, "IV survives a reload"); }
+    pet.flushSave();
+    runConsole({"TR 40 40 40"});
+    { Pet r; r.begin();
+      ck(r.trAtk == 40 && r.trSpe == 40, "TR survives a reload"); }
+    pet.flushSave();
+    runConsole({"MISS 3"});
+    { Pet r; r.begin(); ck(r.careMistakes == 3, "MISS survives a reload"); }
+    pet.flushSave();
+    runConsole({"LVL 25"});
+    { Pet r; r.begin(); ck(r.level() == 25, "LVL survives a reload"); }
     runConsole({"TR -5 999 20"});
     ck(pet.trAtk == 0 && pet.trDef == pet.trMaxDef() && pet.trSpe == 20,
        "nonsense arguments clamp instead of wrapping");

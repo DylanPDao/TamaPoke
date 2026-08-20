@@ -359,6 +359,12 @@ public:
   // ~1s ambos cores: asi no se ve ni corta el tactil)
   bool savePending() const { return pendingSave; }
   void flushSave();
+  // Writes NOW, whatever pendingSave says. flushSave() is `if (pendingSave)
+  // save()`, so a console command that changed something the game had not
+  // already marked dirty wrote nothing at all and quietly depended on the next
+  // autosave to notice. Defined out of line: save() is private and declared
+  // further down.
+  void saveNow();
 
 private:
   Preferences prefs;

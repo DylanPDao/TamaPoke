@@ -272,6 +272,8 @@ void Pet::snapshotForParty() {
 
 // vuelca el guardado periodico pendiente (lo llama el loop en un momento sin
 // animacion para que el paron de la escritura a flash no se vea)
+void Pet::saveNow() { save(); }
+
 void Pet::flushSave() {
   if (pendingSave) save();
 }

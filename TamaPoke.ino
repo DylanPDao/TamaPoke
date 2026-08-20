@@ -771,7 +771,7 @@ void handleSerial() {
     if (want < 1) want = 1;
     if (want > MAX_LEVEL) want = MAX_LEVEL;
     pet.ageMinutes = (uint32_t)(want - 1) * MINUTES_PER_LEVEL;
-    pet.flushSave();
+    pet.saveNow();
     Serial.printf("lvl=%u\n", pet.level());
   } else if (line.startsWith("MISS ")) {
     // MISS <n>: sets the care mistakes -- "descuidos", the desc= on STATS.
@@ -782,7 +782,7 @@ void handleSerial() {
     if (m < 0) m = 0;
     if (m > 255) m = 255;
     pet.careMistakes = (uint8_t)m;
-    pet.flushSave();
+    pet.saveNow();
     Serial.printf("desc=%u\n", pet.careMistakes);
   } else if (line.startsWith("TR ")) {
     // TR <atk> <def> <spe>: sets the TRAINING (this game's EVs), for testing a
@@ -796,7 +796,7 @@ void handleSerial() {
       pet.trAtk = (uint8_t)(a < 0 ? 0 : (a > pet.trMaxAtk() ? pet.trMaxAtk() : a));
       pet.trDef = (uint8_t)(d < 0 ? 0 : (d > pet.trMaxDef() ? pet.trMaxDef() : d));
       pet.trSpe = (uint8_t)(e < 0 ? 0 : (e > pet.trMaxSpe() ? pet.trMaxSpe() : e));
-      pet.flushSave();
+      pet.saveNow();
     }
     Serial.printf("tr=%u/%u/%u topes=%u/%u/%u\n", pet.trAtk, pet.trDef, pet.trSpe,
                   pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
@@ -815,6 +815,7 @@ void handleSerial() {
       if (pet.trDef > pet.trMaxDef()) pet.trDef = pet.trMaxDef();
       if (pet.trSpe > pet.trMaxSpe()) pet.trSpe = pet.trMaxSpe();
     }
+    pet.saveNow();   // IV used to change RAM only and never write
     Serial.printf("iv=%u/%u/%u/%u topes=%u/%u/%u\n", pet.ivAtk, pet.ivDef,
                   pet.ivSpe, pet.ivHp, pet.trMaxAtk(), pet.trMaxDef(), pet.trMaxSpe());
     Serial.println("DONE");
