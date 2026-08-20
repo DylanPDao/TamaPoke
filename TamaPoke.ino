@@ -235,7 +235,7 @@ Link lan;
 static void renderRegionPick(uint8_t mode);   // the region chooser, defined below
 static int regionPickTap(int16_t x, int16_t y);
 static void drawEggRegion();          // defined with the egg screen helpers
-static bool eggRegionTap(int16_t x, int16_t y);
+static int eggRegionTap(int16_t x, int16_t y);
 static void drawBtlBack();
 static void btlLinkPoll();   // defined with the battle code, called from render()
 static void btlSwitchTo(uint8_t i);
@@ -1635,7 +1635,8 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (pet.isEgg()) {
-    // the region pill first, or choosing a region would also crack the egg
+    // the region pill first, or choosing a region would also crack the egg --
+    // and a near miss is swallowed rather than counted, since three taps hatch
     if (eggRegionTap(x, y)) return;
     pet.eggTap();
     sfxPlay(SFX_TAP);
@@ -4404,6 +4405,17 @@ void renderGyms() {
 #define EGGREG_Y 374
 #define EGGREG_W 200
 #define EGGREG_H 34
+// The hit area is BIGGER than the pill, like the BOX button and the battle
+// grid, and for the same reason: a 34 px target is under UI_TAP_MIN and a
+// finger is not a stylus.
+//
+// The guard band matters more than the padding. Missing this pill fell through
+// to pet.eggTap(), and THREE taps hatch the egg -- so fumbling at the region
+// selector hatched the very egg you were trying to re-aim. A near miss now
+// does nothing at all, which is the correct answer for a control whose
+// neighbour is irreversible.
+#define EGGREG_PAD 16
+#define EGGREG_GUARD 14
 
 static void drawEggRegion() {
   char l[24];
@@ -4421,12 +4433,33 @@ static void drawEggRegion() {
 }
 
 // True if the tap was on the region pill, so the egg does not also get cracked.
-static bool eggRegionTap(int16_t x, int16_t y) {
-  if (!pet.isEgg() || x < EGGREG_X || x > EGGREG_X + EGGREG_W ||
-      y < EGGREG_Y || y > EGGREG_Y + EGGREG_H) return false;
-  pet.setRegion((pet.region + 1) % REGION_COUNT);
-  sfxPlay(SFX_TAP);
-  return true;
+// The egg's region pill: its graphic, and the area that actually accepts a tap.
+// Exposed so a test can prove the second is bigger than the first and that a
+// near miss does not reach pet.eggTap().
+void uiEggPillRect(int *x, int *y, int *w, int *h, bool hitArea) {
+  int pad = hitArea ? EGGREG_PAD : 0;
+  if (x) *x = EGGREG_X - pad;
+  if (y) *y = EGGREG_Y - pad;
+  if (w) *w = EGGREG_W + 2 * pad;
+  if (h) *h = EGGREG_H + 2 * pad;
+}
+
+// 1 = cycled the region, -1 = a near miss that must NOT reach the egg, 0 = not
+// ours at all.
+static int eggRegionTap(int16_t x, int16_t y) {
+  if (!pet.isEgg()) return 0;
+  int inset = EGGREG_PAD, guard = EGGREG_PAD + EGGREG_GUARD;
+  bool hit = x >= EGGREG_X - inset && x <= EGGREG_X + EGGREG_W + inset &&
+             y >= EGGREG_Y - inset && y <= EGGREG_Y + EGGREG_H + inset;
+  if (hit) {
+    pet.setRegion((uint8_t)((pet.region + 1) % REGION_COUNT));
+    sfxPlay(SFX_TAP);
+    return 1;
+  }
+  bool near = x >= EGGREG_X - guard && x <= EGGREG_X + EGGREG_W + guard &&
+              y >= EGGREG_Y - guard && y <= EGGREG_Y + EGGREG_H + guard;
+  if (near) { sfxPlay(SFX_DENY); return -1; }
+  return 0;
 }
 
 // The region chooser used by the Pokedex and the gym ladder. Each row carries

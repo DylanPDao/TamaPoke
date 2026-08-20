@@ -132,8 +132,15 @@ Timing, DMA tearing, PSRAM pressure, audio, battery, the radio -- and two more
 that have each cost a real bug:
 
 - **Touch accuracy.** Synthetic taps are exact coordinates, so a target that is
-  hard to hit with a finger tests perfectly. The battle grid's bottom row and
-  the party BOX button were both reported from a board.
+  hard to hit with a finger tests perfectly. The battle grid's bottom row, the
+  party BOX button and the egg's region pill were all reported from a board.
+
+  **A small target next to an irreversible action is the dangerous shape.**
+  Missing the region pill fell through to `pet.eggTap()`, and three taps hatch
+  an egg -- so fumbling at the selector hatched the egg you were re-aiming.
+  Where a miss would do something you cannot undo, swallow it: the pill has a
+  hit area larger than its graphic AND a dead guard band beyond that, and
+  `hit_test` fails if either goes away.
 - **A missing `gfx->flush()`.** `--shot` reads `gfx->buffer()` directly and
   never consults `frameReady`, so a frozen panel photographs perfectly. That is
   what `flush_test` is for.

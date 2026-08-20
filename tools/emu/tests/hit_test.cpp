@@ -33,6 +33,7 @@ void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot);
 void uiButtonHeights(int *out, int max, int *n);
 void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop);
 int uiSleepButton(int *cx, int *cy);
+void uiEggPillRect(int *x, int *y, int *w, int *h, bool hitArea);
 bool uiButtonDisabled(int i);
 void uiButtonAt(int i, int *cx, int *cy, int *half);
 extern Pet pet;
@@ -187,6 +188,39 @@ int main(){
     }
     printf("      smallest gap between home icons: %d px\n", worst);
     ck(worst >= 0, "the home icons do not overlap");
+  }
+
+  // THE EGG REGION PILL. Missing it fell through to pet.eggTap(), and three
+  // taps hatch -- so fumbling at the region selector hatched the egg you were
+  // trying to re-aim. Reported from a board: "i wasnt able to change egg
+  // setting. it kept hatching the egg".
+  {
+    int gx, gy, gw, gh, hx, hy, hw, hh;
+    uiEggPillRect(&gx, &gy, &gw, &gh, false);
+    uiEggPillRect(&hx, &hy, &hw, &hh, true);
+    printf("      pill %dx%d, hit area %dx%d\n", gw, gh, hw, hh);
+    ck(hw > gw && hh > gh, "the pill's hit area is bigger than the pill");
+    ck(hh >= 44 && hw >= 44, "and is at least UI_TAP_MIN across");
+
+    // a fresh egg, then six taps that MISS the pill by a little
+    pet.newEgg();
+    while (!pet.isEgg()) pet.newEgg();
+    uint8_t wasRegion = pet.region;
+    for (int i = 0; i < 6; i++) {
+      onTap((int16_t)(gx + gw / 2), (int16_t)(gy + gh + 8));   // just below it
+      onTap((int16_t)(gx - 8), (int16_t)(gy + gh / 2));        // just left of it
+    }
+    ck(pet.isEgg(), "a near miss on the pill does NOT hatch the egg");
+    ck(pet.region == wasRegion, "and does not silently change the region either");
+
+    // on the pill: it cycles
+    onTap((int16_t)(gx + gw / 2), (int16_t)(gy + gh / 2));
+    ck(pet.region != wasRegion, "tapping the pill really does change the region");
+    ck(pet.isEgg(), "and never cracks the egg while doing it");
+
+    // and the egg itself still hatches when you actually tap the egg
+    for (int i = 0; i < 4; i++) onTap(233, 200);
+    ck(!pet.isEgg(), "tapping the egg still hatches it");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");
