@@ -63,6 +63,81 @@ translate it — only when you are already changing that code for another reason
 The default *UI* language is English (`LANG_DEFAULT LANG_EN`); UI strings live in
 `i18n.cpp` and are a separate matter from source comments.
 
+## Traps that have caught us more than once
+
+Every one of these shipped, was found by hand on a board, and had already been
+"fixed" somewhere else in the codebase at the time. Read this before touching a
+rule, a dex number or a paged screen.
+
+### 1. A rule enforced in one path but not in its twin
+
+This is the single most repeated mistake in the project. The rule is right; a
+second caller has its own copy of it, and nobody notices until a player does.
+
+| what | where it was enforced | where it was not | symptom |
+|---|---|---|---|
+| TM level gate | `relearnFromLevel()` | the STAB guarantee below it | a level 1 Squirtle beat Brock with SURF |
+| TM level gate *again* | both of the above | `learnableFor()`, the picker | a level 22 Charmeleon offered FIRE BLAST |
+| horizontal swipe = page | one screen at a time | the other three | the same paging bug shipped **four times** |
+| save survives an install | the four-part manifest | `new_install_prompt_erase` | fixing one still wiped a real player's pet |
+| evolution threshold | `canEvolveNow()` | `renderCardProgress()` | the card would promise an evolution that never came |
+
+**The habit:** when you change a rule, `grep` for every caller and make them all
+ask ONE function. `moveUnlockLevel()` and `uiButtonDisabled()` exist for exactly
+this reason -- they are single answers that three and two callers respectively
+used to have their own opinions about.
+
+**And test the CALLER, not just the rule.** Reverting the picker to its own gate
+failed NOTHING until `swipe_test` was taught to drive `learnableFor()` itself:
+`moves_test` proved the rule was right while the screen ignored it.
+
+### 2. `uint8_t` with a dex of 386
+
+The expansion from 151 to 386 broke five separate things, all the same way, and
+they surfaced over months rather than at once:
+
+- `DexEntry::evolvesTo` -- every evolution target above 255 overflowed
+- `TrainerMon::dex` -- Hoenn rosters
+- `gen_moves.py`'s own `DEX_COUNT = 151` -- emitted a Kanto-sized `LEARN_OFS`
+- the Pokedex page cap `if (np > 9) np = 9` -- hid everything past dex 160
+- **`PmdMon::load(uint8_t)`** -- 131 species drew Kanto sprites. A MARSHTOMP
+  (258) opened `p002.bin` and stood there as an IVYSAUR. Shipped in v2.8.
+
+**The rule: anything holding a dex is `int16_t`, and any loop bound is
+`DEX_COUNT`.** Never the literal 151, never `uint8_t`.
+
+**What hides it:** the neighbouring code is often already correct, so the screen
+looks half-right and nobody suspects a width. `SdThumbs::get()` takes an
+`int16_t`, so the gallery and the silhouettes were perfect while the creature on
+the main screen was somebody else entirely.
+
+### 3. A test that proves the transcription rather than the firmware
+
+- `sprite_test` first asserted `m.dex == d` -- which records what was ASKED for.
+  With the truncation put back it **still passed**; only comparing the loaded
+  PIXELS against the wrap-around species caught it.
+- A Python `str.replace` whose anchor did not match silently no-opped, so
+  assertions were never inserted and the suite showed green.
+- `save_test` has to compare the field table against a store the FIRMWARE wrote,
+  not one a restore produced, or it validates itself. It did exactly that until
+  it was moved.
+
+**The habit that catches all three: break it on purpose and watch the test
+fail.** Every guard added since has been negative-checked that way, and it has
+caught a bad test roughly as often as it has confirmed a good one.
+
+### 4. What the emulator structurally cannot see
+
+Timing, DMA tearing, PSRAM pressure, audio, battery, the radio -- and two more
+that have each cost a real bug:
+
+- **Touch accuracy.** Synthetic taps are exact coordinates, so a target that is
+  hard to hit with a finger tests perfectly. The battle grid's bottom row and
+  the party BOX button were both reported from a board.
+- **A missing `gfx->flush()`.** `--shot` reads `gfx->buffer()` directly and
+  never consults `frameReady`, so a frozen panel photographs perfectly. That is
+  what `flush_test` is for.
+
 ## Testing
 
 **The game logic and the UI can both be tested without a board.** `pet.cpp`,
@@ -745,7 +820,11 @@ picker, the player card, the gym list and the box each closed on a horizontal
 swipe instead of paging, and each was found by hand rather than by a test. It
 now drives `onSwipe(-1)` against every paged screen and asserts the page
 advanced AND the screen stayed open. **Any new paged screen must be added to
-it**, or this will happen a fifth time.
+it**, or this will happen a fifth time. See § "Traps that have caught us more
+than once" -- this is case 1 of that pattern, not a one-off.
+
+It also drives `learnableFor()`, because the move picker having its own copy of
+the TM gate is the same mistake wearing a different hat.
 
 ### Battle system — decided, not started
 
