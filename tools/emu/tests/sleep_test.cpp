@@ -97,9 +97,18 @@ int main(){
     ck(!p.canRunawayNow(), "NOWHERE NEAR running away");
     ck(p.speciesId == 147, "the creature is still there");
 
-    // and it gets up at 06:00 even with the screen still off, so the day drains
-    liveMinutes(p, 6, 10);
-    ck(!p.sleeping, "up at 06:00 even though the screen is still off");
+    // AND IT DOES NOT GET UP BY ITSELF. Waking at 06:00 would reopen the hole:
+    // from the floors, food empties by 06:15 and everything by 07:40, so anyone
+    // who sleeps past eight would find it ready to run away all over again.
+    liveMinutes(p, 6, 3 * 60);           // through to 09:00, screen still off
+    ck(p.sleeping, "still asleep at 09:00 -- you might be too");
+    ck(!p.canRunawayNow(), "and STILL nowhere near running away");
+    printf("      at 09:00 unattended: food=%u joy=%u ene=%u hyg=%u\n",
+           p.fullness, p.joy, p.energy, p.hygiene);
+
+    // it wakes when YOU do
+    p.setScreenOff(false);
+    ck(!p.sleeping, "turning the screen back on is what wakes it");
   }
 
   // --- the light button still beats both

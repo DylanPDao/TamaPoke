@@ -1038,24 +1038,27 @@ bool Pet::isNightHour() const {
 void Pet::applyAutoSleep() {
   if (isEgg() || ceremony != CER_NONE) return;
   bool night = isNightHour();
-  if (screenIsOff && night) {
-    if (!sleeping && sleepAuto != SLEEP_PLAYER) {
-      sleeping = true;
-      sleepAuto = SLEEP_AUTO;
-      pendingSave = true;
-    }
-    return;
-  }
-  if (sleeping && sleepAuto == SLEEP_AUTO) {
-    sleeping = false;
-    sleepAuto = SLEEP_NONE;
+  if (screenIsOff && night && !sleeping && sleepAuto != SLEEP_PLAYER) {
+    sleeping = true;
+    sleepAuto = SLEEP_AUTO;
     pendingSave = true;
   }
+  // NOTHING wakes it here, and that is the whole point. Waking at 06:00 would
+  // reopen the hole this exists to close: from the sleep floors, food is empty
+  // by 06:15 and every stat by 07:40, so anyone who sleeps past eight would
+  // find the creature ready to run away again. It sleeps until YOU are up,
+  // which is the screen coming back on.
   if (!night && sleepAuto == SLEEP_PLAYER) sleepAuto = SLEEP_NONE;  // a new day
 }
 
 void Pet::setScreenOff(bool off) {
   screenIsOff = off;
+  // Coming back to the device is what wakes it -- only if the device is what
+  // put it to sleep. A creature sent to bed with the light stays there.
+  if (!off && sleeping && sleepAuto == SLEEP_AUTO) {
+    sleeping = false;
+    sleepAuto = SLEEP_NONE;
+  }
   applyAutoSleep();
   save();
 }

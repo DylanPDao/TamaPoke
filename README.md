@@ -142,9 +142,10 @@ While **awake**, per minute:
 - 👆 **Pet it:** +5 JOY + bond.
 - 🌙 **Sleep:** rest — ENE **+6/min**, needs drain ~**4× slower** with floors
   (FOOD 30 / JOY 35 / HYG 45). No poops, no slip-ups, can't run away while asleep.
-  **Screen off + between midnight and 06:00 puts it to sleep**; it gets up at
-  06:00 even if the screen is still off, so the day drains normally. Re-checked
-  every minute, so a device put down at 23:00 nods off when midnight comes. The
+  **Screen off + between midnight and 06:00 puts it to sleep**, and it stays
+  asleep until you turn the screen back on -- it wakes when *you* do, not at a
+  fixed hour. Re-checked every minute, so a device put down at 23:00 nods off
+  when midnight comes. The
   evening is deliberately outside the window -- a six-hour night is the only part
   of the day you are not expected to be around. The light
   button beats both: a creature you sent to bed stays there.

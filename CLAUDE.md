@@ -827,6 +827,13 @@ pauses the game every time the device is pocketed, and the creature is meant to
 get hungry during the day. The rule is re-checked every tick rather than only on
 the button, so a device put down at 23:00 goes to bed at midnight.
 
+**Nothing wakes it at 06:00, deliberately.** An auto-wake reopens the hole this
+exists to close: from the sleep floors, food is empty by 06:15 and every stat by
+07:40, so anyone who sleeps past eight finds the creature ready to run away
+again. It sleeps until the screen comes back on -- it wakes when the PLAYER
+does. `sleep_test` puts the auto-wake back and reads `food=0 joy=0 ene=0 hyg=0`
+at 09:00.
+
 `isNightHour()` must keep working whether or not the window crosses midnight.
 With `NIGHT_START 0` the plain `h >= START || h < END` is true for EVERY hour,
 which put the creature to sleep the moment the screen went off at noon --
