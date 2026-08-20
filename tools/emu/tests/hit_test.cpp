@@ -25,6 +25,7 @@ String FakeSerial::readStringUntil(char){return String("");}
 void setup(); void render(); void battleTap(int16_t,int16_t);
 extern Pet pet;
 extern bool battleOpen;
+extern uint8_t choiceKind;
 extern uint8_t btlMenu;
 extern Combatant btlYou;
 void startBattle(int16_t dex, uint8_t lvl);
@@ -221,6 +222,36 @@ int main(){
     // and the egg itself still hatches when you actually tap the egg
     for (int i = 0; i < 4; i++) onTap(233, 200);
     ck(!pet.isEgg(), "tapping the egg still hatches it");
+  }
+
+  // THE ENDING YOU CANNOT UNDO MUST ASK. It used to fire on the first tap,
+  // while the farewell -- the good ending -- opened a dialog. The button is a
+  // 408x58 band across the middle of the screen, right where the creature is
+  // drawn, so a player checking on a neglected pet lost it to one tap.
+  {
+    battleOpen = false; choiceKind = 0;
+    if (pet.awaitingStarter()) pet.chooseStarter(4);
+    if (pet.isEgg()) pet.dbgHatchAs(147, false);
+    while (pet.hasLearnOffer()) pet.declineLearn();
+    if (pet.sleeping) pet.toggleLight();
+    pet.dbgRunawayReady();                 // all four at zero, an hour of it
+    ck(pet.canRunawayNow(), "the creature is ready to run");
+
+    onTap(233, 200);                       // straight at the creature/button band
+    ck(pet.ceremony == CER_NONE,
+       "one tap does NOT let it go");
+    ck(choiceKind == 4, "it asks first");
+
+    // and answering "stay" keeps it
+    onTap(233, 294);                       // the lower button: keep
+    ck(pet.ceremony == CER_NONE, "answering stay keeps the creature");
+
+    // answering "go" is what actually ends it
+    pet.dbgRunawayReady();
+    onTap(233, 200);
+    ck(choiceKind == 4, "asked again");
+    onTap(233, 232);                       // the upper button: let it go
+    ck(pet.ceremony != CER_NONE, "and only then does it leave");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");

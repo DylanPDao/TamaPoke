@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v2.9-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v3.0-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -429,6 +429,13 @@ witness it), each opening a two-option dialog:
   a day). Tension: a maxed-out friend vs. completing the Pokédex.
 - **Runaway** (dark button, total neglect for 1 h): a somber "feels abandoned"
   ending in the rain — caring for the creature cancels it.
+
+  **It asks before it happens.** The button sits in a 408x58 band across the
+  middle of the screen -- where the creature itself is drawn -- and it used to
+  fire on the first tap while the *farewell*, the good ending, opened a dialog.
+  That was backwards for the one ending you cannot undo, and it cost a real
+  player their creature: they left the board running overnight, came back to a
+  neglected pet, tapped it to see how it was, and lost it.
 
 ## Sprites: PMD SpriteCollab everywhere
 

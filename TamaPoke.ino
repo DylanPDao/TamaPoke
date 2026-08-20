@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "2.9"
+#define FW_VERSION "3.0"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1631,6 +1631,9 @@ void onTap(int16_t x, int16_t y) {
     if (choiceKind == 1) {                 // evolucion
       if (b1) { int16_t old = pet.speciesId; pet.evolve(); evoPmd.load(old, pet.shiny); }
       else if (b2) pet.declineEvolve();
+    } else if (choiceKind == 4) {          // escapada: el unico final sin vuelta
+      if (b1) pet.startRunaway();
+      // b2 keeps it: one moment of care resets neglectTicks anyway
     } else if (choiceKind == 3) {          // retirada a peticion
       if (b1) pet.startRetire();
       // b2 is simply "no": nothing to decline, the row is always there
@@ -1672,10 +1675,16 @@ void onTap(int16_t x, int16_t y) {
     choiceKind = 1; choiceUntil = millis() + 12000;
     return;
   }
-  // botones de final (mismo recuadro): escapada directa; despedida abre dialogo
+  // Los dos finales comparten recuadro y AMBOS preguntan.
+  //
+  // The runaway used to fire on the first tap, with no dialog -- while the
+  // FAREWELL, the good ending, asked. That is backwards: this is the ending you
+  // cannot undo, on a 408x58 band lying across the middle of the screen where
+  // the creature is drawn. A player who left the board running overnight came
+  // back to a neglected pet, tapped it to see how it was, and lost it.
   if (x >= FAR_BTN_X && x <= FAR_BTN_X + FAR_BTN_W &&
       y >= FAR_BTN_Y && y <= FAR_BTN_Y + FAR_BTN_H) {
-    if (pet.canRunawayNow()) { pet.startRunaway(); return; }
+    if (pet.canRunawayNow()) { choiceKind = 4; choiceUntil = millis() + 12000; return; }
     if (pet.wantFarewellButton()) { choiceKind = 2; choiceUntil = millis() + 12000; return; }
   }
   for (int i = 0; i < BTN_COUNT; i++) {
@@ -5375,6 +5384,9 @@ void drawChoiceDialog() {
   if (choiceKind == 1) {  // evolucion
     q = T(S_EVO_Q); o1 = T(S_EVO_TAP); o2 = T(S_EVO_KEEP);
     c1 = UI_BAR_BAD; t1 = UI_WHITE; c2 = UI_TRACK; t2 = UI_INK;
+  } else if (choiceKind == 4) {   // escapada
+    q = T(S_RUN_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
+    c1 = UI_BAR_BAD; t1 = UI_WHITE; c2 = UI_BAR_OK; t2 = UI_WHITE;
   } else if (choiceKind == 3) {   // retirada a peticion
     q = T(S_RETIRE_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
     c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_BAR_OK; t2 = UI_WHITE;
