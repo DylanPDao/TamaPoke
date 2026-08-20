@@ -158,8 +158,19 @@ def build(limit):
     return dex, types, legend, capture
 
 
-def check(limit=151):
+def check(limit=None):
+    """Regenerate and diff against what is committed.
+
+    Called with no limit it covers the WHOLE committed table, which is the
+    guarantee that matters when a generation is added: every entry below the
+    old DEX_COUNT must come back byte-identical, because people have Pokedex
+    bits and banked creatures riding on those numbers. Gen 1 is hand-written
+    and its accepted differences live in KNOWN; everything above 151 was
+    generated and must match exactly.
+    """
     from dex_data import DEX, TYPE_ACCENTS, LEGENDARY
+    if limit is None:
+        limit = max(d[0] for d in DEX)
     from dex_types import TYPES
     dex, types, legend, _ = build(limit)
     hand = {d[0]: d for d in DEX}
@@ -188,7 +199,8 @@ def check(limit=151):
     for a in set(ACCENT.values()):
         if a not in TYPE_ACCENTS:
             print('  accent %r has no colour in TYPE_ACCENTS' % a)
-    print('%d UNEXPECTED differences over dex 1..%d' % (bad, limit))
+    print('%d UNEXPECTED differences over dex 1..%d (%d entries compared)'
+          % (bad, limit, len(dex)))
     return bad
 
 
@@ -268,7 +280,10 @@ def emit(limit):
 
 if __name__ == '__main__':
     if '--check' in sys.argv:
-        sys.exit(1 if check() else 0)
+        # optional explicit limit: --check 151 to look at Gen 1 alone
+        at = sys.argv.index('--check')
+        lim = int(sys.argv[at + 1]) if len(sys.argv) > at + 1 and sys.argv[at + 1].isdigit() else None
+        sys.exit(1 if check(lim) else 0)
     if '--emit' in sys.argv:
         emit(int(sys.argv[sys.argv.index('--emit') + 1]))
         sys.exit(0)
