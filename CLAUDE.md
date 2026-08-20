@@ -141,6 +141,11 @@ that have each cost a real bug:
   Where a miss would do something you cannot undo, swallow it: the pill has a
   hit area larger than its graphic AND a dead guard band beyond that, and
   `hit_test` fails if either goes away.
+- **Whether the FIRMWARE compiles at all.** `tools/emu/build.sh` generates a
+  `proto.h` with every prototype at the top, so the emulator happily builds a
+  sketch that `arduino-cli` rejects for using a function before it is declared.
+  A green emulator build is not proof the firmware builds. `tests/run.sh` now
+  runs the real `arduino-cli compile` first and stops if it fails.
 - **A missing `gfx->flush()`.** `--shot` reads `gfx->buffer()` directly and
   never consults `frameReady`, so a frozen panel photographs perfectly. That is
   what `flush_test` is for.
