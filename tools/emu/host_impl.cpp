@@ -33,14 +33,15 @@ static uint8_t *slurp(const std::string &path, uint32_t *size) {
   return b;
 }
 
-bool PmdMon::load(uint8_t dexNum, bool shiny) {
+bool PmdMon::load(int16_t dexNum, bool shiny) {
+  if (dexNum < 1 || dexNum > 999) return false;
   unload();
   char p[64];
-  snprintf(p, sizeof(p), "%s/p%s%03u.bin", g_spriteDir.c_str(), shiny ? "s" : "", dexNum);
+  snprintf(p, sizeof(p), "%s/p%s%03u.bin", g_spriteDir.c_str(), shiny ? "s" : "", (unsigned)dexNum);
   uint32_t size = 0;
   blob = slurp(p, &size);
   if (!blob) {
-    snprintf(p, sizeof(p), "%s/p%03u.bin", g_spriteDir.c_str(), dexNum);
+    snprintf(p, sizeof(p), "%s/p%03u.bin", g_spriteDir.c_str(), (unsigned)dexNum);
     blob = slurp(p, &size);
   }
   if (!blob) return false;
@@ -74,6 +75,7 @@ bool PmdMon::load(uint8_t dexNum, bool shiny) {
     }
     a.base = base;
   }
+  dex = dexNum;
   loaded = true;
   return true;
 }
@@ -102,7 +104,7 @@ const uint8_t *SdThumbs::get(int16_t dex) const {
   return data + off;
 }
 
-bool SdMon::load(uint8_t, bool) { return false; }   // legacy TPK1 path unused
+bool SdMon::load(int16_t, bool) { return false; }   // legacy TPK1 path unused
 void SdMon::unload() { if (data) { free(data); data = nullptr; } loaded = false; }
 bool sdBegin() {
   Serial.printf("emu: sprites from %s\n", g_spriteDir.c_str());

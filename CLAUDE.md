@@ -88,6 +88,8 @@ On hardware, verify over the serial console (115200):
 
 - `STATS` full state · `HEALTH` uptime + heap (soak test) · `WIPE` factory reset
 - `SPEC <dex>` `LVL <n>` `IV <a> <d> <s> <h>` `HATCH` `SHINY` `EGGS` (20 eggs) `GAL`
+- `MISS <n>` set the care mistakes (`desc=` on STATS); each one delays every
+  evolution by a level, so `MISS 0` forgives a neglected start
 - `TR <atk> <def> <spe>` set the training (this game's EVs); clamped to
   `trMaxFor(iv)`, so it cannot build a creature the player could not raise
 - `PARTY` / `PARTY <dex>` / `PARTY CLEAR` inspect, fill and empty the party

@@ -739,8 +739,26 @@ void handleSerial() {
     }
     Serial.println("DONE");
   } else if (line.startsWith("LVL ")) {
-    pet.ageMinutes = (uint32_t)line.substring(4).toInt() * MINUTES_PER_LEVEL;
-    Serial.println("DONE");
+    // level() is 1 + age/rate, so the age for level N is (N-1) rates -- this
+    // used to set N and hand back N+1, which is a poor thing for a command
+    // named LVL to do when it is what every balance check is anchored on.
+    long want = line.substring(4).toInt();
+    if (want < 1) want = 1;
+    if (want > MAX_LEVEL) want = MAX_LEVEL;
+    pet.ageMinutes = (uint32_t)(want - 1) * MINUTES_PER_LEVEL;
+    pet.flushSave();
+    Serial.printf("lvl=%u\n", pet.level());
+  } else if (line.startsWith("MISS ")) {
+    // MISS <n>: sets the care mistakes -- "descuidos", the desc= on STATS.
+    // Each one pushes every evolution threshold up a level, so a creature that
+    // was neglected early evolves late; MISS 0 forgives that. Its sibling
+    // commands are IV, TR and LVL.
+    long m = line.substring(5).toInt();
+    if (m < 0) m = 0;
+    if (m > 255) m = 255;
+    pet.careMistakes = (uint8_t)m;
+    pet.flushSave();
+    Serial.printf("desc=%u\n", pet.careMistakes);
   } else if (line.startsWith("TR ")) {
     // TR <atk> <def> <spe>: sets the TRAINING (this game's EVs), for testing a
     // fully-raised creature without playing the minigames for an hour. Each is
@@ -2858,7 +2876,7 @@ static void btlSyncSprite(uint8_t who, const Combatant &c) {
   btlPmd[who].unload();
   btlPmdDex[who] = 0;
   if (c.dex < 1 || c.dex > DEX_COUNT) return;
-  if (btlPmd[who].load((uint8_t)c.dex, c.shiny)) btlPmdDex[who] = key;
+  if (btlPmd[who].load(c.dex, c.shiny)) btlPmdDex[who] = key;   // NOT (uint8_t): Hoenn runs past 255
 }
 
 static void btlFreeSprites() {
