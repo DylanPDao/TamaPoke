@@ -205,6 +205,14 @@ enum : uint8_t {
   SCR_GAME, SCR_MAIN, SCR_COUNT
 };
 extern const char *const SCREEN_NAME[SCR_COUNT];   // const is internal linkage in C++
+
+// Declared HERE, above every use. tools/emu/build.sh generates a proto.h with
+// every prototype at the top, so the emulator compiled these happily while
+// arduino-cli -- which relies on the IDE's auto-prototyping and does not always
+// produce one -- did not. A green emulator build is not proof the firmware
+// builds; only arduino-cli is.
+void bootReport();
+uint8_t uiCurrentScreen();
 const char *const SCREEN_NAME[SCR_COUNT] = {
   "starter", "region", "gallery", "dexpick", "movepick", "box",
   "party", "keyboard", "card", "player", "clock", "gym", "gympick",
@@ -1062,8 +1070,6 @@ void handleTouch() {
 // deslizar vertical: abre/cierra la ficha del bicho
 
 void openClock();  // prototipo
-void bootReport();
-uint8_t uiCurrentScreen();
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial

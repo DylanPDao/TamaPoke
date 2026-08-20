@@ -25,14 +25,29 @@ command -v sdl2-config >/dev/null || { echo "SDL2 not found (brew install sdl2)"
 
 # sketch.cpp + proto.h come from the normal build; this also proves the emulator
 # still compiles before anything is tested against it
+OUT="$(mktemp -d)"
+OUT_FW="$OUT/firmware.log"
+trap 'rm -rf "$OUT"' EXIT
+
 bash "$EMU/build.sh" >/dev/null
+
+# The emulator generates proto.h with every prototype at the top, so it will
+# happily compile a sketch that arduino-cli rejects for using a function before
+# it is declared. That shipped once. If arduino-cli is installed, the firmware
+# build is the one that decides.
+if command -v arduino-cli >/dev/null; then
+  FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB"
+  if ! arduino-cli compile --fqbn "$FQBN" "$ROOT" >/dev/null 2>"$OUT_FW"; then
+    echo "=== THE FIRMWARE DOES NOT COMPILE (the emulator does; that is not the same thing)"
+    grep -i error "$OUT_FW" | head -5
+    exit 1
+  fi
+fi
 
 # arrays, not a string: the sprite dir has to reach the compiler still quoted,
 # and passing these through eval silently strips them
 CORE=("$ROOT/gbsynth.cpp" "$ROOT/pet.cpp" "$ROOT/i18n.cpp" "$ROOT/party.cpp" "$ROOT/battle.cpp" "$ROOT/link.cpp" "$ROOT/save.cpp")
 FLAGS=(-std=c++17 -O1 -w -I"$EMU" -I"$ROOT" -DSPRITE_DIR="\"$ROOT/tools/sdcard/mons\"")
-OUT="$(mktemp -d)"
-trap 'rm -rf "$OUT"' EXIT
 
 # these drive setup()/loop()/render(), so they need the sketch itself
 needs_sketch() { case "$1" in touch_test|flush_test|joy_test|anim_test|swipe_test|lan_test|console_test|hit_test|starter_test) return 0;; *) return 1;; esac; }
