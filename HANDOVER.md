@@ -1,6 +1,6 @@
 # TamaPoke — where things stand
 
-Written 2026-08-20, mid-session, so work can resume after a restart.
+Written 2026-08-20, updated 2026-08-21, so work can resume after a restart.
 Read this with `CLAUDE.md`; this file is the *current* state, that one is the
 permanent knowledge.
 
@@ -11,11 +11,11 @@ permanent knowledge.
 | | |
 |---|---|
 | Published firmware | **v3.0**, live at https://dylanpdao.github.io/TamaPoke/web/ |
-| Repo version | **v3.1** in `TamaPoke.ino` — bumped, **not published** |
-| Your board | on **v3.0**, port moves around (`/dev/cu.usbmodem*`) |
-| Live creature | Dratini, `iv=31/31/31/31 tr=100/100/100`, Charizard\* L100 banked |
-| Branch | `feat/dex-expansion-phase0`, pushed, **no PR** |
-| Tests | 33 suites; **3 failing right now** — see §4, they are expected |
+| Repo version | **v3.2** in `TamaPoke.ino` — bumped, **not published** |
+| Your board | on **v3.0**, needs the v3.2 flash (see §4a) |
+| Live creature | Dragonair L45, `iv=31/31/31/31 tr=100/100/100`, Charizard\* L100 banked |
+| Branch | `feat/dex-expansion-phase0`, **2 commits ahead of the push**, no PR |
+| Tests | 33 suites, **33 passing** — first fully green run on this branch |
 
 **Everything merged and published today:** RETIRE, the move-picker TM gate, type
 chips, the Hoenn sprite overflow, crash breadcrumbs, the egg region pill, the
@@ -23,7 +23,8 @@ sleep mechanic, `MISS`, and the `LVL` off-by-one.
 
 ### Save backups (all in `backups/`, gitignored)
 
-    save-2026-08-20-dratini-maxed.txt          <- the current one, use this
+    save-2026-08-21-dragonair-L45.txt          <- the current one, use this
+    save-2026-08-20-dratini-maxed.txt          <- Lv 14, an EARLIER state
     save-2026-08-20-pre-3.0.txt
     save-2026-08-19-charizard-MIGRATE.txt      <- the migration block
     save-2026-08-19-board2-marshtomp.txt       <- board 2's original game
@@ -50,9 +51,10 @@ for verifiable gym rosters, and badge art already reachable.
 - **The generators are now idempotent** — three consecutive `--emit` runs produce
   byte-identical files. They were append-only before and would have duplicated
   everything on a second run.
-- **Data regenerated to 493** (uncommitted, in the working tree):
-  `dex_data.py`, `dex_types.py`, `dex_stats.py`, `dex_learnsets.py`, `dex.h`,
-  `moves.h`. `--check` reports **0 unexpected differences over 1..493**.
+- **Data regenerated to 493 — COMMITTED** in `486bacb`, not sitting in the
+  working tree as an earlier draft of this file said: `dex_data.py`,
+  `dex_types.py`, `dex_stats.py`, `dex_learnsets.py`, `dex.h`, `moves.h`.
+  `--check` reports **0 unexpected differences over 1..493**.
 - **`--link` picked up Sinnoh's cross-generation evolutions by itself**:
   LICKITUNG→LICKILICKY, RHYDON→RHYPERIOR, TANGELA→TANGROWTH,
   ELECTABUZZ→ELECTIVIRE, MAGMAR→MAGMORTAR and one more. That is the rule working
@@ -90,30 +92,63 @@ already in (`('SINNOH', 387, 493, [387, 390, 393])`).
 
 ---
 
-## 4. The three failing tests (expected, and each is a real task)
+## 4. The three failing tests — ALL FIXED (`739a41c`)
 
-    dexdata_test   DARKRAI (491) has no same-type attack
-    hit_test       "does not silently change the region either"
-    roster_test    "one ladder per region, and none for ALL"
+Suite is **33/33**. Kept here because two of them are worth knowing about.
 
-**`dexdata_test` — DARKRAI.** This is precisely the trap Phase 0 predicted:
-`dex_moves.py` is 77 hand-picked moves, and a new generation's typings can leave
-a creature unable to attack with its own type. Fix by adding a Dark attacking
-move to `dex_moves.py` that Darkrai actually learns, then re-running
-`gen_moves.py`. Do **not** just add Darkrai to the `NO_ATTACK` exception list —
-that list is for species with no attacks in the real games either (cocoons,
-Ditto, Unown, Wobbuffet, Smeargle). Darkrai is not one of those.
+**`dexdata_test` — DARKRAI.** Fixed by adding **DARK PULSE** to `dex_moves.py`.
+BITE and CRUNCH were the only Dark moves and both are PHYSICAL, so it was never
+just Darkrai — every special-attacking Dark type had no special STAB. Darkrai is
+SpA 135 / Atk 90 and learns DARK PULSE at level 27. Not added to `NO_ATTACK`,
+which stays reserved for Ditto/Unown/cocoons.
 
-**`roster_test`.** `GYM_REGIONS` is 3 while `REGION_COUNT` is now 5. The test
-asserts one ladder per region; Sinnoh has no roster yet and Kalos never will
-under the current sourcing rule. The test needs to say "a ladder for each of the
-first `GYM_REGIONS`" instead. This is a test that outgrew its assumption, not a
-bug.
+**A move's index is its position in `MOVES`, and saves store it RAW.** DARK
+PULSE is appended *after* STRUGGLE, not filed under DARK, because inserting
+mid-table shifts every later move by one and silently rewrites the moveset of
+every saved creature. `dex_moves.py` now carries an `APPEND-ONLY BELOW HERE`
+marker. **Any future move goes at the end.**
 
-**`hit_test`.** Needs looking at properly — it is the egg region pill case, and
-`REGION_COUNT` going 4 → 5 changed what cycling through the regions does.
-`REGION_ALL` is generated as `4` now (`dex.h:572`) and is correct; check the
-test's assumption rather than assuming the firmware is wrong.
+**`roster_test`.** Asserted `GYM_REGIONS == REGION_COUNT - 1`, which the dex
+outgrows the moment a region has data but no roster — the normal state mid
+expansion. Now asserts what matters: no ladder for ALL, the table is exactly
+`GYM_REGIONS` long, every ladder has a roster and a name.
+
+**`hit_test` — the one worth remembering.** Its "near miss" taps on the egg
+region pill were 8 px from the graphic, *inside* the 16 px hit area. They were
+direct hits cycling the region twelve times, and it passed only because
+`12 % REGION_COUNT(4) == 0` came full circle. Sinnoh made it 5 and it broke. The
+dead guard band CLAUDE.md says this test protects **had never been exercised** —
+trap 3, a test proving arithmetic rather than firmware. It now taps in the real
+band, derives the offset from the rects it already queries instead of copying
+`EGGREG_PAD`/`EGGREG_GUARD` into the test, and checks after every tap.
+
+---
+
+## 4a. The overnight runaway, and the flash that is still owed (`91aa43c`)
+
+A player woke to a Dragonair that had run away **after a night of correct
+auto-sleep**. It went to bed with all four bars at zero, which armed
+`neglectTicks` at 60 *before* the screen went off. The sleeping branch of
+`tick()` returns before the neglect block, so the counter was neither counted
+nor **cleared** for eight hours, and `canRunawayNow()` read it alone. On waking,
+a creature at 100 energy was one tap from gone — and `FAR_BTN` (y176-234) sits
+inside `inPetZone` (y95-310) and is checked before the caress, unconfirmed. The
+next tick cleared it 60 s later.
+
+`tick()` and `canRunawayNow()` now both ask `Pet::inTotalNeglect()`, so the
+counter cannot outlive the state that earned it. `sleep_test` has the
+morning-after repro plus a guard that a genuinely empty creature on waking is
+still ready to leave. FW_VERSION and the README badge moved to **3.2**.
+
+**The board is still on v3.0, so the bug is still live on it:**
+
+    arduino-cli upload -p /dev/cu.usbmodem1101 \
+      --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB" .
+
+Not done: `FAR_BTN` still overlaps `inPetZone`. The fix removes the cause, not
+the delivery mechanism — it can now only fire on a creature genuinely empty
+*right now*, which was judged the right line, but the geometry is still the
+shape CLAUDE.md §4 warns about.
 
 ---
 
@@ -138,6 +173,14 @@ test's assumption rather than assuming the firmware is wrong.
 
 ### Data and the dex
 
+- **A move's index is its POSITION in `MOVES` (`dex_moves.py`), and saves store
+  that index raw.** `gen_moves.py` does `idx = i + 1`; `Pet.moves[]` and
+  `PartyMon.moves[]` write it straight to NVS. Inserting a move into its type
+  section shifts every move after it by one and silently rewrites the moveset of
+  every creature already saved — the live pet and every banked member, on every
+  player's device. **New moves go at the end**, after STRUGGLE, under the
+  `APPEND-ONLY BELOW HERE` marker. Same family as the box getting its own NVS key
+  and badges being stored additively: never reinterpret bytes that already exist.
 - **Anything holding a dex number is `int16_t`.** Never `uint8_t`, never the
   literal 151. This trap has fired five times: `evolvesTo`, `TrainerMon::dex`,
   `gen_moves.py`'s own `DEX_COUNT`, the Pokédex page cap, and `PmdMon::load` —
