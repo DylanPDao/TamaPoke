@@ -203,16 +203,39 @@ int main(){
     ck(hw > gw && hh > gh, "the pill's hit area is bigger than the pill");
     ck(hh >= 44 && hw >= 44, "and is at least UI_TAP_MIN across");
 
-    // a fresh egg, then six taps that MISS the pill by a little
+    // A fresh egg, then taps in the DEAD GUARD BAND -- past the hit area but
+    // inside the swallow zone, which is where a fumbled re-aim actually lands.
+    //
+    // These offsets used to be 8 px, which is INSIDE the hit area (EGGREG_PAD
+    // is 16), so every "near miss" was a direct hit that cycled the region.
+    // The region assertion passed only because 12 taps over REGION_COUNT 4
+    // came full circle back to the start; Sinnoh made it 5 and the coincidence
+    // died. It never once exercised the guard band it claims to protect --
+    // CLAUDE.md trap 3, a test proving the arithmetic rather than the firmware.
+    //
+    // Derived from the two rects above, NOT from EGGREG_PAD/EGGREG_GUARD: those
+    // are #defines inside the sketch and copying them here would put a second
+    // copy of a firmware constant in the test, which is the same mistake in a
+    // different place. (gx - hx) IS the pad, so a few px past it is outside the
+    // hit area and inside the swallow zone beyond it.
+    const int band = (gx - hx) + 4;
     pet.newEgg();
     while (!pet.isEgg()) pet.newEgg();
     uint8_t wasRegion = pet.region;
+    int changed = 0, hatched = 0;
     for (int i = 0; i < 6; i++) {
-      onTap((int16_t)(gx + gw / 2), (int16_t)(gy + gh + 8));   // just below it
-      onTap((int16_t)(gx - 8), (int16_t)(gy + gh / 2));        // just left of it
+      // checked after EVERY tap, so no number of taps can cancel out again
+      onTap((int16_t)(gx + gw / 2), (int16_t)(gy + gh + band));  // just below
+      if (pet.region != wasRegion) changed++;
+      if (!pet.isEgg()) hatched++;
+      onTap((int16_t)(gx - band), (int16_t)(gy + gh / 2));       // just left
+      if (pet.region != wasRegion) changed++;
+      if (!pet.isEgg()) hatched++;
     }
-    ck(pet.isEgg(), "a near miss on the pill does NOT hatch the egg");
-    ck(pet.region == wasRegion, "and does not silently change the region either");
+    ck(hatched == 0, "a near miss on the pill does NOT hatch the egg");
+    ck(changed == 0, "and does not silently change the region either");
+    ck(band > (gx - hx) && band > (gy - hy),
+       "and those taps really were outside the hit area, not on the pill");
 
     // on the pill: it cycles
     onTap((int16_t)(gx + gw / 2), (int16_t)(gy + gh / 2));
