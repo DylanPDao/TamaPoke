@@ -1,5 +1,6 @@
 #include "sdmon.h"
 #include "pin_config.h"
+#include "pet.h"   // gRegionArt, REGIONS -- the mask this narrows
 #include <FS.h>
 #include <SD_MMC.h>
 
@@ -119,12 +120,42 @@ const uint8_t *SdThumbs::get(int16_t dex) const {
   return data + off;
 }
 
+// Which regions actually have their sprite pack on the card.
+//
+// Three probes per region, not one: the realistic failure is a half-finished
+// copy of a 100 MB pack, and a single probe would call that region present.
+// Start, middle and end, so a copy that stopped partway fails the check.
+//
+// This NARROWS gRegionArt, which starts as everything. A board with no SD is
+// therefore untouched and keeps today's behaviour, which is the documented
+// requirement -- an empty game would be a worse answer than a graceful one.
+void sdScanRegionArt() {
+  if (!sdReady) return;                 // no card: leave every region enabled
+  uint16_t mask = 0;
+  for (uint8_t r = 0; r < REGION_COUNT; r++) {
+    if (r == REGION_ALL) continue;      // derived from the others, never probed
+    const RegionInfo &rg = REGIONS[r];
+    const int16_t probe[3] = { rg.lo, (int16_t)((rg.lo + rg.hi) / 2), rg.hi };
+    bool all = true;
+    for (int i = 0; i < 3 && all; i++) {
+      char path[28];
+      snprintf(path, sizeof(path), "/mons/p%03u.bin", (unsigned)probe[i]);
+      File f = SD_MMC.open(path, FILE_READ);
+      if (!f) all = false; else f.close();
+    }
+    if (all) mask |= (uint16_t)(1u << r);
+    Serial.printf("art: %-6s %s\n", rg.name, all ? "si" : "NO (falta el pack)");
+  }
+  gRegionArt = mask;
+}
+
 bool sdBegin() {
   SD_MMC.setPins(SDMMC_CLK, SDMMC_CMD, SDMMC_DATA);
   sdReady = SD_MMC.begin("/sdcard", true /* modo 1-bit */, true /* formatea si no monta */);
   if (sdReady) {
     Serial.printf("SD montada: %llu MB\n", SD_MMC.cardSize() / (1024ULL * 1024ULL));
     SD_MMC.mkdir("/mons");
+    sdScanRegionArt();
   } else {
     Serial.println("SD no detectada (el juego usa los sprites de flash)");
   }

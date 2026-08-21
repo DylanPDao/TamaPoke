@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "3.2"
+#define FW_VERSION "3.3"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -87,6 +87,7 @@ uint8_t galleryRegion = 0;
 // Johto and Hoenn content looked absent.
 bool galleryPick = false;
 bool gymPick = false;
+uint8_t rpickPage = 0;      // the region chooser is paged; shared by all 3 modes
 int galleryPage = 0;        // GAL_PAGES paginas de GAL_PER_PAGE
 int16_t galleryDetail = 0;  // dex en vista detalle, 0 = rejilla
 
@@ -255,8 +256,21 @@ Link lan;
 #define RPICK_FOR_GYMS  0
 #define RPICK_FOR_DEX   1
 #define RPICK_FOR_START 2
+// Three rows is what the round panel fits above the BACK label. The dex now
+// lists four regions and will list more, so the chooser PAGES rather than
+// growing -- and every paged screen in this sketch has to be driven by
+// swipe_test, which is why that test exists at all.
+#define RPICK_PER_PAGE  3
+extern uint8_t rpickPage;
 static void renderRegionPick(uint8_t mode);   // the region chooser, defined below
-static int regionPickTap(int16_t x, int16_t y);
+// Not static: swipe_test drives these so it asks the FIRMWARE for the page
+// count instead of recomputing it from its own copy of RPICK_PER_PAGE, which
+// would prove the transcription rather than the screen.
+uint8_t rpickRegions(uint8_t mode);           // rows this mode lists (gyms: 3)
+uint8_t rpickPageCount(uint8_t mode);
+uint8_t rpickModeNow();                       // which chooser is up, or 0xFF
+static bool rpickSwipe(int dir);              // true if it handled the gesture
+static int regionPickTap(int16_t x, int16_t y, uint8_t mode);
 static void drawEggRegion();          // defined with the egg screen helpers
 static int eggRegionTap(int16_t x, int16_t y);
 static void drawBtlBack();
@@ -1074,6 +1088,8 @@ void openClock();  // prototipo
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
+  if (uiCurrentScreen() == SCR_DEXPICK || uiCurrentScreen() == SCR_GYMPICK)
+    return;                 // on the chooser, vertical does nothing: pick a row
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
   if (pickOpen) { pickOpen = false; return; }
@@ -1314,6 +1330,11 @@ void partyTap(int16_t x, int16_t y) {
 
 // deslizar: dir +1 = hacia la derecha
 void onSwipe(int dir) {
+  // The region chooser pages, and it is checked before everything else because
+  // it sits on TOP of the starter/gallery/gym screens -- each of which has its
+  // own horizontal handler that would otherwise swallow the gesture. Paging a
+  // screen by closing it is the bug this project shipped four times.
+  if (rpickSwipe(dir)) return;
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
   if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
   if (battleOpen) return;   // no swiping out of a fight
@@ -1328,7 +1349,7 @@ void onSwipe(int dir) {
   if (gymOpen) {   // horizontal pages the ladder; vertical backs out
     uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
     int p = (int)gymPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= pages) gymPick = true;   // back to the region chooser
+    if (p < 0 || p >= pages) { gymPick = true; rpickPage = 0; }  // back to the chooser
     else gymPage = (uint8_t)p;
     return;
   }
@@ -1374,7 +1395,7 @@ void onSwipe(int dir) {
     // gesture: it has a menu row, and gestures are worth more spent on screens
     // without one.
     if (!pet.ceremony && !confirmUntil) {
-      if (dir < 0) { gymOpen = true; gymPick = true; gymPage = 0; }
+      if (dir < 0) { gymOpen = true; gymPick = true; gymPage = 0; rpickPage = 0; }
       else partyOpen = true;
     }
     return;
@@ -1388,6 +1409,7 @@ void onSwipe(int dir) {
   int np = galleryPage - dir;  // deslizar a la izquierda avanza pagina
   if (np < 0) {                // back past the first page = the region chooser
     galleryPick = true;
+    rpickPage = 0;
     galleryPmd.unload();
     return;
   }
@@ -1401,7 +1423,7 @@ void onSwipe(int dir) {
 void onTap(int16_t x, int16_t y) {
   if (pet.awaitingStarter()) {  // primera partida: region y luego inicial
     if (!starterRegionDone) {
-      int r = regionPickTap(x, y);
+      int r = regionPickTap(x, y, RPICK_FOR_START);
       if (r >= 0) {
         pet.setRegion((uint8_t)r);   // the region picked here is where eggs come from too
         starterRegionDone = true;
@@ -1448,7 +1470,7 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (gymOpen && gymPick) {
-    int r = regionPickTap(x, y);
+    int r = regionPickTap(x, y, RPICK_FOR_GYMS);
     if (r >= 0) {
       gymRegion = (uint8_t)r;
       gymPage = 0;
@@ -1544,7 +1566,7 @@ void onTap(int16_t x, int16_t y) {
       sfxPlay(SFX_TAP);
       menuOpen = false;
       if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
-      else if (i == 1) { galleryOpen = true; galleryPick = true; galleryPage = 0; galleryDetail = 0; galleryDirty = true; }
+      else if (i == 1) { galleryOpen = true; galleryPick = true; galleryPage = 0; rpickPage = 0; galleryDetail = 0; galleryDirty = true; }
       else if (i == 2) { openClock(); }
       else if (i == 3) {
         if (!pet.canRetireNow()) { sfxPlay(SFX_DENY); return; }
@@ -1582,7 +1604,7 @@ void onTap(int16_t x, int16_t y) {
   }
   if (galleryOpen) {
     if (galleryPick) {
-      int r = regionPickTap(x, y);
+      int r = regionPickTap(x, y, RPICK_FOR_DEX);
       if (r >= 0) {
         galleryRegion = (uint8_t)r;
         galleryPage = 0;
@@ -4569,7 +4591,7 @@ static int eggRegionTap(int16_t x, int16_t y) {
   bool hit = x >= EGGREG_X - inset && x <= EGGREG_X + EGGREG_W + inset &&
              y >= EGGREG_Y - inset && y <= EGGREG_Y + EGGREG_H + inset;
   if (hit) {
-    pet.setRegion((uint8_t)((pet.region + 1) % REGION_COUNT));
+    pet.setRegion(nextAvailableRegion(pet.region));
     sfxPlay(SFX_TAP);
     return 1;
   }
@@ -4587,8 +4609,58 @@ static int eggRegionTap(int16_t x, int16_t y) {
 #define RPICK_H 62
 #define RPICK_Y(i) (108 + (i) * 72)
 
+// How many regions this mode lists. Gyms genuinely only exist for three
+// (GYM_REGIONS); the Pokedex and the starter screen list every REAL region,
+// which is GAL_REGIONS -- REGION_COUNT minus the ALL pseudo-region.
+//
+// This used to be GYM_REGIONS for ALL THREE MODES, with the names read out of
+// TRAINER_SETS -- a trainer table driving the Pokedex chooser. So the moment
+// Sinnoh landed it had no row, while the gallery's vertical swipe cycled it
+// happily: built, reachable, and looking absent. That is the exact failure the
+// chooser was added to prevent.
+uint8_t rpickRegions(uint8_t mode) {
+  return (mode == RPICK_FOR_GYMS) ? (uint8_t)GYM_REGIONS : (uint8_t)GAL_REGIONS;
+}
+
+uint8_t rpickPageCount(uint8_t mode) {
+  uint8_t n = rpickRegions(mode);
+  uint8_t p = (uint8_t)((n + RPICK_PER_PAGE - 1) / RPICK_PER_PAGE);
+  return p ? p : 1;
+}
+
+// The chooser WRAPS rather than closing off the end, unlike the other paged
+// screens. It is the root of its own screen, and at first boot there is
+// nowhere to go back to at all -- exiting would strand the player before they
+// have chosen anything.
+// Which chooser is on the panel, or 0xFF for none. THE single answer: the
+// swipe handler and swipe_test both ask this rather than each deciding.
+uint8_t rpickModeNow() {
+  switch (uiCurrentScreen()) {
+    case SCR_REGION:  return RPICK_FOR_START;
+    case SCR_DEXPICK: return RPICK_FOR_DEX;
+    case SCR_GYMPICK: return RPICK_FOR_GYMS;
+    default: return 0xFF;
+  }
+}
+
+static bool rpickSwipe(int dir) {
+  uint8_t mode = rpickModeNow();
+  if (mode == 0xFF) return false;
+  uint8_t pages = rpickPageCount(mode);
+  int p = (int)rpickPage + (dir > 0 ? -1 : 1);
+  if (p < 0) p = pages - 1;
+  if (p >= pages) p = 0;
+  rpickPage = (uint8_t)p;
+  sfxPlay(SFX_TAP);
+  return true;
+}
+
 static void renderRegionPick(uint8_t mode) {
   bool forGyms = (mode == RPICK_FOR_GYMS);
+  uint8_t nreg = rpickRegions(mode);
+  uint8_t pages = rpickPageCount(mode);
+  if (rpickPage >= pages) rpickPage = 0;
+  uint8_t first = (uint8_t)(rpickPage * RPICK_PER_PAGE);
   gfx->fillScreen(RGB565_BLACK);
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
   char ttl[40];
@@ -4600,12 +4672,18 @@ static void renderRegionPick(uint8_t mode) {
   gfx->setCursor(CX - (int)strlen(ttl) * 6, 48);
   gfx->print(ttl);
 
-  for (uint8_t i = 0; i < GYM_REGIONS; i++) {
-    int y = RPICK_Y(i);
-    gfx->fillRoundRect(RPICK_X, y, RPICK_W, RPICK_H, 12, UI_WHITE);
-    gfx->drawRoundRect(RPICK_X, y, RPICK_W, RPICK_H, 12, UI_INK);
-    const char *nm = TRAINER_SETS[i].region;
-    gfx->setTextColor(UI_INK);
+  for (uint8_t row = 0; row < RPICK_PER_PAGE; row++) {
+    uint8_t i = (uint8_t)(first + row);
+    if (i >= nreg) break;
+    int y = RPICK_Y(row);
+    // The sprite pack is the gate. A region without it is drawn GREYED with a
+    // reason rather than dropped from the list: hiding it would say "this
+    // region does not exist" when what we mean is "download its pack".
+    bool open = forGyms || regionAvailable(i);
+    gfx->fillRoundRect(RPICK_X, y, RPICK_W, RPICK_H, 12, open ? UI_WHITE : UI_BG_DAY);
+    gfx->drawRoundRect(RPICK_X, y, RPICK_W, RPICK_H, 12, open ? UI_INK : UI_TRACK);
+    const char *nm = forGyms ? TRAINER_SETS[i].region : REGIONS[i].name;
+    gfx->setTextColor(open ? UI_INK : UI_TRACK);
     gfx->setTextSize(3);
     gfx->setCursor(RPICK_X + 18, y + 12);
     gfx->print(nm);
@@ -4614,7 +4692,9 @@ static void renderRegionPick(uint8_t mode) {
     // read zero on a new save anyway.
     char sub[28];
     sub[0] = 0;
-    if (mode == RPICK_FOR_GYMS)
+    if (!open)
+      snprintf(sub, sizeof(sub), "%s", T(S_NEED_PACK));
+    else if (mode == RPICK_FOR_GYMS)
       snprintf(sub, sizeof(sub), T(S_BADGES_FMT), pet.badgeCountIn(i, gymHard));
     else if (mode == RPICK_FOR_DEX)
       snprintf(sub, sizeof(sub), "%u/%u",
@@ -4635,6 +4715,14 @@ static void renderRegionPick(uint8_t mode) {
     gfx->setCursor(CX - strlen(T(S_LAN)) * 6, LANBTN_Y + 14);
     gfx->print(T(S_LAN));
   }
+  if (pages > 1) {                        // dots: which page of regions this is
+    int total = pages * 16 - 8;
+    for (uint8_t d = 0; d < pages; d++) {
+      int cx = CX - total / 2 + d * 16;
+      if (d == rpickPage) gfx->fillCircle(cx, 366, 5, UI_INK);
+      else gfx->drawCircle(cx, 366, 5, UI_TRACK);
+    }
+  }
   if (mode != RPICK_FOR_START) {          // first boot has nowhere to go back to
     gfx->setTextColor(UI_TRACK);
     gfx->setTextSize(2);
@@ -4644,11 +4732,24 @@ static void renderRegionPick(uint8_t mode) {
   gfx->flush();
 }
 
-// Returns the region tapped, or -1.
-static int regionPickTap(int16_t x, int16_t y) {
+// Returns the region tapped, or -1. Takes the mode because the row on screen is
+// an offset into the current page, not the region index -- and because a region
+// whose sprite pack is missing must not be selectable, which is the whole point
+// of the gate. The chooser still SHOWS it, greyed, saying why.
+static int regionPickTap(int16_t x, int16_t y, uint8_t mode) {
   if (x < RPICK_X || x > RPICK_X + RPICK_W) return -1;
-  for (uint8_t i = 0; i < GYM_REGIONS; i++)
-    if (y >= RPICK_Y(i) && y <= RPICK_Y(i) + RPICK_H) return i;
+  uint8_t nreg = rpickRegions(mode);
+  for (uint8_t row = 0; row < RPICK_PER_PAGE; row++) {
+    uint8_t i = (uint8_t)(rpickPage * RPICK_PER_PAGE + row);
+    if (i >= nreg) break;
+    if (y >= RPICK_Y(row) && y <= RPICK_Y(row) + RPICK_H) {
+      if (mode != RPICK_FOR_GYMS && !regionAvailable(i)) {
+        sfxPlay(SFX_DENY);      // locked: say no out loud rather than do nothing
+        return -1;
+      }
+      return i;
+    }
+  }
   return -1;
 }
 

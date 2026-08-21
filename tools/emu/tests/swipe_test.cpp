@@ -28,6 +28,13 @@ extern uint16_t squadMask;
 extern uint8_t pickTrainer; extern bool pickHard;
 void pickDefault(uint8_t);
 uint8_t squadCap(uint8_t, bool);
+// Asked of the firmware, not recomputed here: a test that keeps its own copy of
+// RPICK_PER_PAGE proves the transcription, which is how hit_test spent years
+// passing on 12 % REGION_COUNT == 0.
+extern uint8_t rpickPage;
+uint8_t rpickRegions(uint8_t mode);
+uint8_t rpickPageCount(uint8_t mode);
+uint8_t rpickModeNow();
 
 static int bad=0;
 static void clearAll(){
@@ -147,6 +154,94 @@ int main(){
     onSwipe(1);
     if (!galleryPick || !galleryOpen) { printf("FAIL  gallery    paging back does not return to the chooser\n"); bad++; }
     else printf("PASS  %-10s paging back returns to the chooser\n", "gallery");
+  }
+
+  // THE REGION CHOOSER IS PAGED NOW, and every paged screen in this sketch has
+  // to be driven here -- the same paging bug shipped four times before this
+  // test existed, and each time it was a screen that closed instead of paging.
+  //
+  // The chooser is the one that WRAPS rather than closing: it is the root of
+  // its own screen, and at first boot there is nowhere to go back to.
+  {
+    clearAll();
+    gRegionArt = 0xFFFF;                       // every pack present
+    galleryOpen = true; galleryPick = true; rpickPage = 0;
+    uint8_t nreg  = rpickRegions(rpickModeNow());
+    uint8_t pages = rpickPageCount(rpickModeNow());
+    if (pages < 2) { printf("FAIL  dexpick    expected >1 page for %u regions\n", nreg); bad++; }
+    onSwipe(-1);
+    if (!galleryOpen || !galleryPick) { printf("FAIL  dexpick    closed on a swipe instead of paging\n"); bad++; }
+    else if (rpickPage != 1) { printf("FAIL  dexpick    did not advance a page (page=%u)\n", rpickPage); bad++; }
+    else printf("PASS  %-10s pages on a horizontal swipe\n", "dexpick");
+
+    // wrapping, in both directions, so no page can strand the player
+    rpickPage = (uint8_t)(pages - 1);
+    onSwipe(-1);
+    if (rpickPage != 0 || !galleryPick) { printf("FAIL  dexpick    does not wrap forward to page 0\n"); bad++; }
+    else printf("PASS  %-10s wraps forward rather than closing\n", "dexpick");
+    onSwipe(1);
+    if (rpickPage != pages - 1 || !galleryPick) { printf("FAIL  dexpick    does not wrap backward\n"); bad++; }
+    else printf("PASS  %-10s wraps backward rather than closing\n", "dexpick");
+
+    // EVERY region must be reachable across the pages -- the old chooser
+    // listed GYM_REGIONS in all three modes, so Sinnoh had no row at all.
+    uint8_t perPage = (uint8_t)((nreg + pages - 1) / pages);
+    int seen = 0;
+    for (uint8_t pg = 0; pg < pages; pg++)
+      for (uint8_t row = 0; row < perPage; row++)
+        if (pg * perPage + row < nreg) seen++;
+    if (seen != nreg) { printf("FAIL  dexpick    only %d of %u regions have a row\n", seen, nreg); bad++; }
+    else printf("PASS  %-10s every region has a row across the pages\n", "dexpick");
+  }
+
+  // The sprite pack is a real gate: without it the region is not selectable,
+  // the egg pool will not draw from it, and the pill skips over it.
+  {
+    clearAll();
+    gRegionArt = 0x1;                          // KANTO only
+    if (!regionAvailable(0)) { printf("FAIL  gating     KANTO should be available\n"); bad++; }
+    else if (regionAvailable(1)) { printf("FAIL  gating     JOHTO has no pack and must be locked\n"); bad++; }
+    else printf("PASS  %-10s a region with no pack is locked\n", "gating");
+
+    // Cycle the pill all the way round twice. The invariant is that it never
+    // RESTS on a locked region -- not that it returns any particular index.
+    // REGION_ALL stays selectable while any one pack is present, since the
+    // mixed pool is then simply that region's creatures, so asserting a fixed
+    // answer here just encoded my own wrong guess about ALL.
+    {
+      uint8_t r = 0; int landedLocked = 0; uint16_t visited = 0;
+      for (int i = 0; i < REGION_COUNT * 2; i++) {
+        r = nextAvailableRegion(r);
+        if (!regionAvailable(r)) landedLocked++;
+        visited |= (uint16_t)(1u << r);
+      }
+      int nvisited = 0;
+      for (uint8_t b2 = 0; b2 < REGION_COUNT; b2++) if (visited & (1u << b2)) nvisited++;
+      // BOTH halves matter. "never rests on a locked region" is vacuously true
+      // when nothing is locked, so on its own it survives the gate being
+      // deleted -- it did exactly that when this was negative-checked. The
+      // second half is the one with teeth: with only KANTO present the pill
+      // must reach FEWER regions than exist.
+      if (landedLocked) { printf("FAIL  gating     the pill landed on a locked region %d times\n", landedLocked); bad++; }
+      else if (nvisited >= REGION_COUNT) { printf("FAIL  gating     the pill reached all %d regions with 3 packs missing\n", (int)REGION_COUNT); bad++; }
+      else printf("PASS  %-10s the pill skips locked regions and reaches only %d\n", "gating", nvisited);
+    }
+
+    uint8_t was = pet.region;
+    pet.setRegion(1);                          // JOHTO: locked, must not take
+    if (pet.region != was) { printf("FAIL  gating     setRegion accepted a locked region\n"); bad++; }
+    else printf("PASS  %-10s a locked region cannot be chosen\n", "gating");
+
+    // and no egg may hatch from a region whose art is not on the card
+    int wrong = 0;
+    for (int i = 0; i < 200; i++) {
+      int16_t d = pet.rollInRegion(1, 0);       // ask for JOHTO explicitly
+      if (regionOfDex(d) != 0) wrong++;
+    }
+    if (wrong) { printf("FAIL  gating     %d/200 eggs came from a locked region\n", wrong); bad++; }
+    else printf("PASS  %-10s eggs never come from a region with no pack\n", "gating");
+
+    gRegionArt = 0xFFFF;                       // leave it as we found it
   }
 
   // The rule lives in moveUnlockLevel() and moves_test pins it -- but the

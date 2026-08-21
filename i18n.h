@@ -122,6 +122,7 @@ enum StrId : uint8_t {
   S_RETIRE_Q,       // ...and the confirmation
   S_RETIRE_COST,    // what retiring early costs the next creature
   S_EVO_SLOW,       // shown on the card while a creature carries that debt
+  S_NEED_PACK,      // region chooser: this region's sprite pack is not on the SD
   STR_COUNT
 };
 
