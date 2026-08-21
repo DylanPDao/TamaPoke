@@ -289,6 +289,11 @@ public:
   bool canEvolveNow() const;  // condiciones de evolucion cumplidas (lista)
   void evolve();              // dispara la transformacion (la llama un toque del usuario)
   bool canFarewellNow() const;  // forma final + 7 dias: lista para despedirse (boton)
+  // Total neglect RIGHT NOW. THE single answer: tick() counts against it and
+  // canRunawayNow() re-checks it, because neglectTicks is frozen (neither
+  // counted nor cleared) while asleep and so can outlive the state that
+  // earned it -- see sleep_test.
+  bool inTotalNeglect() const { return !fullness && !joy && !energy && !hygiene; }
   bool canRunawayNow() const;   // abandono total 1h: lista para escaparse (boton triste)
   // el usuario decide en un dialogo; "mantener/quedaros" pospone y re-ofrece luego
   bool wantEvolveButton() const { return canEvolveNow() && level() > evoDeclinedLv; }

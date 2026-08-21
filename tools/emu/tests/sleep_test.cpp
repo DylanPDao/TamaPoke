@@ -152,6 +152,46 @@ int main(){
     ck(!p.sleeping, "no clock, no bedtime");
   }
 
+  // --- THE MORNING AFTER. A creature that went to bed already at zero keeps a
+  //     neglectTicks of 60 all night, because the sleeping branch of tick()
+  //     returns before the neglect block and so neither counts nor clears it.
+  //     canRunawayNow() used to read that counter alone, so waking the screen
+  //     made a creature with 100 energy instantly ready to leave -- and the
+  //     runaway button is drawn over the creature, where the tap that says good
+  //     morning lands. It cost a real player a DRAGONAIR.
+  {
+    Pet p; fresh(p, 22);
+    p.fullness = p.joy = p.energy = p.hygiene = 0;   // a neglected evening
+    liveMinutes(p, 22, 60);
+    ck(p.canRunawayNow(), "armed by an hour of total neglect before bed");
+
+    p.setScreenOff(true);                            // 23:00, not the window yet
+    ck(!p.sleeping, "screen off before midnight does not sleep it yet");
+
+    for (int i = 0; i < 540; i++) {                  // through to 08:00
+      p.lastSeenEpoch = atHour(23) + (uint32_t)i * 60;
+      p.dbgTick();
+    }
+    ck(p.sleeping, "it slept from midnight through the night");
+    ck(p.energy == 100, "and energy recovered while it slept");
+    ck(!p.canRunawayNow(), "asleep it cannot leave -- the night itself was safe");
+
+    p.setScreenOff(false);                           // you pick the device up
+    ck(!p.canRunawayNow(),
+       "and waking it does NOT hand you a runaway: 100 energy is not neglect");
+  }
+
+  // --- but the counter is not the only thing that matters: a creature actually
+  //     at zero on waking is still ready, or the ending would have no teeth
+  {
+    Pet p; fresh(p, 22);
+    p.fullness = p.joy = p.energy = p.hygiene = 0;
+    liveMinutes(p, 22, 60);
+    p.dbgSetSeen(atHour(9));                         // morning, awake, still empty
+    p.fullness = p.joy = p.energy = p.hygiene = 0;
+    ck(p.canRunawayNow(), "genuinely empty on waking is still ready to leave");
+  }
+
   // --- an egg is not something you put to sleep
   {
     Pet p; p.begin(); p.newEgg();

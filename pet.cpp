@@ -195,7 +195,7 @@ void Pet::tick() {
 
   // abandono total: con TODO a cero durante una hora queda lista para escaparse;
   // NO se va sola, la dispara el usuario con el boton (final triste, lo presencia)
-  if (fullness == 0 && joy == 0 && energy == 0 && hygiene == 0) {
+  if (inTotalNeglect()) {
     if (neglectTicks < RUNAWAY_TICKS) neglectTicks++;
   } else {
     neglectTicks = 0;  // un solo cuidado la salva
@@ -758,7 +758,15 @@ bool Pet::canFarewellNow() const {
 // boton (final triste); cuidarla un solo tick la salva (neglectTicks se resetea)
 bool Pet::canRunawayNow() const {
   if (frozen) return false;
-  return !isEgg() && !sleeping && ceremony == CER_NONE && neglectTicks >= RUNAWAY_TICKS;
+  // inTotalNeglect() as well as the counter, and NOT just the counter. The
+  // sleeping branch of tick() returns before the neglect block, so neglectTicks
+  // is frozen rather than cleared for the whole night: a creature that went to
+  // bed at zero woke with energy back at 100 and was still one tap from
+  // leaving, until the next tick 60 s later cleared it. That tap is a caress --
+  // the button is drawn over the creature -- so the window really was reachable
+  // and it cost somebody a DRAGONAIR.
+  return !isEgg() && !sleeping && ceremony == CER_NONE &&
+         neglectTicks >= RUNAWAY_TICKS && inTotalNeglect();
 }
 
 bool Pet::canRetireNow() const {
