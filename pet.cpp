@@ -195,7 +195,7 @@ void Pet::tick() {
 
   // abandono total: con TODO a cero durante una hora queda lista para escaparse;
   // NO se va sola, la dispara el usuario con el boton (final triste, lo presencia)
-  if (fullness == 0 && joy == 0 && energy == 0 && hygiene == 0) {
+  if (inTotalNeglect()) {
     if (neglectTicks < RUNAWAY_TICKS) neglectTicks++;
   } else {
     neglectTicks = 0;  // un solo cuidado la salva
@@ -272,6 +272,8 @@ void Pet::snapshotForParty() {
 
 // vuelca el guardado periodico pendiente (lo llama el loop en un momento sin
 // animacion para que el paron de la escritura a flash no se vea)
+void Pet::saveNow() { save(); }
+
 void Pet::flushSave() {
   if (pendingSave) save();
 }
@@ -319,8 +321,48 @@ uint8_t Pet::eggRarity() const {
 // more than the 80 the Kanto-only build needed.
 #define CAND_MAX 260
 
+uint16_t gRegionArt = 0xFFFF;   // everything, until the SD narrows it
+
+bool regionAvailable(uint8_t r) {
+  if (r >= REGION_COUNT) return false;
+  if (r == REGION_ALL) {                       // the mixed pool: any pack will do
+    for (uint8_t i = 0; i < REGION_COUNT; i++)
+      if (i != REGION_ALL && (gRegionArt & (uint16_t)(1u << i))) return true;
+    return false;
+  }
+  return (gRegionArt & (uint16_t)(1u << r)) != 0;
+}
+
+uint8_t regionOfDex(int16_t d) {
+  for (uint8_t i = 0; i < REGION_COUNT; i++) {
+    if (i == REGION_ALL) continue;
+    if (d >= REGIONS[i].lo && d <= REGIONS[i].hi) return i;
+  }
+  return REGION_ALL;
+}
+
+uint8_t nextAvailableRegion(uint8_t from) {
+  for (uint8_t i = 1; i <= REGION_COUNT; i++) {
+    uint8_t r = (uint8_t)((from + i) % REGION_COUNT);
+    if (regionAvailable(r)) return r;
+  }
+  return from;                      // nothing available anywhere: stay put
+}
+
+// The region to actually hatch from. Normally the player's own, but a card can
+// be swapped under a save: rather than rewrite their choice (which would lose
+// it silently the moment they put the right card back), the CHOICE is kept and
+// only the roll falls through to somewhere playable.
+static uint8_t eggRegionFallback(uint8_t want) {
+  if (regionAvailable(want)) return want;
+  for (uint8_t i = 0; i < REGION_COUNT; i++)
+    if (i != REGION_ALL && regionAvailable(i)) return i;
+  return want;                      // no art anywhere: behave as we always did
+}
+
 int16_t Pet::pickEggSpecies() {
-  const RegionInfo &rg = REGIONS[region % REGION_COUNT];
+  const uint8_t use = eggRegionFallback(region % REGION_COUNT);
+  const RegionInfo &rg = REGIONS[use];
   // primera partida: inicial clasico -- del region elegida, so a Johto run
   // starts with a Johto starter rather than a Kanto one
   if (registeredCount() == 0) {
@@ -346,6 +388,9 @@ int16_t Pet::pickEggSpecies() {
       for (int16_t d = rg.lo; d <= rg.hi && n < CAND_MAX; d++) {
         if (DEX_TBL[d].rarity != t) continue;
         if (pass == 0 && !lineHasUnregistered(d)) continue;
+        // ALL spans every region, so filter per species: a missing Sinnoh pack
+        // must not put a Sinnoh creature in a mixed egg.
+        if (!regionAvailable(regionOfDex(d))) continue;
         cand[n++] = d;
       }
       if (n > 0) return cand[random(n)];
@@ -358,12 +403,12 @@ int16_t Pet::pickEggSpecies() {
 // region while an egg is waiting: the rarity they were granted is kept and only
 // the region changes, so switching cannot be farmed for a legendary.
 int16_t Pet::rollInRegion(uint8_t r, uint8_t tier) {
-  const RegionInfo &rg = REGIONS[r % REGION_COUNT];
+  const RegionInfo &rg = REGIONS[eggRegionFallback(r % REGION_COUNT)];
   for (int t = tier; t >= R_COMUN; t--) {
     int16_t cand[CAND_MAX];
     int n = 0;
     for (int16_t d = rg.lo; d <= rg.hi && n < CAND_MAX; d++)
-      if (DEX_TBL[d].rarity == t) cand[n++] = d;
+      if (DEX_TBL[d].rarity == t && regionAvailable(regionOfDex(d))) cand[n++] = d;
     if (n) return cand[random(n)];
   }
   return rg.starters[0];      // a region with nothing in it cannot happen
@@ -383,6 +428,11 @@ int16_t Pet::rollInRegion(uint8_t r, uint8_t tier) {
 // A hatched creature is untouched -- this only ever moves an egg.
 void Pet::setRegion(uint8_t r) {
   r %= REGION_COUNT;
+  // The sprite pack is a real gate, not a hint: without it the region is not
+  // selectable at all. The chooser still SHOWS it, greyed and with a reason --
+  // hiding it outright is how Johto and Hoenn once came to look absent when
+  // they were built and reachable all along.
+  if (!regionAvailable(r)) return;
   if (r == region) return;
   uint8_t old = region;
   region = r;
@@ -756,7 +806,15 @@ bool Pet::canFarewellNow() const {
 // boton (final triste); cuidarla un solo tick la salva (neglectTicks se resetea)
 bool Pet::canRunawayNow() const {
   if (frozen) return false;
-  return !isEgg() && !sleeping && ceremony == CER_NONE && neglectTicks >= RUNAWAY_TICKS;
+  // inTotalNeglect() as well as the counter, and NOT just the counter. The
+  // sleeping branch of tick() returns before the neglect block, so neglectTicks
+  // is frozen rather than cleared for the whole night: a creature that went to
+  // bed at zero woke with energy back at 100 and was still one tap from
+  // leaving, until the next tick 60 s later cleared it. That tap is a caress --
+  // the button is drawn over the creature -- so the window really was reachable
+  // and it cost somebody a DRAGONAIR.
+  return !isEgg() && !sleeping && ceremony == CER_NONE &&
+         neglectTicks >= RUNAWAY_TICKS && inTotalNeglect();
 }
 
 bool Pet::canRetireNow() const {

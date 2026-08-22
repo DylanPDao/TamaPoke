@@ -29,7 +29,18 @@ RENDER_W = 2400    # render wide so the downscale has detail to average
 # One row per gym region, in the same order as TRAINER_SETS in trainers.h.
 # Upstream also ships Sinnoh and Unova, so a fourth region is one line here.
 SVG_BASE = 'https://raw.githubusercontent.com/SteGriff/pokemon-badges/master/svg/%s.svg'
-REGIONS = ['Kanto', 'Johto', 'Hoenn']
+# Derived, not restated. Badges exist for the regions that have a gym ladder,
+# which is GYM_REGIONS in trainers.h -- read from there so this cannot drift the
+# way pack_bundle.py, pack_pmd.py and index.html all silently did when Sinnoh
+# landed. The upstream sheets are named for the region, so the names match.
+def _gym_regions():
+    import os as _os, re as _re
+    th = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                            '..', 'trainers.h')).read()
+    names = _re.findall(r'\{\s*TRAINERS_\w+,\s*"(\w+)"\s*\}', th)
+    return [n.capitalize() for n in names]
+
+REGIONS = _gym_regions()
 
 NAMES = ['BOULDER', 'CASCADE', 'THUNDER', 'RAINBOW',
          'SOUL', 'MARSH', 'VOLCANO', 'EARTH']

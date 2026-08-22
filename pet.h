@@ -50,6 +50,37 @@ enum : uint16_t {
 
 uint8_t moveUnlockLevel(int16_t dex, uint8_t idx);
 
+// ---------------------------------------------------------------------------
+// Which regions have their sprite pack on the microSD.
+//
+// One bit per region and THE DEFAULT IS ALL SET, which is doing two jobs: a
+// board with no SD at all keeps today's behaviour rather than presenting an
+// empty game, and pet.cpp stays free of any SD dependency. That second part is
+// not tidiness -- pet.cpp is compiled into all 33 test binaries and none of
+// them link sdmon.cpp, so a direct call would mean stubbing it 33 times. The
+// firmware narrows the mask ONCE, after the card mounts. Same shape as
+// link.cpp taking a transport pointer instead of calling ESP-NOW across a
+// layer, and for the same reason: the tests can drive it.
+//
+// uint16_t, not uint8_t. REGION_COUNT is 5 today and this project has been
+// bitten five separate times by a width chosen for the current size of the dex.
+extern uint16_t gRegionArt;
+static_assert(REGION_COUNT <= 16, "gRegionArt needs a bit per region");
+
+// Is this region playable? REGION_ALL is available while ANY real region is --
+// it is the mixed pool and must not vanish because one pack is missing.
+bool regionAvailable(uint8_t r);
+
+// Which region a dex number belongs to, or REGION_ALL if somehow none. The
+// regions tile the dex exactly once (dexdata_test pins that), so this is a
+// lookup rather than a judgement.
+uint8_t regionOfDex(int16_t d);
+
+// The next region the player can actually choose, skipping any whose sprite
+// pack is missing. The egg pill cycles with this rather than (region + 1) %
+// REGION_COUNT, which would land on a locked region and silently do nothing.
+uint8_t nextAvailableRegion(uint8_t from);
+
 class Pet {
 public:
   // Estadisticas 0..100
@@ -289,6 +320,11 @@ public:
   bool canEvolveNow() const;  // condiciones de evolucion cumplidas (lista)
   void evolve();              // dispara la transformacion (la llama un toque del usuario)
   bool canFarewellNow() const;  // forma final + 7 dias: lista para despedirse (boton)
+  // Total neglect RIGHT NOW. THE single answer: tick() counts against it and
+  // canRunawayNow() re-checks it, because neglectTicks is frozen (neither
+  // counted nor cleared) while asleep and so can outlive the state that
+  // earned it -- see sleep_test.
+  bool inTotalNeglect() const { return !fullness && !joy && !energy && !hygiene; }
   bool canRunawayNow() const;   // abandono total 1h: lista para escaparse (boton triste)
   // el usuario decide en un dialogo; "mantener/quedaros" pospone y re-ofrece luego
   bool wantEvolveButton() const { return canEvolveNow() && level() > evoDeclinedLv; }
@@ -359,6 +395,12 @@ public:
   // ~1s ambos cores: asi no se ve ni corta el tactil)
   bool savePending() const { return pendingSave; }
   void flushSave();
+  // Writes NOW, whatever pendingSave says. flushSave() is `if (pendingSave)
+  // save()`, so a console command that changed something the game had not
+  // already marked dirty wrote nothing at all and quietly depended on the next
+  // autosave to notice. Defined out of line: save() is private and declared
+  // further down.
+  void saveNow();
 
 private:
   Preferences prefs;

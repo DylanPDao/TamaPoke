@@ -38,7 +38,18 @@ except ImportError:
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'pokeapi_cache')
 API = 'https://pokeapi.co/api/v2/pokemon/%d'
-DEX_COUNT = 386
+# Derived from dex_data.py rather than written here, so a hardcoded number
+# cannot fall behind the table again. gen_moves.py had its own DEX_COUNT = 151
+# once and emitted a Kanto-sized LEARN_OFS against a dex that had grown, which
+# would have read off the end of the array for every species past 151.
+def _dex_count():
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from dex_data import DEX
+    return max(d[0] for d in DEX)
+
+
+DEX_COUNT = _dex_count()
 
 # Which ways of learning a move count as "this species can use it". Level-up
 # plus TM: that is how you would actually build a set, and level-up alone

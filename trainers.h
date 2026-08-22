@@ -99,11 +99,36 @@ struct TrainerSet {
   const Trainer *list;
   const char *region;
 };
-#define GYM_REGIONS 3
+// SINNOH -- PLATINUM, and the order matters: Fantina is the THIRD gym here,
+// where Diamond/Pearl put her fifth. Taken from pret/pokeplatinum's own
+// res/trainers/data/*.json (rematches are separate files there, so unlike
+// Crystal and Emerald there is no "first party" ambiguity to get wrong).
+//
+// The level ramp is what pins the order: 14/22/26/32/37/41/44/50 is monotonic
+// only with Fantina third, and roster_test fails a leader 8+ levels below the
+// previous -- the D/P order trips it (Fantina 26 straight after Wake 37).
+static const Trainer TRAINERS_SINNOH[TRAINER_COUNT] = {
+  { "ROARK",   "OREBURGH",  T_ROCK,     3, { {74,12},{95,12},{408,14} } },
+  { "GARDENIA","ETERNA",    T_GRASS,    3, { {387,20},{421,20},{407,22} } },
+  { "FANTINA", "HEARTHOME", T_GHOST,    3, { {355,24},{93,24},{429,26} } },
+  { "MAYLENE", "VEILSTONE", T_FIGHTING, 3, { {307,28},{67,29},{448,32} } },
+  { "WAKE",    "PASTORIA",  T_WATER,    3, { {130,33},{195,34},{419,37} } },
+  { "BYRON",   "CANALAVE",  T_STEEL,    3, { {82,37},{208,38},{411,41} } },
+  { "CANDICE", "SNOWPOINT", T_ICE,      4, { {215,40},{221,40},{460,42},{478,44} } },
+  { "VOLKNER", "SUNYSHORE", T_ELECTRIC, 4, { {135,46},{26,46},{405,48},{466,50} } },
+  { "AARON",   "ELITE 4",   T_BUG,      5, { {469,49},{212,49},{416,50},{214,51},{452,53} } },
+  { "BERTHA",  "ELITE 4",   T_GROUND,   5, { {340,50},{472,53},{450,52},{76,52},{464,55} } },
+  { "FLINT",   "ELITE 4",   T_FIRE,     5, { {229,52},{136,55},{78,53},{392,55},{467,57} } },
+  { "LUCIAN",  "ELITE 4",   T_PSYCHIC,  5, { {122,53},{196,55},{437,54},{65,56},{475,59} } },
+  { "CYNTHIA", "CHAMPION",  T_DRAGON,   6, { {442,58},{407,58},{468,60},{448,60},{350,58},{445,62} } },
+};
+
+#define GYM_REGIONS 4
 static const TrainerSet TRAINER_SETS[GYM_REGIONS] = {
-  { TRAINERS_KANTO, "KANTO" },
-  { TRAINERS_JOHTO, "JOHTO" },
-  { TRAINERS_HOENN, "HOENN" },
+  { TRAINERS_KANTO,  "KANTO" },
+  { TRAINERS_JOHTO,  "JOHTO" },
+  { TRAINERS_HOENN,  "HOENN" },
+  { TRAINERS_SINNOH, "SINNOH" },
 };
 
 // Hard mode reruns the same ladder with perfect IVs and a smarter AI, so the

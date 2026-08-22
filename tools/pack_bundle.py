@@ -25,9 +25,15 @@ HERE = os.path.dirname(__file__)
 MONS = os.path.join(HERE, 'sdcard', 'mons')
 WEB = os.path.join(HERE, '..', 'web')
 
-# Must match REGIONS in dex_data.py. A sprite file is pNNN.bin or psNNN.bin, so
-# the dex number is the trailing digits.
-REGIONS = [('kanto', 1, 151), ('johto', 152, 251), ('hoenn', 252, 386)]
+# DERIVED from dex_data.py, never a second copy of it. The old line here said
+# "Must match REGIONS in dex_data.py" and then silently did not: Sinnoh landed
+# in the dex and this still stopped at Hoenn, so no sinnoh pack was ever built
+# and the installer could not offer one. Same trap as gen_moves.py keeping its
+# own DEX_COUNT = 151 while dex.h had grown.
+import sys as _sys
+_sys.path.insert(0, HERE)
+from dex_data import REGIONS as _DEX_REGIONS
+REGIONS = [(name.lower(), lo, hi) for name, lo, hi, _starters in _DEX_REGIONS]
 
 GITHUB_LIMIT = 100 * 1024 * 1024
 

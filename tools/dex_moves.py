@@ -203,6 +203,21 @@ MOVES = [
     # For the first two that is a few hours before they evolve; DITTO is a
     # final form and stays this way, since its entire movepool is TRANSFORM.
     ("STRUGGLE",     None,            'normal',   MC_PHYS,  50,   0, EF_RECOIL,    4, 0, 0, TG_FOE),
+
+    # --- APPEND-ONLY BELOW HERE -------------------------------------------
+    # A move's index IS its position in this list (gen_moves.py: idx = i + 1),
+    # and Pet.moves[]/PartyMon.moves[] store that index RAW in NVS. Inserting a
+    # move into its type section above would shift every move after it by one
+    # and silently rewrite the moveset of every creature already saved -- the
+    # live pet and every banked party member. So a new move goes HERE, at the
+    # end, however untidy that looks beside the type grouping.
+    #
+    # DARK PULSE, for DARKRAI (491), which dexdata_test caught with no same-type
+    # attack once Sinnoh landed. BITE and CRUNCH are the only other Dark moves
+    # and both are PHYSICAL, so every special-attacking Dark type had no special
+    # STAB; Darkrai is SpA 135 / Atk 90, so neither was usable to it. It learns
+    # DARK PULSE by level-up at 27, so this is its real move, not a contrivance.
+    ("DARK PULSE",   "dark-pulse",    'dark',     MC_SPEC,  80, 100, EF_NONE,      0, 0, 0, TG_FOE),  # LATER (Gen 4)
 ]
 
 # Accuracy drops (SAND ATTACK, SMOKESCREEN, FLASH) are deliberately left out:

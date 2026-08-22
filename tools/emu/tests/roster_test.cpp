@@ -25,8 +25,24 @@ static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
 
 int main(){
-  ck(GYM_REGIONS == REGION_COUNT - 1,
-     "there is one ladder per region, and none for ALL");
+  // GYM_REGIONS <= REGION_COUNT - 1, NOT equal to it. This asserted equality
+  // and so broke the moment Sinnoh landed: the dex can carry a region long
+  // before that region has a roster, which is exactly the state the expansion
+  // moves through. What must stay true is that no ladder is claimed for the
+  // ALL pseudo-region and that every ladder the code indexes really exists --
+  // TRAINERS indexes TRAINER_SETS[gymRegion % GYM_REGIONS], so a GYM_REGIONS
+  // larger than the table is the crash this guards.
+  ck(GYM_REGIONS <= REGION_COUNT - 1,
+     "no ladder is claimed for the ALL pseudo-region");
+  ck((int)(sizeof(TRAINER_SETS)/sizeof(*TRAINER_SETS)) == GYM_REGIONS,
+     "and the ladder table is exactly GYM_REGIONS long");
+  {
+    int unnamed = 0;
+    for (int r = 0; r < GYM_REGIONS; r++)
+      if (!TRAINER_SETS[r].list || !TRAINER_SETS[r].region ||
+          !TRAINER_SETS[r].region[0]) unnamed++;
+    ck(unnamed == 0, "every ladder that exists has a roster and a name");
+  }
 
   for (int r=0; r<GYM_REGIONS; r++){
     const TrainerSet &ts = TRAINER_SETS[r];
