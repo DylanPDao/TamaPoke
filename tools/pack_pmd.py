@@ -167,7 +167,13 @@ if __name__ == '__main__':
     # The whole dex by default, not the old hardcoded 151. A region is easy to
     # ask for on its own, since the fetch is long and most people want Kanto:
     #   python3 tools/pack_pmd.py kanto
-    span = {'kanto': (1, 151), 'johto': (152, 251), 'hoenn': (252, 386)}
+    # Derived from dex_data.py rather than written out again -- this dict
+    # stopped at Hoenn while dex.h was already 493, so `pack_pmd.py sinnoh`
+    # was not a command that existed.
+    import sys as _s
+    _s.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from dex_data import REGIONS as _DR
+    span = {name.lower(): (lo, hi) for name, lo, hi, _st in _DR}
     picked = [span[a] for a in args if a in span]
     nums = [int(a) for a in args if a.isdigit()]
     if not nums:

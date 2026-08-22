@@ -33,6 +33,17 @@ tools/pokeapi_cache/
 # let each user package the sprites from the original sources.
 tools/sdcard/mons/*.bin
 
+# The region bundles themselves. web/README.md has always SAID these are
+# gitignored and shipped as a GitHub Release -- but the rule was never actually
+# written, so three of them were tracked and ~105 MB sat in the history against
+# the repo's own stated intent. The installer already prefers a local file and
+# falls back to PAK_RELEASE, so serving them from the release is the path it
+# was built for.
+#
+#   bash tools/build_web.sh
+#   gh release create v3.3 web/sprites-*.pak --title "TamaPoke v3.3"
+web/sprites-*.pak
+
 # Emulator save files and downloaded generator intermediates: local scratch, not
 # artefacts. They were committed by accident once.
 tamapoke.nvs

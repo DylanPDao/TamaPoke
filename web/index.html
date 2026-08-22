@@ -100,6 +100,7 @@
       <button id="auto" data-region="kanto" disabled>⬇️ Kanto sprites (~40 MB)</button>
       <button id="autoj" data-region="johto" disabled>⬇️ Johto (~27 MB)</button>
       <button id="autoh" data-region="hoenn" disabled>⬇️ Hoenn (~38 MB)</button>
+      <button id="autos" data-region="sinnoh" disabled>⬇️ Sinnoh (~33 MB)</button>
     </div>
     <p class="note">Have your own <code>.bin</code> files? <label style="cursor:pointer;text-decoration:underline">pick them manually<input id="files" type="file" accept=".bin" multiple disabled hidden></label></p>
     <p class="note">🎨 Want to make your own sprites? See <a href="https://github.com/DylanPDao/TamaPoke#generate-and-load-the-sprites-yourself" target="_blank">how to generate &amp; load them</a> in the repo.</p>
@@ -204,10 +205,7 @@ document.getElementById('connect').onclick = async () => {
     writer = port.writable.getWriter();
     lineBuf = '';
     log('Connected. Press "Load sprites".');
-    for (const id of ['auto', 'autoj', 'autoh']) {
-      const b = document.getElementById(id);
-      if (b) b.disabled = false;
-    }
+    for (const b of document.querySelectorAll('[data-region]')) b.disabled = false;
     document.getElementById('files').disabled = false;
     probeRegions();      // grey out any region that has no bundle to download
     document.getElementById('connect').disabled = true;
@@ -251,9 +249,7 @@ async function fetchPak(region) {
 // that can only fail -- "Failed to fetch" means nothing to somebody installing
 // this for the first time.
 async function probeRegions() {
-  for (const id of ['auto', 'autoj', 'autoh']) {
-    const b = document.getElementById(id);
-    if (!b) continue;
+  for (const b of document.querySelectorAll('[data-region]')) {
     const region = b.dataset.region;
     let found = false;
     for (const url of pakUrls(region)) {
@@ -288,10 +284,9 @@ async function loadRegion(btn) {
   await sendAll(items);
   log(`${region} done. You can load another region, or stop here.`);
 }
-for (const id of ['auto', 'autoj', 'autoh']) {
-  const b = document.getElementById(id);
-  if (b) b.onclick = () => loadRegion(b);
-}
+// Driven off the markup, so adding a region is ONE new button and nothing
+// else. This was three separate hardcoded id lists.
+for (const b of document.querySelectorAll('[data-region]')) b.onclick = () => loadRegion(b);
 
 document.getElementById('files').onchange = async (ev) => {
   const files = [...ev.target.files];
