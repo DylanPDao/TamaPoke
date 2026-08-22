@@ -35,6 +35,9 @@ extern uint8_t rpickPage;
 uint8_t rpickRegions(uint8_t mode);
 uint8_t rpickPageCount(uint8_t mode);
 uint8_t rpickModeNow();
+// rows per page, derived: nreg and pages both come from the firmware, so this
+// never becomes a second copy of RPICK_PER_PAGE.
+static uint8_t RPICK_PER_PAGE_T(){ uint8_t n=rpickRegions(rpickModeNow()), p=rpickPageCount(rpickModeNow()); return (uint8_t)((n + p - 1) / p); }
 
 static int bad=0;
 static void clearAll(){
@@ -192,6 +195,32 @@ int main(){
         if (pg * perPage + row < nreg) seen++;
     if (seen != nreg) { printf("FAIL  dexpick    only %d of %u regions have a row\n", seen, nreg); bad++; }
     else printf("PASS  %-10s every region has a row across the pages\n", "dexpick");
+  }
+
+  // THE GYM CHOOSER PAGES TOO, and that is not a copy of the case above: it
+  // runs in a different mode with its own region count. GYM_REGIONS became 4
+  // when Sinnoh got a ladder, so Sinnoh sits on PAGE 2 -- built, reachable only
+  // by paging, and invisible if paging does not engage here. That is the exact
+  // shape that hid Sinnoh in the Pokedex chooser.
+  {
+    clearAll();
+    gRegionArt = 0xFFFF;
+    gymOpen = true; gymPick = true; rpickPage = 0;
+    uint8_t nreg  = rpickRegions(rpickModeNow());
+    uint8_t pages = rpickPageCount(rpickModeNow());
+    if (nreg != GYM_REGIONS) { printf("FAIL  gympick    lists %u regions, not GYM_REGIONS=%d\n", nreg, (int)GYM_REGIONS); bad++; }
+    else printf("PASS  %-10s lists every ladder (%u)\n", "gympick", nreg);
+    if (pages < 2) { printf("FAIL  gympick    %u regions but only %u page -- the last ladder is unreachable\n", nreg, pages); bad++; }
+    else printf("PASS  %-10s needs %u pages and says so\n", "gympick", pages);
+    onSwipe(-1);
+    if (!gymOpen || !gymPick) { printf("FAIL  gympick    closed on a swipe instead of paging\n"); bad++; }
+    else if (rpickPage != 1) { printf("FAIL  gympick    did not advance a page (page=%u)\n", rpickPage); bad++; }
+    else printf("PASS  %-10s pages on a horizontal swipe\n", "gympick");
+    // the LAST ladder must actually be selectable from the page it lands on
+    uint8_t last = (uint8_t)(nreg - 1);
+    rpickPage = (uint8_t)(last / RPICK_PER_PAGE_T());
+    if (rpickPage >= pages) { printf("FAIL  gympick    the last ladder is on no page\n"); bad++; }
+    else printf("PASS  %-10s the last ladder lands on page %u of %u\n", "gympick", rpickPage + 1, pages);
   }
 
   // The sprite pack is a real gate: without it the region is not selectable,

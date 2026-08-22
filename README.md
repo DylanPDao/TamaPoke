@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v3.3-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v3.4-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -66,15 +66,20 @@ region's answer, so it cannot be flipped to farm a legendary.
 Turn- and move-based, with the real type chart, ailments and STAB. Real Game Boy
 battle music plays throughout.
 
-### Three regions
+### Four regions
 
 | Pick a ladder | Johto's gyms | LAN battle |
 |---|---|---|
 | <img src="docs/screens/gympick.png" width="240"> | <img src="docs/screens/gymsj.png" width="240"> | <img src="docs/screens/lanready.png" width="240"> |
 
-Kanto, Johto and Hoenn each have eight leaders, an Elite 4 and a champion, on
-easy and hard. The teams are the games' own, checked against the pokecrystal and
-pokeemerald disassemblies.
+Kanto, Johto, Hoenn and Sinnoh each have eight leaders, an Elite 4 and a
+champion, on easy and hard. The teams are the games' own, checked against the
+pokecrystal, pokeemerald and pokeplatinum disassemblies -- **0 differences
+across all 39 trainers**, re-checkable with `tools/verify_rosters.py`.
+
+Sinnoh follows **Platinum**, where Fantina is the *third* gym rather than
+Diamond/Pearl's fifth; the level ramp only runs 14/22/26/32/37/41/44/50 that
+way. Same reasoning that makes Hoenn Emerald throughout.
 
 ### Collecting
 
@@ -220,11 +225,13 @@ After any ending, a **new egg** appears.
   neglect. Both streak & bond improve egg/shiny odds — **and the IVs of your next pet**.
 - **8 medals** (Lv10/25/50, favorite berry found, 7-day streak, max bond, final form,
   "fit" = weight 0 & no slip-ups), per-pet + a global counter.
-- **Pokédex:** raising a species registers it; **386 + shinies** to complete.
-  Browsed **one region at a time** — swipe vertically for Kanto/Johto/Hoenn,
+- **Pokédex:** raising a species registers it; **493 + shinies** to complete.
+  Browsed **one region at a time** — swipe vertically for Kanto/Johto/Hoenn/Sinnoh,
   horizontally to page within it, so nothing is more than ten pages from the front.
 - **Region:** the pill under a waiting egg picks which generation it comes from —
-  **Kanto / Johto / Hoenn / All**. A first egg gives that region's starter.
+  **Kanto / Johto / Hoenn / Sinnoh / All**. A first egg gives that region's starter.
+  A region whose **sprite pack is not on the card** shows as locked and is kept
+  out of the egg pool, so a partial sprite install is a supported state.
 
 ### Battle stats & IVs
 Every pet rolls four **IVs** (individual values, 0–31) at hatch — ATK / DEF / SPD /

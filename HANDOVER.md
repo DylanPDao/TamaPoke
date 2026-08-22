@@ -11,7 +11,7 @@ permanent knowledge.
 | | |
 |---|---|
 | Published firmware | **v3.3**, live at https://dylanpdao.github.io/TamaPoke/web/ |
-| Repo version | **v3.3** in `TamaPoke.ino` |
+| Repo version | **v3.4** in `TamaPoke.ino` — Sinnoh gyms, **not yet flashed/published** |
 | Your board | on **v3.3**, flashed and verified |
 | Live creature | Dragonair L45, `iv=31/31/31/31 tr=100/100/100`, Charizard\* L100 banked |
 | Branch | `feat/dex-expansion-phase0`, pushed, **no PR** |
@@ -81,10 +81,21 @@ already in (`('SINNOH', 387, 493, [387, 390, 393])`).
 - ~~**Phase 2 — region gating.**~~ **DONE** (`05a28cb`) — see §7.
 - ~~**Sinnoh sprites**~~ **DONE** (`6987c83`) — all 214 files packed, every
   region 100%, `thumbs.bin` regenerated at 493, installer shipping v3.3.
-- **Sinnoh gyms and badges** — still to do. Verify rosters against
-  `pret/pokeplatinum`, re-run `gen_badges.py`. `GYM_REGIONS` is still 3, and
-  `roster_test` now asserts `<= REGION_COUNT - 1` rather than equality, so
-  adding a fourth ladder is a data change plus that constant.
+- ~~**Sinnoh gyms and badges**~~ **DONE.** `GYM_REGIONS` is 4, `BADGE_REGIONS`
+  is 4, and `verify_rosters.py` checks all three added regions against their own
+  disassemblies: **0 of 39 trainers differ.**
+
+  Sinnoh is **Platinum**: Fantina is the THIRD gym, not Diamond/Pearl's fifth.
+  The level ramp only runs 14/22/26/32/37/41/44/50 that way, and `roster_test`
+  fails a leader 8+ levels below the previous, so the wrong order fails a test.
+
+  `GYM_REGIONS` 3 -> 4 is purely additive for saves: `badgesX[GYM_REGIONS - 1]`
+  grows and `getBytes` leaves the shorter stored blob in the front of the bigger
+  array, so Johto/Hoenn badges keep their meaning and Sinnoh starts empty.
+
+  **The gym chooser now needs TWO pages** (4 ladders, 3 rows a page), so Sinnoh
+  sits on page 2 -- `swipe_test` drives that mode specifically, because the
+  dexpick case runs in a different mode and does not speak for it.
 - **Trading.** Discussed, not started. `linkMonFrom`/`linkMonTo` already
   serialise a creature both ways, so the exchange is cheap; the hard part is
   atomicity (both sides commit or neither). **Do the radio bring-up first** —

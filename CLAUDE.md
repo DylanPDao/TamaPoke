@@ -779,7 +779,7 @@ region with its own progress (badges n/8, or dex n/total), paging back off the
 front of a ladder or grid returns to it, and the vertical swipe still works as a
 shortcut. `swipe_test` asserts both screens land on it.
 
-**Phase 3 landed: three ladders.** `trainers.h` holds `TRAINERS_KANTO/JOHTO/
+**Phase 3 landed: four ladders.** `trainers.h` holds `TRAINERS_KANTO/JOHTO/
 HOENN` behind `TRAINER_SETS[GYM_REGIONS]`, and the gym screen changes ladder on
 a vertical swipe -- the same gesture the Pokedex uses, and the swipe-left
 chooser that was once planned is not needed. `TrainerMon::dex` had to widen to
@@ -796,7 +796,15 @@ leaving the gym list mid-battle cannot retarget the badge.
 **All three rosters are VERIFIED against the games.** `tools/verify_rosters.py`
 diffs Johto and Hoenn against `pret/pokecrystal` and `pret/pokeemerald` -- the
 disassemblies, which are the games' own tables and so beat any wiki. It reports
-**0 differences across all 26 trainers**. Re-run it after touching a roster.
+**0 differences across all 39 trainers**. Re-run it after touching a roster.
+
+Sinnoh is **PLATINUM**, and the ladder ORDER differs from Diamond/Pearl:
+Fantina is the third gym here, the fifth there. The level ramp is what pins it
+-- 14/22/26/32/37/41/44/50 is monotonic only that way, and `roster_test` fails a
+leader 8+ levels below the previous, so the D/P order trips a test rather than
+shipping. Same shape as Hoenn being Emerald throughout. pokeplatinum stores one
+JSON per trainer with rematches in their own files, so unlike Crystal and
+Emerald there is no "first party" ambiguity to get wrong.
 
 It found ten, which is why it exists: Lance was missing his Charizard and had
 Dragonair where Dragonite belongs, Roxanne was two levels high, Norman and

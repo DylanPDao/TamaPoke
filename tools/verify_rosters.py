@@ -25,6 +25,20 @@ from dex_data import DEX
 
 CRYSTAL = 'https://raw.githubusercontent.com/pret/pokecrystal/master/data/trainers/parties.asm'
 EMERALD = 'https://raw.githubusercontent.com/pret/pokeemerald/master/src/data/trainer_parties.h'
+# Platinum keeps ONE JSON PER TRAINER, and rematches are their own files -- so
+# unlike Crystal and Emerald there is no "take the first party" ambiguity here.
+PLATINUM = 'https://raw.githubusercontent.com/pret/pokeplatinum/main/res/trainers/data/%s.json'
+
+# Ladder order, which is NOT the same as Diamond/Pearl: Fantina is the third gym
+# in Platinum and the fifth there. The level ramp is what pins it -- 14/22/26/32
+# /37/41/44/50 is monotonic only this way.
+SINNOH_FILES = ['leader_roark', 'leader_gardenia', 'leader_fantina',
+                'leader_maylene', 'leader_wake', 'leader_byron',
+                'leader_candice', 'leader_volkner', 'elite_four_aaron',
+                'elite_four_bertha', 'elite_four_flint', 'elite_four_lucian',
+                'champion_cynthia']
+SINNOH = ['ROARK', 'GARDENIA', 'FANTINA', 'MAYLENE', 'WAKE', 'BYRON', 'CANDICE',
+          'VOLKNER', 'AARON', 'BERTHA', 'FLINT', 'LUCIAN', 'CYNTHIA']
 
 JOHTO = ['FALKNER', 'BUGSY', 'WHITNEY', 'MORTY', 'CHUCK', 'JASMINE', 'PRYCE',
          'CLAIR', 'WILL', 'KOGA', 'BRUNO', 'KAREN', 'LANCE']
@@ -141,11 +155,25 @@ def compare(label, mine, theirs, names):
     return diffs
 
 
+def platinum_parties():
+    """{OUR NAME: [(dex, level), ...]} straight out of pokeplatinum's JSON."""
+    import json
+    out = {}
+    for fn, name in zip(SINNOH_FILES, SINNOH):
+        d = json.loads(fetch(PLATINUM % fn))
+        team = []
+        for m in d['party']:
+            team.append((dex_of(m['species'].replace('SPECIES_', '')), m['level']))
+        out[name] = team
+    return out
+
+
 def main():
     cj = crystal_parties(fetch(CRYSTAL))
     eh = emerald_parties(fetch(EMERALD))
     n = compare('JOHTO (pokecrystal)', ours('JOHTO'), cj, JOHTO)
     n += compare('HOENN (pokeemerald)', ours('HOENN'), eh, HOENN)
+    n += compare('SINNOH (pokeplatinum)', ours('SINNOH'), platinum_parties(), SINNOH)
     print('%d trainers differ in total' % n)
     return 1 if n else 0
 
