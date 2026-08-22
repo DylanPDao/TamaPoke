@@ -20,7 +20,7 @@ Personal, non-commercial fan project. Code MIT; sprites CC BY-NC (PMD SpriteColl
 | `pin_config.h` | Board pinout — from the official Waveshare repo, don't invent values |
 | `tools/*.py` | Sprite pipeline (PMD fetch/pack, thumbs, bundle, USB send) |
 | `tools/emu/` | Desktop emulator: runs the real firmware in an SDL window |
-| `web/` | ESP Web Tools installer page + prebuilt `tamapoke.bin` + `sprites.pak` |
+| `web/` | ESP Web Tools installer page + prebuilt `tamapoke.bin` + `sprites-<region>.pak` (committed: release assets have no CORS) |
 
 ## Build & flash
 
@@ -29,7 +29,7 @@ FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=
 arduino-cli compile --fqbn "$FQBN" .
 arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn "$FQBN" .
 
-bash tools/build_web.sh   # recompiles + merges web/firmware/tamapoke.bin + repacks sprites.pak
+bash tools/build_web.sh   # recompiles, writes the 4 parts, bumps the manifest, repacks every region
 ```
 
 **PSRAM (OPI) is mandatory** — the 466×466×16-bit framebuffer is ~434 KB and lives there.
@@ -106,6 +106,25 @@ they surfaced over months rather than at once:
 **The rule: anything holding a dex is `int16_t`, and any loop bound is
 `DEX_COUNT`.** Never the literal 151, never `uint8_t`.
 
+**And wearing an INDEX:** a move's index is its position in `MOVES`
+(`dex_moves.py`; `gen_moves.py` does `idx = i + 1`), and `Pet::moves[]` /
+`PartyMon::moves[]` store that index RAW in NVS. Inserting a move into its type
+section shifts every later move by one and silently rewrites the moveset of
+every creature already saved -- the live pet and every banked member, on every
+player's device. **New moves go at the END**, after STRUGGLE, under the
+`APPEND-ONLY BELOW HERE` marker. Same family as the box getting its own NVS key
+and badges being stored additively: never reinterpret bytes that already exist.
+
+**The same trap wearing a table instead of a width:** a helper that keeps its
+own copy of the REGION list. Four were found at once when Sinnoh landed --
+`pack_bundle.py` (whose comment literally read "Must match REGIONS in
+dex_data.py" while it did not, so `sprites-sinnoh.pak` could never be built),
+`pack_pmd.py`'s `span` dict (so `pack_pmd.py sinnoh` was not a command),
+`index.html`'s button ids hardcoded in THREE separate JS loops, and
+`renderRegionPick()`/`regionPickTap()` looping `GYM_REGIONS` in all three modes
+so **Sinnoh had no row in the Pokedex chooser at all** while the gallery cycled
+it happily. Derive the list; never restate it.
+
 **What hides it:** the neighbouring code is often already correct, so the screen
 looks half-right and nobody suspects a width. `SdThumbs::get()` takes an
 `int16_t`, so the gallery and the silhouettes were perfect while the creature on
@@ -122,9 +141,27 @@ the main screen was somebody else entirely.
   not one a restore produced, or it validates itself. It did exactly that until
   it was moved.
 
-**The habit that catches all three: break it on purpose and watch the test
+**The specific shape, found four times in one session:** an assertion pinned to
+a VALUE that happens to hold rather than to the RULE.
+
+- `hit_test` checked the region was unchanged after 12 taps on the egg pill. The
+  taps were 8 px out -- INSIDE the 16 px hit area, so every one was a direct
+  hit -- and it passed only because `12 % REGION_COUNT(4) == 0` came full
+  circle. Sinnoh made it 5 and it broke. The dead guard band that section 4 says
+  this test protects had **never once been exercised**.
+- `roster_test` asserted `GYM_REGIONS == REGION_COUNT - 1`, true until a region
+  had data but no ladder -- which is the normal state mid expansion.
+- A new gating check asserted `nextAvailableRegion(0) == 0`, encoding a wrong
+  guess about `REGION_ALL` rather than the invariant.
+- Worst, a check phrased as a NEGATIVE ("never rests on a locked region") was
+  **vacuously true** when nothing was locked, and survived deleting the gate
+  entirely. Only the negative-check caught it.
+
+**The habit that catches all of them: break it on purpose and watch the test
 fail.** Every guard added since has been negative-checked that way, and it has
-caught a bad test roughly as often as it has confirmed a good one.
+caught a bad test roughly as often as it has confirmed a good one. If an
+assertion cannot fail, it is not a test. A guard phrased as "X never happens"
+needs a companion proving the mechanism actually engaged.
 
 ### 4. What the emulator structurally cannot see
 
@@ -787,7 +824,18 @@ separated layout, and Johto's and Hoenn's sheets have neighbours that touch into
 a single wide span. It now splits anything much wider than the median column
 rather than demanding a layout only Kanto has.
 
-Still to do: phase 4 (sprites, and the web-installer size problem below).
+**Phase 2 landed: region gating.** A region is playable only if its sprite pack
+is on the card. `sdScanRegionArt()` probes three files per region at mount and
+narrows `gRegionArt`; without a pack the chooser row is greyed reading NEEDS
+PACK, the pill skips it, `setRegion()` refuses it and the egg pool excludes it,
+`REGION_ALL` filtering per species. **Locked, never hidden** -- hiding is how
+Johto and Hoenn once looked absent. The mask DEFAULTS to all-set and is only
+narrowed by the SD, which gives "no card keeps today's behaviour" for free and
+keeps `pet.cpp` free of SD symbols (it links into all 33 test binaries, none of
+which build `sdmon.cpp`).
+
+**Phase 4 landed: the sprites.** All four regions are 100% packed
+(302/200/270/214 files) and `thumbs.bin` regenerates at 493.
 
 What changed for 386 species:
 
@@ -800,10 +848,18 @@ What changed for 386 species:
   lines ~243, 256, 283, 295, 572, 592 and `pet.h` `isRegistered`/
   `isShinyRegistered`. These are the ones that will bite.
 - `"POKEDEX %u/151"` is hardcoded in all six languages.
-- Sprites on the SD go 40 MB -> ~100 MB. Fine on a card.
-- **The blocker is the web installer**: `sprites.pak` goes 58 MB -> ~150 MB,
-  which is not practical to flash through a browser. Split it by region or make
-  the sprite load optional before attempting this.
+- Sprites on the SD go 40 MB -> ~135 MB. Fine on a card.
+- ~~The blocker is the web installer~~ **solved, and not by making the load
+  optional.** The bundle is ONE FILE PER REGION (`web/sprites-<region>.pak`,
+  40/27/38/33 MB), so nobody flashes 140 MB in a browser -- most people take
+  Kanto and stop. It is also forced rather than chosen: GitHub's hard per-file
+  limit is 100 MB and a single bundle would be uncommittable.
+- **The `.pak` files ARE committed, and must be.** They have to be served
+  same-origin from Pages, because **GitHub release assets send no CORS headers
+  at all** -- a browser `fetch()` of one is blocked. Verified with an `Origin`
+  header: `200`, and no `access-control-allow-origin`. `web/README.md` claimed
+  the exact opposite for a long time and acting on it untracks them and breaks
+  every download button. The code comment in `.gitignore` was the true one.
 - `dex_moves.py` is 77 moves hand-picked so every *Kanto* typing has a STAB
   option; Hoenn adds species that would need coverage added.
 - Johto/Hoenn gyms are pure data, in the shape `trainers.h` already uses.
@@ -922,6 +978,13 @@ than once" -- this is case 1 of that pattern, not a one-off.
 
 It also drives `learnableFor()`, because the move picker having its own copy of
 the TM gate is the same mistake wearing a different hat.
+
+The **region chooser** is paged too (three rows a page, four regions and
+growing) and is in there as well. It is the one screen that WRAPS rather than
+closing off the end -- it is the root of its own screen and at first boot there
+is nowhere to go back to -- and `rpickSwipe()` must be checked FIRST in
+`onSwipe()`, because the starter screen's `if (pet.awaitingStarter()) return;`
+would otherwise swallow the gesture and make the first-boot chooser unpageable.
 
 ### Battle system — decided, not started
 

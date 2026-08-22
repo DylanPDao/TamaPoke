@@ -1,6 +1,6 @@
 # TamaPoke — where things stand
 
-Written 2026-08-20, updated 2026-08-21, so work can resume after a restart.
+Written 2026-08-20, updated 2026-08-21 (twice), so work can resume after a restart.
 Read this with `CLAUDE.md`; this file is the *current* state, that one is the
 permanent knowledge.
 
@@ -10,11 +10,12 @@ permanent knowledge.
 
 | | |
 |---|---|
-| Published firmware | **v3.0**, live at https://dylanpdao.github.io/TamaPoke/web/ |
-| Repo version | **v3.2** in `TamaPoke.ino` — bumped, **not published** |
-| Your board | on **v3.0**, needs the v3.2 flash (see §4a) |
+| Published firmware | **v3.3**, live at https://dylanpdao.github.io/TamaPoke/web/ |
+| Repo version | **v3.3** in `TamaPoke.ino` |
+| Your board | on **v3.3**, flashed and verified |
 | Live creature | Dragonair L45, `iv=31/31/31/31 tr=100/100/100`, Charizard\* L100 banked |
-| Branch | `feat/dex-expansion-phase0`, **2 commits ahead of the push**, no PR |
+| Branch | `feat/dex-expansion-phase0`, pushed, **no PR** |
+| Sprites | all four regions 100% (302/200/270/214), `thumbs.bin` at 493 |
 | Tests | 33 suites, **33 passing** — first fully green run on this branch |
 
 **Everything merged and published today:** RETIRE, the move-picker TM gate, type
@@ -77,13 +78,13 @@ already in (`('SINNOH', 387, 493, [387, 390, 393])`).
 
 ## 3. Not started
 
-- **Phase 2 — region gating.** Hide regions whose sprite pack is not on the SD:
-  filter the Pokédex chooser, the egg region chooser and the egg pool. Agreed
-  rules: creatures you already own always display; **no SD at all keeps today's
-  behaviour** rather than an empty game; species with no art anywhere stay in the
-  dex at their own number but are kept out of the egg pool.
-- **Phase 3 — Sinnoh sprites, gyms, badges.** Pack with `pack_pmd.py`, verify
-  rosters against `pret/pokeplatinum`, re-run `gen_badges.py`.
+- ~~**Phase 2 — region gating.**~~ **DONE** (`05a28cb`) — see §7.
+- ~~**Sinnoh sprites**~~ **DONE** (`6987c83`) — all 214 files packed, every
+  region 100%, `thumbs.bin` regenerated at 493, installer shipping v3.3.
+- **Sinnoh gyms and badges** — still to do. Verify rosters against
+  `pret/pokeplatinum`, re-run `gen_badges.py`. `GYM_REGIONS` is still 3, and
+  `roster_test` now asserts `<= REGION_COUNT - 1` rather than equality, so
+  adding a fourth ladder is a data change plus that constant.
 - **Trading.** Discussed, not started. `linkMonFrom`/`linkMonTo` already
   serialise a creature both ways, so the exchange is cheap; the hard part is
   atomicity (both sides commit or neither). **Do the radio bring-up first** —
@@ -124,7 +125,7 @@ band, derives the offset from the rects it already queries instead of copying
 
 ---
 
-## 4a. The overnight runaway, and the flash that is still owed (`91aa43c`)
+## 4a. The overnight runaway (`91aa43c`) — fixed and FLASHED
 
 A player woke to a Dragonair that had run away **after a night of correct
 auto-sleep**. It went to bed with all four bars at zero, which armed
@@ -140,7 +141,8 @@ counter cannot outlive the state that earned it. `sleep_test` has the
 morning-after repro plus a guard that a genuinely empty creature on waking is
 still ready to leave. FW_VERSION and the README badge moved to **3.2**.
 
-**The board is still on v3.0, so the bug is still live on it:**
+Flashed and confirmed on the board: `TamaPoke fw v3.3`, pet intact through the
+upgrade (NVS is never touched by a USB flash).
 
     arduino-cli upload -p /dev/cu.usbmodem1101 \
       --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB" .
@@ -151,6 +153,49 @@ the delivery mechanism — it can now only fire on a creature genuinely empty
 shape CLAUDE.md §4 warns about.
 
 ---
+
+## 4b. Region gating and the installer (`05a28cb`, `6987c83`, `dee84f9`)
+
+**The sprite pack is a real gate.** A region without its `.pak` on the card is
+greyed in the chooser reading NEEDS PACK, denies on tap, is skipped by the egg
+pill, refused by `setRegion()`, and excluded from the egg pool — `REGION_ALL`
+filtering per species so a missing Sinnoh pack cannot put a Sinnoh creature in a
+mixed egg. **Locked, never hidden.** Verified live on the board:
+
+    art: KANTO  si
+    art: JOHTO  si
+    art: HOENN  si
+    art: SINNOH NO (falta el pack)
+
+`gRegionArt` defaults to ALL SET and is only narrowed by `sdScanRegionArt()`,
+which probes THREE files per region (a half-copied 100 MB pack would pass a
+single probe). That default is doing two jobs: no card keeps today's behaviour,
+and `pet.cpp` stays free of SD symbols — it links into all 33 test binaries and
+none of them build `sdmon.cpp`.
+
+**The chooser is paged**, wraps rather than closing, and `rpickSwipe()` runs
+FIRST in `onSwipe()` or the starter screen swallows the gesture. It is in
+`swipe_test`, as every paged screen must be.
+
+### The installer, and the trap in it
+
+**The `.pak` files ARE committed and must be.** Release assets send **no CORS
+headers**, so a browser `fetch()` of one is blocked — verified with an `Origin`
+header: `200`, no `access-control-allow-origin`. `web/README.md` said the exact
+opposite ("gitignored", "not committed", release "serves
+Access-Control-Allow-Origin"); acting on it untracks them and breaks every
+download button for everyone. That happened, in `06db7b9`, and was reverted in
+`dee84f9`. The README is rewritten; **`.gitignore`'s comment was the true one.**
+
+Second-order damage worth knowing: removing that bad ignore rule by truncating
+the file also deleted the seven lines after it (`tamapoke.nvs`, `tools/_*.svg`,
+`backups/`), and a `git add -A` promptly committed the save backups — whose own
+comment reads "They were committed by accident once". Edit `.gitignore` by
+replacing a block, never by slicing at an index.
+
+`check_installer.py` still passes on every build, guarding both rules that each
+destroyed a real save: four parts at their own offsets, and
+`new_install_prompt_erase: true`.
 
 ## 5. Pitfalls — the ones that have actually cost time
 
