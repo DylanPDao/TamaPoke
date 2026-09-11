@@ -36,7 +36,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "3.11"
+#define FW_VERSION "3.11-kids1"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -54,6 +54,7 @@ PmdMon pmd;         // sprite PMD multi-accion (pantalla principal)
 PmdMon evoPmd;      // forma anterior, solo durante el parpadeo de evolucion
 int16_t monFor = -2;
 bool monShinyFor = false;
+uint8_t monFormFor = 0;
 
 // comportamiento del bicho en pantalla
 struct {
@@ -142,6 +143,16 @@ uint8_t boxDetail = 0;        // box slot + 1 whose sheet is open
 bool releaseConfirm = false;
 #define BOX_PER_PAGE 6
 uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
+// Begruessung: a banner on the main screen for a few seconds after boot and
+// whenever the device is picked up again after a long idle (see GREET_IDLE_MS).
+// Time of day + trainer name on top, a line about the creature underneath.
+uint32_t greetUntil = 0;
+uint32_t hoopaBannerUntil = 0;   // "HOOPA ist da!" right after the unlock
+#define HOOPA_BANNER_MS 6000UL
+#define FORM_BTN_Y 172   // the form CTA sits where the evolve CTA would (EVO_BTN_Y)
+#define GREET_MS 4500UL
+#define GREET_IDLE_MS (20UL * 60 * 1000)   // picked up after 20 min away = greet again
+#define SPLASH_MS 1800UL                    // how long the boot screen stays up
 char partyBannerName[14] = "";
 #define PARTY_CELL_W 150
 #define PARTY_CELL_H 70
@@ -667,6 +678,7 @@ void setup() {
   // botella del fps (~56ms a 40MHz). Si el panel mostrara basura, bajar a 40M.
   if (!gfx->begin(80000000)) Serial.println("gfx->begin() fallo");
   panel->setBrightness(180);
+  drawSplash();   // eigener Bootscreen, up while the rest of setup runs
 
   touch.setPins(TP_RESET, TP_INT);
   bool touchOk = false;
@@ -700,25 +712,31 @@ void setup() {
     Serial.println("RTC sin hora: sembrado, sin progresion offline esta vez");
   }
   pet.syncClock(e);
+  pet.checkCalendar(e);   // Halloween window + the Hoopa unlock
 
   audioBegin();  // ES8311 + I2S + amplificador (suena un jingle de arranque)
 
+  // Hold the boot screen so it is actually seen, then greet. delay() is a no-op
+  // in the emulator, so the headless tests do not pay for this.
+  delay(SPLASH_MS);
+  greetUntil = millis() + GREET_MS;
   lastInteract = millis();
 }
 
 // carga/descarga el sprite de SD cuando cambia la especie
 void ensureMon() {
-  if (pet.speciesId == monFor && monShinyFor == pet.shiny && !sdDirty) return;
+  if (pet.speciesId == monFor && monShinyFor == pet.shiny && monFormFor == pet.form && !sdDirty) return;
   sdDirty = false;
   monFor = pet.speciesId;
   monShinyFor = pet.shiny;
+  monFormFor = pet.form;
   mon.unload();
   pmd.unload();
   beh.x = beh.targetX = 233;
   beh.mode = 0;
   beh.until = 0;
   if (pet.speciesId >= 1 && pet.speciesId <= DEX_COUNT) {
-    pmd.load(pet.speciesId, pet.shiny);          // principal: PMD
+    pmd.load(pet.speciesId, pet.shiny, pet.form);   // principal: PMD (form-aware)
     if (!pmd.loaded) mon.load(pet.speciesId, pet.shiny);  // respaldo: B/N
   }
 }
@@ -788,11 +806,17 @@ void loop() {
     if (pwrShortPressed()) {
       screenOff = !screenOff;
       pet.setScreenOff(screenOff);   // asleep only if it is also night
-      if (!screenOff) lastInteract = now;
+      if (!screenOff) {
+        if (now - lastInteract > GREET_IDLE_MS) greetUntil = now + GREET_MS;
+        lastInteract = now;
+      }
     }
   }
 
   updateBrightness(now);
+  // Kids mode only reads this: awake + attended drains, put down dozes. dimStage
+  // is 0 for 90 s after the last touch, which is exactly "somebody is here".
+  pet.setAttended(!screenOff && dimStage == 0);
 
   // vuelca el autoguardado periodico SOLO con la pantalla atenuada/apagada o
   // durmiendo: la escritura a NVS congela ~1s ambos cores (caché de flash off),
@@ -809,6 +833,13 @@ void loop() {
     lastClock = now;
     uint32_t e = rtcEpoch();
     if (e) pet.lastSeenEpoch = e;
+    pet.checkCalendar(e);
+  }
+  if (pet.hoopaNews) {   // the event just fired: say so, once
+    pet.hoopaNews = false;
+    hoopaBannerUntil = now + HOOPA_BANNER_MS;
+    lastInteract = now;
+    sfxPlay(SFX_MEDAL);
   }
 
   // latido de salud cada 5 min (para el soak test; se descarta si no hay monitor)
@@ -974,6 +1005,12 @@ void handleSerial() {
       Serial.println("uso: BATTLE <dex> [nivel]");
     }
     Serial.println("DONE");
+  } else if (line == "HOOPA") {  // fire the Halloween unlock now (testing)
+    pet.unlockHoopa();
+    Serial.printf("hoopa: unlocked=%d pending=%d eggIsHoopa=%d\n", pet.hoopaUnlocked, pet.hoopaPending, pet.eggIsHoopa());
+  } else if (line == "FORM") {   // toggle a HOOPA's form (testing)
+    pet.toggleForm();
+    Serial.printf("form=%u\n", pet.form);
   } else if (line == "SHINY") {  // alterna shiny del actual (pruebas)
     pet.shiny = !pet.shiny;
     Serial.printf("shiny=%d\n", pet.shiny);
@@ -1148,6 +1185,7 @@ void handleTouch() {
     swallowGesture = (dimStage > 0) || screenOff;  // si estaba a oscuras, solo despierta
     if (screenOff) pet.setScreenOff(false);        // waking the screen wakes it
     screenOff = false;
+    if (millis() - lastInteract > GREET_IDLE_MS) greetUntil = millis() + GREET_MS;
     lastInteract = millis();
   } else if (pressed) {  // sigue apoyado
     tXl = x;
@@ -1883,6 +1921,8 @@ void onTap(int16_t x, int16_t y) {
     } else if (choiceKind == 2) {          // despedida
       if (b1) pet.startFarewell();
       else if (b2) pet.declineFarewell();
+    } else if (choiceKind == 4) {          // HOOPA: change form
+      if (b1) pet.toggleForm();
     }
     choiceKind = 0;
     return;
@@ -1916,6 +1956,13 @@ void onTap(int16_t x, int16_t y) {
   if (pet.wantEvolveButton() && x >= EVO_BTN_X && x <= EVO_BTN_X + EVO_BTN_W &&
       y >= EVO_BTN_Y && y <= EVO_BTN_Y + EVO_BTN_H) {
     choiceKind = 1; choiceUntil = millis() + 12000;
+    return;
+  }
+  // HOOPA's form button lives in the same slot (only when no other CTA is up)
+  if (pet.canChangeForm() && !pet.wantEvolveButton() && !pet.canRunawayNow() &&
+      !pet.wantFarewellButton() && x >= EVO_BTN_X && x <= EVO_BTN_X + EVO_BTN_W &&
+      y >= FORM_BTN_Y && y <= FORM_BTN_Y + EVO_BTN_H) {
+    choiceKind = 4; choiceUntil = millis() + 12000;
     return;
   }
   // botones de final (mismo recuadro): escapada directa; despedida abre dialogo.
@@ -2277,7 +2324,14 @@ void render() {
       for (auto &c : CRACK1) gfx->fillRect(x + c[0] * s, y + c[1] * s, s, s, INK_K);
     if (pet.eggCracks() >= 2)
       for (auto &c : CRACK2) gfx->fillRect(x + c[0] * s, y + c[1] * s, s, s, INK_K);
-    if (pet.eggRarity() >= R_RARO) {
+    if (pet.eggIsHoopa()) drawHoopaRing(CX, PET_CY, millis());
+    if (pet.eggIsHoopa()) {
+      const char *rar = T(S_HOOPA_EGG);
+      gfx->setTextColor(UI_BAR_WARN);
+      gfx->setTextSize(1);
+      gfx->setCursor(CX - strlen(rar) * 3, 298);   // above the bottom panel
+      gfx->print(rar);
+    } else if (pet.eggRarity() >= R_RARO) {
       const char *rar = (pet.eggRarity() == R_LEGENDARIO) ? T(S_EGG_LEGEND) : T(S_EGG_RARE);
       gfx->setTextColor(pet.eggRarity() == R_LEGENDARIO ? UI_BAR_WARN : 0x4C98);
       gfx->setTextSize(2);
@@ -2296,7 +2350,7 @@ void render() {
     // settings screen because this is the only moment it does anything: the
     // species is decided when the egg appears, so choosing the region is
     // something you do to the egg in front of you.
-    drawEggRegion();
+    if (!pet.eggIsHoopa()) drawEggRegion();   // a HOOPA egg has no region to pick
   } else {
     const DexEntry &d = DEX_TBL[pet.speciesId];
     char name[28];
@@ -2305,6 +2359,8 @@ void render() {
     drawHeader(name, gNight ? UI_INK_NIGHT : d.accent, statusMsg());
     drawStreakBadge();
     drawPet();
+    if (pet.halloween) drawHalloween(millis());
+    if (pet.hoopaPending) drawHoopaRing(400, 96, millis());   // the ring waits for the next egg
     drawBath();
     drawPoops();
     // panel inferior: base limpia para barras y botones sobre el paisaje
@@ -2315,6 +2371,7 @@ void render() {
     if (pet.wantEvolveButton()) drawEvolveButton();        // CTA rojo: evolucionar
     else if (pet.canRunawayNow()) drawRunawayButton();     // CTA sombrio: escapada (abandono)
     else if (pet.wantFarewellButton()) drawFarewellButton();  // CTA dorado: despedida
+    else if (pet.canChangeForm()) drawFormButton();        // CTA gold ring: HOOPA form
   }
 
   if (pet.sleeping) {
@@ -2383,6 +2440,19 @@ void render() {
     }
   }
 
+  if (!menuOpen) drawGreeting();
+  if (hoopaBannerUntil) {
+    if (millis() > hoopaBannerUntil) hoopaBannerUntil = 0;
+    else {
+      const char *b = T(S_HOOPA_HERE);
+      gfx->fillRoundRect(53, 176, 360, 74, 16, UI_BAR_WARN);
+      gfx->drawRoundRect(53, 176, 360, 74, 16, UI_INK);
+      gfx->setTextColor(UI_INK);
+      gfx->setTextSize(3);
+      gfx->setCursor(CX - (int)strlen(b) * 9, 202);
+      gfx->print(b);
+    }
+  }
   if (menuOpen) drawMenu();
 
   gfx->flush();
@@ -2798,6 +2868,12 @@ void drawClockBtn(int x, int y, const char *l) {
 #define VOL_PLUS_X 276
 #define VOL_BTN_W 48
 static const char *const LANG_CODES[LANG_COUNT] = { "ES", "EN", "FR", "DE", "IT", "PT" };
+// bottom row: the kids switch and OK share the widest part of the circle the
+// row can still reach (y=340..388 leaves x 43..423 inside the panel)
+#define KIDS_PILL_X 44
+#define KIDS_PILL_W 100
+#define OK_BTN_X 156
+#define OK_BTN_W 160
 
 void renderClock() {
   gfx->fillScreen(RGB565_BLACK);
@@ -2870,10 +2946,24 @@ void renderClock() {
   gfx->setCursor(LANG_PILL_X + (LANG_PILL_W - (int)strlen(lp) * 12) / 2, LANG_PILL_Y + 8);
   gfx->print(lp);
 
-  gfx->fillRoundRect(133, 340, 200, 48, 14, UI_BAR_OK);
+  // Kinder-Modus switch, left of OK. Green when on, like the sound switch.
+  {
+    bool k = pet.kidsMode;
+    const char *kl = T(S_KIDS_LABEL);
+    gfx->fillRoundRect(KIDS_PILL_X, 344, KIDS_PILL_W, 40, 12, k ? UI_BAR_OK : UI_WHITE);
+    gfx->drawRoundRect(KIDS_PILL_X, 344, KIDS_PILL_W, 40, 12, UI_INK);
+    gfx->setTextColor(k ? UI_BG_DAY : UI_INK);
+    gfx->setTextSize(2);
+    gfx->setCursor(KIDS_PILL_X + (KIDS_PILL_W - (int)strlen(kl) * 12) / 2, 350);
+    gfx->print(kl);
+    gfx->setTextSize(1);
+    gfx->setCursor(KIDS_PILL_X + (KIDS_PILL_W - (k ? 2 : 3) * 6) / 2, 370);
+    gfx->print(k ? "ON" : "OFF");
+  }
+  gfx->fillRoundRect(OK_BTN_X, 340, OK_BTN_W, 48, 14, UI_BAR_OK);
   gfx->setTextColor(UI_BG_DAY);
   gfx->setTextSize(3);
-  gfx->setCursor(CX - 18, 352);
+  gfx->setCursor(OK_BTN_X + OK_BTN_W / 2 - 18, 352);
   gfx->print("OK");
 
   gfx->setTextColor(UI_TRACK);
@@ -2920,7 +3010,14 @@ void clockTap(int16_t x, int16_t y) {
       return;
     }
   }
-  if (y >= 340 && y <= 388 && x >= 133 && x <= 333) { applyClock(); return; }
+  if (y >= 340 && y <= 388) {
+    if (x >= KIDS_PILL_X && x < KIDS_PILL_X + KIDS_PILL_W) {
+      pet.setKidsMode(!pet.kidsMode);
+      sfxPlay(SFX_TAP);
+      return;
+    }
+    if (x >= OK_BTN_X && x <= OK_BTN_X + OK_BTN_W) { applyClock(); return; }
+  }
 }
 
 // llama + numero de racha arriba a la izquierda
@@ -2959,6 +3056,162 @@ void drawCelebration() {
   gfx->print(l1);
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(l2) * 6, 212);
+  gfx->print(l2);
+}
+
+// ---------- Bootscreen ----------
+// Original art, nothing borrowed: a night sky, a warm glowing egg, the title.
+// Drawn once in setup() while the rest of the hardware comes up and held for
+// SPLASH_MS. Only primitives the emulator stub also has (no ellipse call), so
+// the same picture renders headlessly. To use your own picture instead,
+// replace the body of this function: 466x466, centre CX/CY, stay inside r=231.
+#define SPLASH_EGG 0xF759   // #f2e8c8 warm cream
+#define SPLASH_GLOW1 0x5A45 // #5a4a28
+#define SPLASH_GLOW2 0x3984 // #3a3020
+
+// one egg, wider at the bottom than the top, drawn as scanlines
+static void splashEgg(int cx, int cy, int rx, int ry, uint16_t col) {
+  for (int y = -ry; y <= ry; y++) {
+    float t = (float)y / ry;                  // -1 top .. +1 bottom
+    float taper = 1.0f - 0.18f * (t < 0 ? -t : 0);   // narrower towards the top
+    float w = rx * taper * sqrtf(1.0f - t * t);
+    int hw = (int)(w + 0.5f);
+    if (hw > 0) gfx->drawFastHLine(cx - hw, cy + y, 2 * hw + 1, col);
+  }
+}
+
+void drawSplash() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_NIGHT);
+  // a fixed pseudo-random sky, the same every boot
+  uint32_t r = 0x9E3779B9u;
+  for (int i = 0; i < 90; i++) {
+    r = r * 1664525u + 1013904223u;
+    int x = 30 + (int)((r >> 8) % 406);
+    int y = 30 + (int)((r >> 20) % 406);
+    int dx = x - CX, dy = y - CY;
+    if (dx * dx + dy * dy > 218 * 218) continue;
+    if (dy > -60 && dx * dx + (dy - 30) * (dy - 30) < 120 * 120) continue;  // keep the egg clear
+    uint16_t c = (i % 6 == 0) ? UI_BAR_WARN : UI_INK_NIGHT;
+    gfx->fillRect(x, y, 2, 2, c);
+    if (i % 9 == 0) {
+      gfx->drawFastHLine(x - 3, y, 8, c);
+      gfx->drawFastVLine(x, y - 3, 8, c);
+    }
+  }
+  // glow, then the egg, then its spots
+  splashEgg(CX, CY + 30, 118, 146, SPLASH_GLOW2);
+  splashEgg(CX, CY + 30, 106, 132, SPLASH_GLOW1);
+  splashEgg(CX, CY + 30, 92, 116, SPLASH_EGG);
+  gfx->fillCircle(CX - 30, CY + 8, 16, UI_BAR_WARN);
+  gfx->fillCircle(CX + 34, CY + 46, 20, UI_BAR_WARN);
+  gfx->fillCircle(CX - 8, CY + 92, 13, UI_BAR_WARN);
+  gfx->fillCircle(CX + 22, CY - 24, 9, UI_BAR_WARN);
+  // title
+  const char *title = "TamaPoke";
+  gfx->setTextColor(UI_INK_NIGHT);
+  gfx->setTextSize(4);
+  gfx->setCursor(CX - (int)strlen(title) * 12, 62);
+  gfx->print(title);
+  char ver[24];
+  snprintf(ver, sizeof(ver), "v%s", FW_VERSION);
+  gfx->setTextSize(1);
+  gfx->setTextColor(UI_TRACK);
+  gfx->setCursor(CX - (int)strlen(ver) * 3, 412);
+  gfx->print(ver);
+  gfx->flush();
+}
+
+// ---------- Hoopa + Halloween art ----------
+// All original shapes: a golden ring (Hoopa's rings are the one thing the
+// event needs, and a ring is a ring), pumpkins and bats.
+static void ringAt(int cx, int cy, int r, uint16_t col) {
+  gfx->drawCircle(cx, cy, r, col);
+  gfx->drawCircle(cx, cy, r - 1, col);
+  gfx->drawCircle(cx, cy, r - 2, col);
+}
+
+void drawHoopaRing(int cx, int cy, uint32_t now) {
+  int wob = (int)(3 * sinf(now * 0.004f));
+  ringAt(cx, cy + wob, 96, UI_BAR_WARN);
+  ringAt(cx, cy + wob, 90, 0xFEA0);   // #ffd400 gold
+  // four sparks orbiting
+  for (int i = 0; i < 4; i++) {
+    float a = now * 0.002f + i * 1.5708f;
+    int sx = cx + (int)(93 * cosf(a)), sy = cy + wob + (int)(93 * sinf(a));
+    gfx->fillRect(sx - 2, sy - 2, 5, 5, UI_WHITE);
+  }
+}
+
+static void pumpkin(int x, int y, int r) {
+  gfx->fillCircle(x - r / 2, y, r, 0xFC00);        // #ff8000 orange lobes
+  gfx->fillCircle(x + r / 2, y, r, 0xFC00);
+  gfx->fillCircle(x, y, r, 0xFCA0);                // #ff9400 middle
+  gfx->fillRect(x - 3, y - r - 8, 6, 9, 0x2400);   // #204000 stem
+  gfx->fillTriangle(x - r / 2 - 6, y - 2, x - r / 2 + 2, y - 2, x - r / 2 - 2, y - 10, UI_INK);  // eyes
+  gfx->fillTriangle(x + r / 2 - 2, y - 2, x + r / 2 + 6, y - 2, x + r / 2 + 2, y - 10, UI_INK);
+  gfx->fillRect(x - r + 4, y + 6, 2 * r - 8, 4, UI_INK);               // grin
+  gfx->fillRect(x - 4, y + 4, 8, 4, 0xFCA0);                           // a tooth gap
+}
+
+static void bat(int x, int y, int flap) {
+  gfx->fillCircle(x, y, 4, UI_INK);
+  gfx->fillTriangle(x - 4, y, x - 18, y - 6 + flap, x - 10, y + 4, UI_INK);
+  gfx->fillTriangle(x + 4, y, x + 18, y - 6 + flap, x + 10, y + 4, UI_INK);
+}
+
+void drawHalloween(uint32_t now) {
+  int flap = (now / 250) % 2 ? 4 : -2;
+  bat(120 + (int)(10 * sinf(now * 0.003f)), 120, flap);
+  bat(350 + (int)(10 * sinf(now * 0.0025f + 2)), 100, -flap);
+  pumpkin(92, 282, 14);
+  pumpkin(374, 284, 12);
+}
+
+// gold-ring CTA in the evolve slot: "ENTFESSELN" / "BINDEN"
+void drawFormButton() {
+  uint32_t now = millis();
+  int p = (int)(3 * sinf(now * 0.006f));
+  int x = EVO_BTN_X - p, y = FORM_BTN_Y - p, w = EVO_BTN_W + 2 * p, h = EVO_BTN_H + 2 * p;
+  gfx->fillRoundRect(x, y, w, h, 18, 0xFEA0);
+  gfx->drawRoundRect(x, y, w, h, 18, UI_INK);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(2);
+  const char *t = (pet.form == FORM_UNBOUND) ? T(S_FORM_BIND) : T(S_FORM_UNBIND);
+  gfx->setCursor(CX - (int)strlen(t) * 6, y + h / 2 - 7);
+  gfx->print(t);
+}
+
+// ---------- Begruessung ----------
+// "Guten Morgen, <name>!" / "Hallo" / "Guten Abend" from the clock, then a line
+// about the creature. Shown for GREET_MS after boot and whenever the device is
+// picked up after GREET_IDLE_MS away. Fits any of the six languages plus an
+// 11-character trainer name: the top line shrinks past 19 characters and the
+// bottom one past 30.
+void drawGreeting() {
+  if (!greetUntil) return;
+  if (millis() > greetUntil) { greetUntil = 0; return; }
+  int h = pet.lastSeenEpoch ? (int)((pet.lastSeenEpoch / 3600) % 24) : 12;
+  const char *tod = (h >= 5 && h < 11) ? T(S_GREET_MORNING)
+                  : (h >= 11 && h < 18) ? T(S_GREET_DAY) : T(S_GREET_EVENING);
+  char l1[40], l2[48];
+  if (pet.trainerName[0]) snprintf(l1, sizeof(l1), "%s, %s!", tod, pet.trainerName);
+  else snprintf(l1, sizeof(l1), "%s!", tod);
+  if (pet.isEgg()) snprintf(l2, sizeof(l2), "%s", T(S_GREET_EGG));
+  else {
+    const char *nm = pet.nick[0] ? pet.nick : DEX_TBL[pet.speciesId].name;
+    snprintf(l2, sizeof(l2), T(S_GREET_PET_FMT), nm);
+  }
+  gfx->fillRoundRect(33, 150, 400, 96, 16, UI_BAR_OK);
+  gfx->drawRoundRect(33, 150, 400, 96, 16, UI_INK);
+  gfx->setTextColor(UI_WHITE);
+  int s1 = strlen(l1) > 21 ? 2 : 3;
+  gfx->setTextSize(s1);
+  gfx->setCursor(CX - (int)strlen(l1) * 3 * s1, s1 == 3 ? 172 : 176);
+  gfx->print(l1);
+  int s2 = strlen(l2) > 32 ? 1 : 2;
+  gfx->setTextSize(s2);
+  gfx->setCursor(CX - (int)strlen(l2) * 3 * s2, s2 == 2 ? 212 : 216);
   gfx->print(l2);
 }
 
@@ -3642,6 +3895,13 @@ static void btlResolve(uint8_t yourMove) {
     if (btlLink && btlLinkHost) lan.sendEnd(btlWon);
     if (btlLink) { btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE)); return; }
     if (btlWon && btlTrainer >= 0) { btlWinUntil = millis() + 60000; return; }
+    // Kids mode: a loss still teaches something. Nothing is at stake, and the
+    // line says "again?" rather than "lost", because that is the point.
+    if (pet.kidsMode && btlTrainer >= 0 && btlPetIn) {
+      btlTrainGain = pet.rewardTraining(1 + random(2), btlTrainWhich);
+      btlSay("%s", T(S_KID_LOSE));
+      return;
+    }
     btlSay("%s", T(S_BTL_LOSE));
   }
 }
@@ -5126,7 +5386,8 @@ void renderCardProgress() {
     gfx->setTextSize(2);
   }
 
-  // descuidos (retrasan la evolucion)
+  // descuidos (retrasan la evolucion) -- not a thing in kids mode, so not shown
+  if (pet.kidsMode) return;
   char ms[24];
   snprintf(ms, sizeof(ms), T(S_MISTAKES_FMT), pet.careMistakes);
   gfx->setTextColor(pet.careMistakes > 0 ? UI_BAR_BAD : UI_INK);
@@ -5820,6 +6081,11 @@ void drawChoiceDialog() {
     // banked at all, which is the half a player would not otherwise discover
     // until the party screen came up empty.
     if (!pet.retireIsFree()) { sub1 = T(S_RETIRE_COST); sub2 = T(S_RETIRE_GONE); }
+  } else if (choiceKind == 4) {   // HOOPA: confined <-> unbound
+    q = T(S_FORM_Q);
+    o1 = (pet.form == FORM_UNBOUND) ? T(S_FORM_BIND) : T(S_FORM_UNBIND);
+    o2 = T(S_NO);
+    c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_TRACK; t2 = UI_INK;
   } else {                // despedida
     q = T(S_FAR_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
     c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_BAR_OK; t2 = UI_WHITE;
@@ -6245,6 +6511,16 @@ const char *statusMsg() {
   if (pet.sleeping) return "Zzz...";
   if (pet.eating()) return T(S_EATING);
   if (pet.showHeart()) return T(S_LIKES);
+  if (pet.kidsMode) {
+    // nothing in kids mode is ever dramatic: gentle suggestions, no alarms
+    if (pet.fullness <= 60) return T(S_KID_SNACK);
+    if (pet.hygiene <= 60) return T(S_NEEDS_BATH);
+    if (pet.joy <= 60) return T(S_KID_PLAY);
+    if (pet.energy <= 60) return T(S_KID_NAP);
+    if (pet.shiny && pet.ageMinutes < 15) return T(S_IS_SHINY);
+    if (pet.halloween && (millis() / 6000) % 3 == 0) return T(S_HALLOWEEN);
+    return T(S_HAPPY);
+  }
   if (pet.fullness < 25) return T(S_HUNGRY);
   if (pet.hygiene < 25) return T(S_NEEDS_BATH);
   if (pet.energy < 25) return T(S_EXHAUSTED);

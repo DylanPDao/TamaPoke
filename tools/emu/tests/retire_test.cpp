@@ -46,6 +46,7 @@ static void finish(Pet &p, Party &q){
 
 // a creature part-way through its life: hatched, young, not final form
 static void young(Pet &p, int16_t dex, uint8_t lvl){
+  p.setKidsMode(false);   // this suite asserts the strict retire rules; see kids_test
   p.dbgHatchAs(dex,false);
   p.ageMinutes = (uint32_t)(lvl-1)*MINUTES_PER_LEVEL;
   p.fullness=p.joy=p.energy=p.hygiene=100;

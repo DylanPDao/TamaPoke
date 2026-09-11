@@ -10,7 +10,7 @@ bool sdDirty = false;
 bool sdArtDirty = false;
 SdThumbs thumbs;
 
-bool PmdMon::load(int16_t dexNum, bool shiny) {
+bool PmdMon::load(int16_t dexNum, bool shiny, uint8_t form) {
   // int16_t, NOT uint8_t. The dex reached 386 and this did not follow, so
   // everything from 256 up wrapped into Kanto: MARSHTOMP (258) opened
   // p002.bin and drew an IVYSAUR. Same trap that caught DexEntry::evolvesTo
@@ -20,10 +20,17 @@ bool PmdMon::load(int16_t dexNum, bool shiny) {
   if (!sdReady) return false;
 
   char path[28];
-  snprintf(path, sizeof(path), "/mons/p%s%03u.bin", shiny ? "s" : "", (unsigned)dexNum);
+  // a form gets its own file, "u" for unbound: pu720.bin / pus720.bin; with no
+  // form pack on the card it falls back to the base form rather than nothing
+  const char *fp = form ? "u" : "";
+  snprintf(path, sizeof(path), "/mons/p%s%s%03u.bin", fp, shiny ? "s" : "", (unsigned)dexNum);
   File f = SD_MMC.open(path, FILE_READ);
   if (!f && shiny) {  // sin shiny PMD: usa el normal
-    snprintf(path, sizeof(path), "/mons/p%03u.bin", (unsigned)dexNum);
+    snprintf(path, sizeof(path), "/mons/p%s%03u.bin", fp, (unsigned)dexNum);
+    f = SD_MMC.open(path, FILE_READ);
+  }
+  if (!f && form) {
+    snprintf(path, sizeof(path), "/mons/p%s%03u.bin", shiny ? "s" : "", (unsigned)dexNum);
     f = SD_MMC.open(path, FILE_READ);
   }
   if (!f) return false;

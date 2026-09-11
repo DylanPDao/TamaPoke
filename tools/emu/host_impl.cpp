@@ -38,13 +38,22 @@ static uint8_t *slurp(const std::string &path, uint32_t *size) {
   return b;
 }
 
-bool PmdMon::load(int16_t dexNum, bool shiny) {
+bool PmdMon::load(int16_t dexNum, bool shiny, uint8_t form) {
   if (dexNum < 1 || dexNum > 999) return false;
   unload();
   char p[64];
-  snprintf(p, sizeof(p), "%s/p%s%03u.bin", g_spriteDir.c_str(), shiny ? "s" : "", (unsigned)dexNum);
+  const char *fp = form ? "u" : "";   // same file naming as the board: pu720.bin
+  snprintf(p, sizeof(p), "%s/p%s%s%03u.bin", g_spriteDir.c_str(), fp, shiny ? "s" : "", (unsigned)dexNum);
   uint32_t size = 0;
   blob = slurp(p, &size);
+  if (!blob && shiny) {
+    snprintf(p, sizeof(p), "%s/p%s%03u.bin", g_spriteDir.c_str(), fp, (unsigned)dexNum);
+    blob = slurp(p, &size);
+  }
+  if (!blob && form) {
+    snprintf(p, sizeof(p), "%s/p%s%03u.bin", g_spriteDir.c_str(), shiny ? "s" : "", (unsigned)dexNum);
+    blob = slurp(p, &size);
+  }
   if (!blob) {
     snprintf(p, sizeof(p), "%s/p%03u.bin", g_spriteDir.c_str(), (unsigned)dexNum);
     blob = slurp(p, &size);

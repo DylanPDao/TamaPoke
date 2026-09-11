@@ -147,6 +147,11 @@ extern bool galleryDirty;
 extern uint8_t galleryRegion;
 extern uint8_t gymRegion;
 extern bool gymPick, galleryPick;
+extern uint32_t greetUntil;
+extern uint8_t choiceKind;
+extern uint32_t choiceUntil;
+void drawSplash();
+void ensureMon();
 int wavMain(const char *path, const char *demo);
 extern bool lanOpen;
 extern uint8_t btlMyAct;
@@ -199,6 +204,7 @@ static void writePPM(const char *path) {
 
 static int shotMode(const char *screen, const char *out, int lvl, int iv, int dex) {
   setup();
+  if (!strcmp(screen, "splash")) { drawSplash(); writePPM(out); return 0; }
   for (int i = 0; i < 4; i++) loop();          // let the sketch settle
   bool firstBoot = !strcmp(screen, "starter") || !strcmp(screen, "starterj") ||
                    !strcmp(screen, "region");
@@ -246,6 +252,20 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     for (int d = 1; d <= 200; d++) pet.dbgHatchAs(d, false);
   }
   else if (!strcmp(screen, "clock"))   clockOpen = true;
+  else if (!strcmp(screen, "greet"))   greetUntil = millis() + 60000;
+  else if (!strcmp(screen, "hoopaegg")) { pet.newEgg(); pet.unlockHoopa(); pet.hoopaNews = false; }
+  else if (!strcmp(screen, "hoopa")) {   // a cared-for HOOPA in the Halloween window
+    pet.dbgHatchAs(720, false); pet.ageMinutes = 4UL * MINUTES_PER_LEVEL; pet.bond = 5;
+    pet.halloween = true; greetUntil = 0;
+  }
+  else if (!strcmp(screen, "hoopau")) {   // the unbound form, sprite from pu720.bin
+    pet.dbgHatchAs(720, false); pet.ageMinutes = 4UL * MINUTES_PER_LEVEL; pet.bond = 5;
+    pet.halloween = true; greetUntil = 0; pet.toggleForm();
+  }
+  else if (!strcmp(screen, "hoopaform")) {
+    pet.dbgHatchAs(720, false); pet.ageMinutes = 4UL * MINUTES_PER_LEVEL; pet.bond = 5;
+    pet.halloween = true; greetUntil = 0; choiceKind = 4; choiceUntil = millis() + 60000;
+  }
   else if (!strcmp(screen, "menu"))    menuOpen = true;
   else if (!strcmp(screen, "train"))   trainOpen = true;
   else if (!strcmp(screen, "moves"))   { cardOpen = true; cardPage = 2; }
@@ -385,6 +405,7 @@ static int shotMode(const char *screen, const char *out, int lvl, int iv, int de
     }
     if (!strcmp(screen, "partyfull")) partyPick = true;
   }
+  ensureMon();   // a species picked above has not been through loop() yet
   render();
   writePPM(out);
   return 0;

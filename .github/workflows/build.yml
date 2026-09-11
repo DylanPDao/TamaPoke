@@ -1,0 +1,61 @@
+# Builds the firmware with arduino-cli and publishes the web installer to
+# GitHub Pages, so flashing is one click in Chrome/Edge at
+#   https://<user>.github.io/TamaPoke/web/
+# Enable Pages for the repo (Settings -> Pages -> Source: GitHub Actions) once.
+# NOTE: written blind (this environment cannot run arduino-cli); the first run
+# may need a library version pinned -- see the log if it fails.
+name: build-firmware
+on:
+  push:
+    branches: [main, feat/kids-mode]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=/usr/local/bin sh
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "GFX Library for Arduino"
+          arduino-cli lib install "SensorLib"
+          arduino-cli lib install "XPowersLib"
+      - name: Compile
+        run: |
+          FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc,FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB"
+          arduino-cli compile --fqbn "$FQBN" --export-binaries .
+          ls -la build/esp32.esp32.esp32s3/
+      - name: Stage the web installer
+        run: |
+          # The installer flashes FOUR parts at their own offsets (see
+          # tools/build_web.sh: a single merged image would wipe the save at
+          # 0x9000). Same file names the manifest already expects.
+          B=build/esp32.esp32.esp32s3
+          mkdir -p site/web/firmware
+          cp -r web/* site/web/
+          cp "$B/TamaPoke.ino.bootloader.bin" site/web/firmware/bootloader.bin
+          cp "$B/TamaPoke.ino.partitions.bin" site/web/firmware/partitions.bin
+          cp "$B/boot_app0.bin"               site/web/firmware/boot_app0.bin
+          cp "$B/TamaPoke.ino.bin"            site/web/firmware/app.bin
+          rm -f site/web/firmware/tamapoke.bin
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

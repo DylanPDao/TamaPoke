@@ -8,6 +8,7 @@ static void fill(Combatant &c, int16_t dex, uint8_t lvl, uint16_t hp,
                  uint16_t a, uint16_t d, uint16_t sa, uint16_t sd, uint16_t sp) {
   c = Combatant();
   c.dex = dex;
+  if (dex >= 1 && dex <= DEX_COUNT) { c.type1 = DEX_TBL[dex].type1; c.type2 = DEX_TBL[dex].type2; }
   c.level = lvl;
   c.maxHp = hp ? hp : 1;
   c.hp = c.maxHp;
@@ -20,6 +21,8 @@ void combatantFromPet(Combatant &c, const Pet &p) {
        p.spaStat(), p.spdStat(), p.speStat());
   for (int i = 0; i < MOVE_SLOTS; i++) c.moves[i] = p.moves[i];
   c.shiny = p.shiny;
+  c.type1 = p.dex().type1;   // an unbound HOOPA fights as PSYCHIC/DARK
+  c.type2 = p.dex().type2;
   const char *nm = p.nick[0] ? p.nick : DEX_TBL[p.speciesId].name;
   snprintf(c.name, sizeof(c.name), "%s", nm);
 }
@@ -79,8 +82,8 @@ uint16_t battleDamage(const Combatant &atk, const Combatant &def, uint8_t mv,
 
   uint32_t dmg = (2UL * atk.level / 5 + 2) * m.power * A / D / 50 + 2;
   if (crit) dmg *= 2;
-  if (hasStab(atk.dex, m.type)) dmg = dmg * 3 / 2;
-  uint16_t eff = typeEffVsDex(m.type, def.dex);
+  if (m.type == atk.type1 || m.type == atk.type2) dmg = dmg * 3 / 2;   // STAB
+  uint16_t eff = typeEffPct(m.type, def.type1, def.type2);
   dmg = dmg * eff / 100;
   if (eff == 0) return 0;               // immune: no chip, no minimum
   dmg = dmg * roll / 255;
@@ -184,7 +187,7 @@ void battleAct(Combatant &atk, Combatant &def, uint8_t mv, TurnLog &log) {
   // --- damage, including multi-hit
   uint8_t hits = (m.effect == EF_MULTI) ? (uint8_t)(2 + random(4)) : 1;
   uint16_t total = 0;
-  log.effPct = typeEffVsDex(m.type, def.dex);
+  log.effPct = typeEffPct(m.type, def.type1, def.type2);
   if (log.effPct == 0) { log.immune = true; return; }
   for (uint8_t h = 0; h < hits; h++) {
     bool crit = random(16) == 0;                 // ~6%, the series' base rate

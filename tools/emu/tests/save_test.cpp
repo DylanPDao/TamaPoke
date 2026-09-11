@@ -27,6 +27,7 @@ int main(){
   // both ladders, a Pokedex with holes in it, a named trainer
   Pet pet;
   pet.begin();
+  pet.setKidsMode(false);   // this suite round-trips the strict counters; see kids_test
   pet.dbgHatchAs(6,true);
   pet.ageMinutes = 72UL*MINUTES_PER_LEVEL;
   pet.ivAtk=31; pet.ivDef=7; pet.ivSpe=22; pet.ivHp=19;

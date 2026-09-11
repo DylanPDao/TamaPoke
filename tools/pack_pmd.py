@@ -101,9 +101,13 @@ def load_animdata(folder):
     return anims
 
 
-def pack(dexnum, shiny=False):
-    sub = '/0000/0001' if shiny else ''
-    folder = os.path.join(CACHE, f'{dexnum:04d}{"s" if shiny else ""}')
+def pack(dexnum, shiny=False, form=0):
+    # SpriteCollab layout: sprite/NNNN[/FFFF][/0001 for shiny]; form 0000 is
+    # the base and may be omitted. HOOPA Unbound is form 0001 -> pu720.bin.
+    sub = (f'/{form:04d}' if form else '') + ('/0001' if shiny else '')
+    if shiny and not form: sub = '/0000/0001'
+    fp = 'u' if form else ''
+    folder = os.path.join(CACHE, f'{dexnum:04d}{fp}{"s" if shiny else ""}')
     base = f'{BASE}/{dexnum:04d}{sub}'
     if not fetch(f'{base}/AnimData.xml', os.path.join(folder, 'AnimData.xml')):
         raise RuntimeError('sin AnimData.xml')
@@ -146,7 +150,7 @@ def pack(dexnum, shiny=False):
         raise RuntimeError('sin Idle')
 
     os.makedirs(OUT, exist_ok=True)
-    path = os.path.join(OUT, f'p{"s" if shiny else ""}{dexnum:03d}.bin')
+    path = os.path.join(OUT, f'p{fp}{"s" if shiny else ""}{dexnum:03d}.bin')
     with open(path, 'wb') as f:
         f.write(b'TPK2')
         f.write(struct.pack('<BH', len(packed), len(pal)))
@@ -176,6 +180,9 @@ if __name__ == '__main__':
     span = {name.lower(): (lo, hi) for name, lo, hi, _st in _DR}
     picked = [span[a] for a in args if a in span]
     nums = [int(a) for a in args if a.isdigit()]
+    # "hoopa" packs both HOOPA forms (720 and 720 unbound) -- the Halloween event
+    want_unbound = 'hoopa' in args
+    if want_unbound and 720 not in nums: nums.append(720)
     if not nums:
         if picked:
             nums = [d for lo, hi in picked for d in range(lo, hi + 1)]
@@ -183,11 +190,13 @@ if __name__ == '__main__':
             nums = list(range(1, DEX_COUNT + 1))
     fallos = []
     for n in nums:
-        for sh in ([False] if solo_normal else [False, True]):
-            try:
-                print(f"#{n:03d}{' shiny' if sh else ''}")
-                pack(n, sh)
-            except Exception as e:
-                print(f"  FALLO: {e}")
-                fallos.append((n, sh))
+        forms = [0, 1] if (n == 720 and want_unbound) else [0]
+        for fm in forms:
+            for sh in ([False] if solo_normal else [False, True]):
+                try:
+                    print(f"#{n:03d}{' unbound' if fm else ''}{' shiny' if sh else ''}")
+                    pack(n, sh, fm)
+                except Exception as e:
+                    print(f"  FALLO: {e}")
+                    fallos.append((n, sh, fm))
     print(f"FALLOS: {fallos}" if fallos else "TODOS EMPAQUETADOS")

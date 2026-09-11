@@ -22,6 +22,44 @@
 // as 24, so it stays "a day" if the level rate is ever retuned.
 #define EVO_PENALTY_LEVELS ((uint8_t)((24UL * 60) / MINUTES_PER_LEVEL))
 #define RUNAWAY_TICKS 60                   // se escapa tras 1 h con TODO a cero
+// ---------------------------------------------------------------------------
+// KINDER-MODUS (kids mode). Persisted, toggled in SETTINGS, ON by default in
+// this fork. The creature can never be lost and the game never punishes:
+//   - no care mistakes, no evolution delay, no runaway, no cursed egg
+//   - every stat has a hard floor (KIDS_FLOOR) -- live, asleep and offline --
+//     so coming back after a week finds a slightly hungry friend, not a crisis
+//   - needs only drain while somebody is actually playing (screen on and a
+//     touch within the last 90 s, see Pet::attended). Put down, it dozes.
+//   - retiring always banks the creature into the party, always for free
+//   - a lost battle still trains a little (see the sketch)
+// "Alle 4-5 Tage mal ein wenig machen: voll ausreichend" -- that is the spec.
+#define KIDS_MODE_DEFAULT true
+#define KIDS_FLOOR 50          // no stat drops below this, ever, in kids mode
+#define KIDS_POOP_MAX 1        // at most one poop on screen
+#define KIDS_POOP_PCT 3        // ...and it appears rarely (per minute, awake)
+#define KIDS_DEFAULT_NAME "Sophie"   // greeting name until one is set on the trainer card
+// ---------------------------------------------------------------------------
+// HOOPA + HALLOWEEN. Two independent things:
+//   Decoration -- pumpkins and bats on the main screen, every year while the
+//   RTC date is inside HALLOWEEN_FROM..HALLOWEEN_TO (month, day).
+//   Hoopa -- unlocked once, the first time the clock reads HOOPA_UNLOCK_EPOCH
+//   or later (Halloween 2026, 00:00), and kept forever after: a golden ring
+//   appears, the egg in it hatches HOOPA, and a HOOPA can switch between its
+//   Confined and Unbound forms on the main screen. The console command HOOPA
+//   unlocks it early for testing.
+#define HALLOWEEN_FROM_M 10
+#define HALLOWEEN_FROM_D 24
+#define HALLOWEEN_TO_M 11
+#define HALLOWEEN_TO_D 7
+#define HOOPA_UNLOCK_EPOCH 1793404800UL   // 2026-10-31 00:00 (the RTC runs on local time)
+#define HOOPA_DEX 720
+#define FORM_CONFINED 0
+#define FORM_UNBOUND 1
+// The Unbound form is not a dex entry (dex numbers are identity and the table
+// is sized by DEX_COUNT everywhere), it is a form flag on a HOOPA. Its stats
+// and typing live here; Pet::dex() hands them out in place of DEX_TBL[720].
+static const DexEntry DEX_HOOPA_UNBOUND =
+  { "HOOPA", 0, 0, R_LEGENDARIO, 0xD28F, 80, 160, 60, 80, 170, 130, 0, T_PSYCHIC, T_DARK };
 // Night, by the RTC: midnight to 06:00. Auto-sleep needs BOTH: the screen off
 // AND this window.
 // The screen alone would pause the game every time you put the device in a
@@ -103,6 +141,34 @@ public:
   int16_t prevSpeciesId = -1;  // para la animacion de evolucion
   uint8_t careMistakes = 0;   // descuidos: cada uno retrasa la evolucion 1 nivel
   bool sleeping = false;
+  bool kidsMode = KIDS_MODE_DEFAULT;  // see the KINDER-MODUS block above
+  // Hoopa + Halloween (see the block above)
+  bool hoopaUnlocked = false;   // the event has fired at least once
+  bool hoopaPending = false;    // a HOOPA egg is owed: the next egg is it
+  uint8_t form = FORM_CONFINED; // only meaningful for a HOOPA
+  bool halloween = false;       // decoration window, refreshed from the clock
+  bool hoopaNews = false;       // just unlocked (UI shows a banner, then clears)
+  void checkCalendar(uint32_t epoch);   // refreshes halloween, fires the unlock
+  void unlockHoopa();                   // the event: pending egg (or the egg now)
+  bool eggIsHoopa() const { return isEgg() && eggTarget == HOOPA_DEX && !starterPick; }
+  bool isHoopa() const { return !isEgg() && speciesId == HOOPA_DEX; }
+  // The species entry to use for stats, typing and the type chart: the Unbound
+  // override for an unbound HOOPA, DEX_TBL for everything else.
+  const DexEntry &dex() const {
+    return (isHoopa() && form == FORM_UNBOUND) ? DEX_HOOPA_UNBOUND : DEX_TBL[speciesId < 0 ? 0 : speciesId];
+  }
+  // A HOOPA can change form on the main screen once it has been cared for a
+  // little (its "Prison Bottle" moment): level 3 and a first bit of bond.
+  bool canChangeForm() const {
+    return isHoopa() && !sleeping && ceremony == CER_NONE && !frozen && level() >= 3 && bond >= 1;
+  }
+  void toggleForm();
+  // Set by the loop every pass: screen on AND a touch in the last 90 s. Only
+  // read in kids mode, where an unattended creature dozes instead of draining.
+  bool attended = true;
+  void setKidsMode(bool on);
+  void setAttended(bool a) { attended = a; }
+  bool dozing() const { return kidsMode && !attended && !sleeping && !isEgg(); }
   uint32_t lastSeenEpoch = 0;   // ultima hora RTC vista (para progresion offline)
   uint8_t ceremony = CER_NONE;  // despedida/escapada/liberacion en curso
   uint8_t lastEnd = CER_NONE;   // como acabo la anterior (afecta al huevo)
@@ -303,12 +369,12 @@ public:
   // has already earned its farewell costs nothing: it is then just the button.
   void startRetire();
   bool canRetireNow() const;
-  bool retireIsFree() const { return canFarewellNow(); }
+  bool retireIsFree() const { return kidsMode || canFarewellNow(); }
   // Was the retire NOW IN PROGRESS an early one? THE single answer, asked by
   // snapshotForParty() and by the tests. Distinct from retireIsFree(), which asks
   // whether a retire started right now WOULD be free: this one remembers what the
   // retire that is already running actually was, and outlives the moment it began.
-  bool retireIsEarly() const { return retirePending; }
+  bool retireIsEarly() const { return retirePending && !kidsMode; }
   uint8_t evoPenalty() const { return evoPen; }
   void startRunaway();   // tambien usable desde la consola serie (RUN)
 
@@ -442,6 +508,8 @@ private:
   bool eggShiny = false;       // sorpresa sorteada al crear el huevo
   uint8_t eggTaps = 0;
   uint8_t mistakeCooldown = 0;
+  uint8_t sleepFloor(uint8_t normal) const;
+  void liftToFloor();
   uint8_t ticksSinceSave = 0;
   bool pendingSave = false;     // guardado periodico pendiente de volcar
   uint8_t evoDeclinedLv = 0;    // "mantener forma": no ofrecer evolucion hasta subir de nivel

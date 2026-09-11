@@ -59,7 +59,10 @@ static std::string runConsole(const std::vector<std::string> &lines){
 }
 
 int main(){
+  // These assert the STRICT rules. Kids mode (the default in this fork, see
+  // kids_test) forgives all of them, so it is switched off here on purpose.
   setup();
+  pet.setKidsMode(false);
   for (int i=0;i<4;i++) render();
   if (pet.awaitingStarter()) pet.chooseStarter(4);
   if (pet.isEgg()) pet.dbgHatchAs(59,false);

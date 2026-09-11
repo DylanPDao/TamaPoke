@@ -22,6 +22,8 @@ const SaveField SAVE_FIELDS[] = {
   // flags
   { "bk", SK_BOOL },    { "shy", SK_BOOL },   { "eshy", SK_BOOL },
   { "stpk", SK_BOOL },  { "evop", SK_U8 },    { "slpa", SK_U8 },    { "rtpn", SK_BOOL },
+  { "kids", SK_BOOL },  // Kinder-Modus switch
+  { "hoopa", SK_BOOL }, { "hoopaP", SK_BOOL }, { "form", SK_U8 },  // Hoopa event + form
   // the player: outlives every creature, which is exactly why it must be here
   { "tnam", SK_STR },   { "avtr", SK_U8 },    { "badg", SK_U16 },
   { "reg", SK_U8 },     { "eggR", SK_BYTES },

@@ -32,6 +32,7 @@ static uint32_t atHour(int h){ return (uint32_t)h * 3600 + 90; }
 // behaviour and a wrong starting point for the next test.
 static void fresh(Pet &p, int hour){
   p.begin();
+  p.setKidsMode(false);   // this suite asserts the strict drains; see kids_test
   p.dbgHatchAs(147,false);
   p.sleeping = false;
   p.sleepAuto = SLEEP_NONE;

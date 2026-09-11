@@ -4,7 +4,7 @@
 // Idiomas soportados. La fuente del firmware no tiene acentos: ambos textos van
 // sin tildes ni enes (igual que ya iba el espanol).
 enum Lang : uint8_t { LANG_ES = 0, LANG_EN, LANG_FR, LANG_DE, LANG_IT, LANG_PT, LANG_COUNT };
-#define LANG_DEFAULT LANG_EN  // idioma por defecto: ingles
+#define LANG_DEFAULT LANG_DE  // idioma por defecto en este fork: aleman
 
 extern Lang gLang;  // idioma activo (definido en i18n.cpp)
 
@@ -130,6 +130,16 @@ enum StrId : uint8_t {
   S_RELEASE_GONE,   // ...and the warning under it: this one does not come back
   S_BOX_TAKE,       // box detail sheet: move this creature into the party
   S_RETIRE_GONE,    // retire confirm: an early retire is not banked either
+  // Kinder-Modus (kids mode): the settings pill, the gentle status hints that
+  // replace HUNGRY/EXHAUSTED/SAD (nothing in kids mode is ever dramatic), and
+  // the friendlier line after a lost battle
+  S_KIDS_LABEL, S_KID_SNACK, S_KID_PLAY, S_KID_NAP, S_KID_LOSE,
+  // Begruessung (greeting) on boot and when the device is picked up again:
+  // time of day + trainer name, then a line about the creature (or the egg)
+  S_GREET_MORNING, S_GREET_DAY, S_GREET_EVENING, S_GREET_PET_FMT, S_GREET_EGG,
+  // Hoopa + Halloween: the unlock banner, the ring hint on the egg, the form
+  // dialog and its two buttons, the seasonal header line
+  S_HOOPA_HERE, S_HOOPA_EGG, S_FORM_Q, S_FORM_UNBIND, S_FORM_BIND, S_HALLOWEEN,
   STR_COUNT
 };
 

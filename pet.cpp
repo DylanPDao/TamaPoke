@@ -56,7 +56,24 @@ void Pet::begin() {
     newEgg();
   } else {
     load();
+    // A save written by the strict rules (or by the upstream firmware, which
+    // has no "kids" key and so lands on the default) may carry mistakes or a
+    // retire debt. In kids mode those never apply, so they are forgiven here
+    // rather than sitting on the card as "Patzer: 3" for a creature that
+    // cannot make any.
+    if (kidsMode) {
+      careMistakes = 0;
+      evoPen = 0;
+      retirePending = false;
+      neglectTicks = 0;
+      if (lastEnd == CER_RUNAWAY) lastEnd = CER_NONE;
+      liftToFloor();
+    }
   }
+  // Nobody has typed a name yet (fresh board or an upstream save): greet the
+  // person this fork is for. Set a name on the trainer card at any time and
+  // this default never comes back.
+  if (!trainerName[0]) strncpy(trainerName, KIDS_DEFAULT_NAME, sizeof(trainerName) - 1);
   lastTick = millis();
 }
 
@@ -69,6 +86,12 @@ void Pet::newEgg() {
   for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = 0;
   eggTarget = pickEggSpecies();  // especie oculta segun rareza y pokedex
   eggByRegion[region % REGION_COUNT] = eggTarget;
+  form = FORM_CONFINED;
+  if (hoopaPending) {   // the ring was waiting for this egg
+    eggTarget = HOOPA_DEX;
+    for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = HOOPA_DEX;
+    hoopaPending = false;
+  }
   starterPick = (registeredCount() == 0);  // primera partida: el jugador elige inicial
   // sorteo shiny: 1/48 base, mejor con despedida y con racha/vinculo altos
   int shinyBase = (lastEnd == CER_FAREWELL ? 24 : 48) - careBonus();
@@ -100,6 +123,86 @@ static uint8_t dropTo(uint8_t v, uint8_t d, uint8_t fl) {
   return (v - fl > d) ? v - d : fl;
 }
 
+// The sleep floors, lifted to KIDS_FLOOR in kids mode so a night is never
+// worse than an afternoon.
+uint8_t Pet::sleepFloor(uint8_t normal) const {
+  return kidsMode && normal < KIDS_FLOOR ? KIDS_FLOOR : normal;
+}
+
+// Switching kids mode ON forgives on the spot: whatever the creature was
+// carrying from the strict rules (mistakes, a runaway in progress, a retire
+// debt) is wiped, and the stats are lifted to the floor so the first thing a
+// child sees is a friend, not a bar at zero. Switching it OFF changes nothing
+// retroactively -- the strict rules simply apply from the next tick.
+void Pet::setKidsMode(bool on) {
+  kidsMode = on;
+  if (on) {
+    careMistakes = 0;
+    mistakeCooldown = 0;
+    neglectTicks = 0;
+    retirePending = false;
+    evoPen = 0;
+    if (lastEnd == CER_RUNAWAY) lastEnd = CER_NONE;  // no cursed egg
+    liftToFloor();
+  }
+  save();
+}
+
+// Bars below the kids floor can only come from the strict rules (a save made
+// before the switch, or by the upstream firmware). Lift them, so the first
+// screen a child sees is a friend who would like a snack.
+void Pet::liftToFloor() {
+  if (isEgg()) return;
+  if (fullness < KIDS_FLOOR) fullness = KIDS_FLOOR;
+  if (joy < KIDS_FLOOR) joy = KIDS_FLOOR;
+  if (energy < KIDS_FLOOR) energy = KIDS_FLOOR;
+  if (hygiene < KIDS_FLOOR) hygiene = KIDS_FLOOR;
+  if (poops > KIDS_POOP_MAX) poops = KIDS_POOP_MAX;
+}
+
+// ---------- Hoopa + Halloween ----------
+static void epochYmd(uint32_t e, int &m, int &d) {
+  time_t t = (time_t)e;
+  struct tm tmv;
+  gmtime_r(&t, &tmv);   // the RTC is set in local time, so "UTC" here IS local
+  m = tmv.tm_mon + 1;
+  d = tmv.tm_mday;
+}
+
+void Pet::checkCalendar(uint32_t epoch) {
+  if (!epoch) return;
+  int m, d;
+  epochYmd(epoch, m, d);
+  int md = m * 100 + d;
+  halloween = md >= HALLOWEEN_FROM_M * 100 + HALLOWEEN_FROM_D &&
+              md <= HALLOWEEN_TO_M * 100 + HALLOWEEN_TO_D;
+  if (!hoopaUnlocked && epoch >= HOOPA_UNLOCK_EPOCH) unlockHoopa();
+}
+
+// Fires once. A waiting egg becomes the HOOPA egg on the spot; a live creature
+// is never displaced -- the ring waits and the NEXT egg is HOOPA (newEgg()).
+void Pet::unlockHoopa() {
+  if (hoopaUnlocked) return;
+  hoopaUnlocked = true;
+  hoopaNews = true;
+  if (isEgg() && !starterPick) {
+    eggTarget = HOOPA_DEX;
+    for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = HOOPA_DEX;  // the pill cannot swap it away
+    hoopaPending = false;
+  } else {
+    hoopaPending = true;
+  }
+  save();
+}
+
+void Pet::toggleForm() {
+  if (!canChangeForm()) return;
+  form = (form == FORM_CONFINED) ? FORM_UNBOUND : FORM_CONFINED;
+  heartUntil = millis() + HEART_MS;
+  sfxPlay(SFX_LEVEL);
+  save();
+}
+
 void Pet::setClock(uint32_t nowEpoch) {
   lastSeenEpoch = nowEpoch;
   if (nowEpoch) save();  // persiste ya: un corte de luz no pierde la referencia
@@ -125,10 +228,19 @@ void Pet::syncClock(uint32_t nowEpoch) {
     if (sleeping) {  // descanso: baja lento y con suelo, igual que en vivo
       energy = clamp100(energy + 6);
       if (ageMinutes % 2 == 0) {
-        fullness = dropTo(fullness, 1, 30);
-        joy = dropTo(joy, 1, 35);
+        fullness = dropTo(fullness, 1, sleepFloor(30));
+        joy = dropTo(joy, 1, sleepFloor(35));
       }
-      if (ageMinutes % 3 == 0) hygiene = dropTo(hygiene, 1, 45);
+      if (ageMinutes % 3 == 0) hygiene = dropTo(hygiene, 1, sleepFloor(45));
+      continue;
+    }
+    // Kids mode: away from the device it dozes -- nothing drains past the
+    // floor, and it comes back rested. The point of the mode.
+    if (kidsMode) {
+      fullness = dropTo(fullness, 2, KIDS_FLOOR);
+      energy = clamp100(energy + 1);
+      hygiene = dropTo(hygiene, 1, KIDS_FLOOR);
+      joy = dropTo(joy, 1, KIDS_FLOOR);
       continue;
     }
     fullness = dropTo(fullness, 2, 15);
@@ -139,7 +251,8 @@ void Pet::syncClock(uint32_t nowEpoch) {
   if (!isEgg()) {
     if (!sleeping) {  // durmiendo no ensucia
       uint8_t p = poops + mins / 240;
-      poops = p > 3 ? 3 : p;
+      uint8_t cap = kidsMode ? KIDS_POOP_MAX : 3;
+      poops = p > cap ? cap : p;
     }
     // la evolucion NO se aplica offline: queda lista y la dispara el usuario
     // tocando al bicho cuando vuelve (para que vea la transformacion)
@@ -185,10 +298,10 @@ void Pet::tick() {
     energy = clamp100(energy + 6);
     if (weight > 0 && ageMinutes % 3 == 0) weight--;
     if (ageMinutes % 2 == 0) {                 // ~4x mas lento que despierto
-      fullness = dropTo(fullness, 1, 30);
-      joy = dropTo(joy, 1, 35);
+      fullness = dropTo(fullness, 1, sleepFloor(30));
+      joy = dropTo(joy, 1, sleepFloor(35));
     }
-    if (ageMinutes % 3 == 0) hygiene = dropTo(hygiene, 1, 45);
+    if (ageMinutes % 3 == 0) hygiene = dropTo(hygiene, 1, sleepFloor(45));
     defTick(true);  // descansar tambien es bienestar: cuenta para la DEF
     checkMedals();  // aun puede cruzar un nivel por edad mientras duerme
     if (++ticksSinceSave >= 5) pendingSave = true;
@@ -196,6 +309,35 @@ void Pet::tick() {
   }
 
   if (ageMinutes % MINUTES_PER_LEVEL == 0) sfxPlay(SFX_LEVEL);  // subio de nivel (despierto)
+
+  if (kidsMode) {
+    // Nobody here: it dozes. Nothing drains, energy comes back, the weight
+    // still burns off, and resting still counts as wellbeing for the DEF.
+    if (!attended) {
+      energy = clamp100(energy + 1);
+      if (weight > 0 && ageMinutes % 3 == 0) weight--;
+      defTick(true);
+      neglectTicks = 0;
+      checkMedals();
+      checkLearnGates();
+      if (++ticksSinceSave >= 5) pendingSave = true;
+      return;
+    }
+    // Somebody is playing: the needs move so there is something to do, but
+    // every one of them stops at the floor and none of them is ever a mistake.
+    fullness = dropTo(fullness, 2, KIDS_FLOOR);
+    energy = dropTo(energy, 1, KIDS_FLOOR);
+    if (fullness > 40 && poops < KIDS_POOP_MAX && random(100) < KIDS_POOP_PCT) poops++;
+    hygiene = dropTo(hygiene, 1 + 4 * poops, KIDS_FLOOR);
+    if (weight > 0 && ageMinutes % 3 == 0) weight--;
+    defTick(false);
+    joy = dropTo(joy, 1, KIDS_FLOOR);
+    neglectTicks = 0;
+    checkMedals();
+    checkLearnGates();
+    if (++ticksSinceSave >= 5) pendingSave = true;
+    return;
+  }
 
   fullness = clamp100(fullness - 2);
   energy = clamp100(energy - 1);
@@ -585,27 +727,27 @@ static uint16_t calcStat(uint8_t base, uint8_t iv, uint8_t lvl, uint8_t tr) {
 }
 
 uint16_t Pet::atkStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bAtk, ivAtk, level(), trAtk);
+  return isEgg() ? 0 : calcStat(dex().bAtk, ivAtk, level(), trAtk);
 }
 uint16_t Pet::defStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bDef, ivDef, level(), trDef);
+  return isEgg() ? 0 : calcStat(dex().bDef, ivDef, level(), trDef);
 }
 uint16_t Pet::speStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpe, ivSpe, level(), trSpe);
+  return isEgg() ? 0 : calcStat(dex().bSpe, ivSpe, level(), trSpe);
 }
 // la vitalidad no se entrena (no hay nada que la suba), asi que lleva un +10
 // fijo en lugar del entrenamiento, igual que el +Nivel+10 del HP en los juegos
 uint16_t Pet::vitStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bHp, ivHp, level(), 10);
+  return isEgg() ? 0 : calcStat(dex().bHp, ivHp, level(), 10);
 }
 // Special reuses the physical IV and training against the species' special base
 // stat, which is what keeps Alakazam (50 Atk / 135 SpA) a real attacker without
 // adding IVs or migrating saves.
 uint16_t Pet::spaStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpA, ivAtk, level(), trAtk);
+  return isEgg() ? 0 : calcStat(dex().bSpA, ivAtk, level(), trAtk);
 }
 uint16_t Pet::spdStat() const {
-  return isEgg() ? 0 : calcStat(DEX_TBL[speciesId].bSpD, ivDef, level(), trDef);
+  return isEgg() ? 0 : calcStat(dex().bSpD, ivDef, level(), trDef);
 }
 
 // ---------- moves ----------
@@ -665,7 +807,7 @@ uint8_t moveUnlockLevel(int16_t dex, uint8_t idx) {
 void Pet::relearnFromLevel() {
   for (int i = 0; i < MOVE_SLOTS; i++) moves[i] = 0;
   if (isEgg()) return;
-  const DexEntry &d = DEX_TBL[speciesId];
+  const DexEntry &d = dex();
   uint8_t lvl = level(), n = learnCount(speciesId);
   int16_t score[MOVE_SLOTS] = { 0, 0, 0, 0 };
   // Two passes. Level-up moves (level >= 1) are what a creature grows into, so
@@ -866,6 +1008,7 @@ bool Pet::canFarewellNow() const {
 // boton (final triste); cuidarla un solo tick la salva (neglectTicks se resetea)
 bool Pet::canRunawayNow() const {
   if (frozen) return false;
+  if (kidsMode) return false;   // a child's creature never leaves
   // inTotalNeglect() as well as the counter, and NOT just the counter. The
   // sleeping branch of tick() returns before the neglect block, so neglectTicks
   // is frozen rather than cleared for the whole night: a creature that went to
@@ -887,7 +1030,7 @@ bool Pet::canRetireNow() const {
 // penalty rather than applying it to a creature that never got retired.
 void Pet::startRetire() {
   if (!canRetireNow()) return;
-  retirePending = !canFarewellNow();
+  retirePending = !canFarewellNow() && !kidsMode;
   save();
   startFarewell();
   // An early retire is NOT the good ending and must not pay like one.
@@ -1288,6 +1431,10 @@ void Pet::save() {
   prefs.putShort("eggT2", eggTarget);
   prefs.putUChar("crack", eggTaps);
   prefs.putUChar("mist", careMistakes);
+  prefs.putBool("kids", kidsMode);
+  prefs.putBool("hoopa", hoopaUnlocked);
+  prefs.putBool("hoopaP", hoopaPending);
+  prefs.putUChar("form", form);
   prefs.putBool("sleep", sleeping);
   prefs.putUChar("lend", lastEnd);
   if (lastSeenEpoch) prefs.putUInt("seen", lastSeenEpoch);
@@ -1355,6 +1502,10 @@ void Pet::load() {
   }
   eggTaps = prefs.getUChar("crack", 0);
   careMistakes = prefs.getUChar("mist", 0);
+  kidsMode = prefs.getBool("kids", KIDS_MODE_DEFAULT);
+  hoopaUnlocked = prefs.getBool("hoopa", false);
+  hoopaPending = prefs.getBool("hoopaP", false);
+  form = prefs.getUChar("form", FORM_CONFINED);
   sleeping = prefs.getBool("sleep", false);
   lastEnd = prefs.getUChar("lend", CER_NONE);
   loadBlob(prefs, "dexreg", dexReg, sizeof(dexReg));

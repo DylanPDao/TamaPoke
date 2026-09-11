@@ -49,7 +49,10 @@ static int bad=0;
 static void ck(bool ok,const char*w){printf("%s  %s\n",ok?"PASS":"FAIL",w); if(!ok)bad++;}
 
 int main(){
+  // These assert the STRICT rules. Kids mode (the default in this fork, see
+  // kids_test) forgives all of them, so it is switched off here on purpose.
   setup();
+  pet.setKidsMode(false);
   for (int i=0;i<4;i++) render();
   if (pet.awaitingStarter()) pet.chooseStarter(4);
   if (pet.isEgg()) pet.dbgHatchAs(6,false);
