@@ -98,6 +98,22 @@ struct FakeSerial {
   int available();
   String readStringUntil(char);
   size_t readBytes(uint8_t *, size_t) { return 0; }
+  // Byte at a time, as the sketch reads the console. Every test feeds whole
+  // LINES through available()/readStringUntil(), so this replays each one with
+  // its '\n'. `raw` goes first: exact bytes, partial lines included, for a
+  // test that needs them (serial_test).
+  std::string raw;
+  std::string rxLine;
+  size_t rxAt = 0;
+  int read() {
+    if (!raw.empty()) { int c = (unsigned char)raw[0]; raw.erase(0, 1); return c; }
+    if (rxAt >= rxLine.size()) {
+      if (!available()) return -1;
+      rxLine = readStringUntil('\n').s + "\n";
+      rxAt = 0;
+    }
+    return (unsigned char)rxLine[rxAt++];
+  }
   template <typename... A> void printf(const char *f, A... a) { std::printf(f, a...); fflush(stdout); }
   void println(const char *s = "") { std::printf("%s\n", s); fflush(stdout); }
   void println(int v) { std::printf("%d\n", v); fflush(stdout); }

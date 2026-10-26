@@ -10,6 +10,7 @@
 #include "Arduino_GFX_Library.h"
 #include "Preferences.h"
 #include "pet.h"
+#include "i18n.h"
 #include "party.h"
 #include <cstdio>
 #include <cstring>
@@ -32,6 +33,10 @@ static int starterRowY(int i){ return 110 + i*(70+8) + 35; }
 
 int main(){
   setup();
+  render();
+  // a new board asks for its language before the region (lang_test covers it)
+  onTap(233, 96 + LANG_EN * 54 + 24);
+  ck(langChosen(), "the language question comes first, and ENGLISH answers it");
   render();
   ck(pet.awaitingStarter(), "a brand new save asks for a starter");
 

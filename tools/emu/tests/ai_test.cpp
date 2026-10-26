@@ -70,6 +70,77 @@ int main(){
   }
   ck(!everImmune,"it never picks a move the target is immune to");
 
+  // Fixed-damage moves obey immunity too. battleAct() reads the type chart
+  // before it asks for damage, so SEISMIC TOSS into a GHOST does nothing in a
+  // real turn -- but battleDamage() returned the fixed amount before looking,
+  // and the AI scored it as a hit (KO bonus and all) into a target it could
+  // not touch. Each case pairs the fixed move with a feeble EMBER that DOES
+  // land, so a chooser trusting the old estimate prefers the dud.
+  {
+    const char *fixedNames[] = { "SEISMIC TOSS", "NIGHT SHADE", "DRAGON RAGE" };
+    uint8_t ember = 0;
+    for (int i = 1; i < MOVE_COUNT; i++) if (!strcmp(MOVE_TBL[i].name, "EMBER")) ember = (uint8_t)i;
+    ck(ember != 0, "EMBER is in the table");
+    for (const char *nm : fixedNames) {
+      uint8_t fx = 0;
+      for (int i = 1; i < MOVE_COUNT; i++) if (!strcmp(MOVE_TBL[i].name, nm)) fx = (uint8_t)i;
+      // a target immune to this move's type that EMBER still reaches
+      int16_t vs = 0, ok = 0;
+      for (int16_t d = 1; d <= DEX_COUNT && !vs; d++)
+        if (typeEffVsDex(MOVE_TBL[fx].type, d) == 0 && typeEffVsDex(T_FIRE, d) > 0) vs = d;
+      for (int16_t d = 1; d <= DEX_COUNT && !ok; d++)
+        if (typeEffVsDex(MOVE_TBL[fx].type, d) > 0 && typeEffVsDex(T_FIRE, d) > 0) ok = d;
+      char w[96];
+      snprintf(w, sizeof(w), "%s: there is an immune target to test against", nm);
+      ck(fx && vs && ok, w);
+      if (!fx || !vs || !ok) continue;
+      Combatant me, imm, hit;
+      mk(me, 143, 50); mk(imm, vs, 50); mk(hit, ok, 50);
+      me.base[SI_SPA] = 5;                      // EMBER barely scratches
+      for (int k = 0; k < MOVE_SLOTS; k++) me.moves[k] = 0;
+      me.moves[0] = fx; me.moves[1] = ember;
+      imm.hp = 30; hit.hp = 30;                 // within reach of the fixed amount
+      snprintf(w, sizeof(w), "%s does nothing to %s, in the estimate too",
+               nm, DEX_TBL[vs].name);
+      ck(battleDamage(me, imm, fx, false, 236) == 0, w);
+      TurnLog tl; Combatant tgt = imm;
+      battleAct(me, tgt, fx, tl);
+      snprintf(w, sizeof(w), "%s: the estimate agrees with what battleAct does", nm);
+      ck(tl.immune && tgt.hp == imm.hp, w);
+      snprintf(w, sizeof(w), "%s: the hard AI does not throw it at an immune target", nm);
+      ck(aiChooseMove(me, imm, true) == ember, w);
+      // the companion: where it CAN land, it is still the better pick, so the
+      // check above is about immunity and not about never choosing it at all
+      snprintf(w, sizeof(w), "%s: but still picks it where it lands", nm);
+      ck(battleDamage(me, hit, fx, false, 236) > 0 && aiChooseMove(me, hit, true) == fx, w);
+    }
+  }
+
+  // Scores are int32_t, and the best one has to be too. A hit worth more than
+  // 32767 used to wrap the int16_t `bestScore` negative, and any move at all --
+  // even a stat boost -- then looked better than it.
+  {
+    uint8_t psy = 0, sd = 0;
+    for (int i = 1; i < MOVE_COUNT; i++) {
+      if (!strcmp(MOVE_TBL[i].name, "PSYCHIC")) psy = (uint8_t)i;
+      if (!strcmp(MOVE_TBL[i].name, "SWORDS DANCE")) sd = (uint8_t)i;
+    }
+    Combatant me, wall; mk(me, 65, 100); mk(wall, 143, 100);
+    wall.maxHp = wall.hp = 65535;               // so it is no KO either way
+    wall.base[SI_SPD] = 1;
+    for (int k = 0; k < MOVE_SLOTS; k++) me.moves[k] = 0;
+    me.moves[0] = psy; me.moves[1] = sd;
+    uint16_t dmg = 0;
+    for (uint16_t a = 1; a < 2000; a++) {
+      me.base[SI_SPA] = a;
+      dmg = battleDamage(me, wall, psy, false, 236);
+      if (dmg > 33000) break;
+    }
+    printf("     a %u-point PSYCHIC against SWORDS DANCE\n", dmg);
+    ck(psy && sd && dmg > 32767 && dmg < 65000, "a hit too big for an int16_t score");
+    ck(aiChooseMove(me, wall, true) == psy, "it is still the best move, not wrapped below a boost");
+  }
+
   // and easy mode must stay dumb, or hard mode means nothing
   Combatant e1,e2; mk(e1,6,50); mk(e2,3,50);
   bool varied=false; uint8_t first=aiChooseMove(e1,e2,false);

@@ -4,8 +4,11 @@
 #include "pet.h"   // gRegionArt, REGIONS -- the mask this narrows
 #include <FS.h>
 #include <SD_MMC.h>
+#include "esp_vfs_fat.h"
+#include "driver/sdmmc_host.h"
 
 bool sdReady = false;
+bool sdNeedsFormat = false;
 bool sdDirty = false;
 bool sdArtDirty = false;
 SdThumbs thumbs;
@@ -61,6 +64,7 @@ bool PmdMon::load(int16_t dexNum, bool shiny) {
       a.ms[k] = p[0] | (p[1] << 8);
       p += 2;
     }
+    if (!pmdActTimed(a)) { unload(); return false; }   // every frame 0 ms: corrupt
     a.data = p;
     p += (uint32_t)w * h * nf;
     // fila mas baja con contenido en cualquier frame: anclar por los pies
@@ -100,26 +104,32 @@ bool SdThumbs::load() {
     Serial.println("sin thumbs.bin (galeria sin miniaturas)");
     return false;
   }
-  uint32_t size = f.size();
-  data = (uint8_t *)ps_malloc(size);
-  if (!data || f.read(data, size) != size || memcmp(data, "TPTH", 4) != 0) {
+  // Loaded again after the card is formatted, so drop any previous image first.
+  if (data) { free(data); data = nullptr; }
+  loaded = false;
+  count = 0;
+  size = f.size();
+  // The size is checked BEFORE the magic is compared: an empty or three-byte
+  // file (an upload that died at once) made memcmp read past the buffer.
+  if (size < 6) data = nullptr;
+  else data = (uint8_t *)ps_malloc(size);
+  if (!data || f.read(data, size) != size || !sdThumbsHeader(data, size, &count)) {
     Serial.println("thumbs.bin invalido");
     if (data) { free(data); data = nullptr; }
+    size = 0;
+    count = 0;
     f.close();
     return false;
   }
   f.close();
-  memcpy(&count, data + 4, 2);
   loaded = true;
   Serial.printf("miniaturas cargadas: %u (%u KB)\n", count, size / 1024);
   return true;
 }
 
 const uint8_t *SdThumbs::get(int16_t dex) const {
-  if (!loaded || dex < 1 || dex > count) return nullptr;
-  uint32_t off;
-  memcpy(&off, data + 6 + 4 * (dex - 1), 4);
-  return data + off;
+  if (!loaded) return nullptr;
+  return sdThumbAt(data, size, count, dex);   // nullptr past the end of a cut file
 }
 
 // Which regions actually have their sprite pack on the card.
@@ -153,17 +163,98 @@ void sdScanRegionArt(bool verbose) {
   gRegionArt = mask;
 }
 
+// What follows a successful mount, in ONE place: sdBegin() and sdFormat() both
+// end here, so a freshly formatted card is set up exactly like one found at boot.
+static void sdAfterMount() {
+  Serial.printf("SD montada: %llu MB\n", SD_MMC.cardSize() / (1024ULL * 1024ULL));
+  SD_MMC.mkdir("/mons");
+  sdScanRegionArt();
+}
+
+// Telling "no card" from "a card whose filesystem will not mount".
+//
+// SD_MMC.begin() returns false for both and does not expose why. The ESP-IDF
+// call underneath it does: esp_vfs_fat_sdmmc_mount() returns ESP_FAIL only
+// AFTER sdmmc_card_init() succeeded -- the card answered, then f_mount() failed
+// -- while an empty slot fails card init with ESP_ERR_TIMEOUT /
+// ESP_ERR_INVALID_RESPONSE / ESP_ERR_NOT_FOUND and never reaches the FS. So when
+// SD_MMC.begin() fails, this repeats the mount through the IDF directly, on its
+// own mount point and with the SAME host and slot SD_MMC builds (slot 1, 1-bit,
+// pins through the GPIO matrix), reads the code, and unmounts again. Everything
+// else keeps using SD_MMC exactly as before; this exists only to ask the card.
+//
+// With `format` set it is also how the card gets formatted: the IDF formats
+// only when f_mount fails again, so a card that turns out to mount after all
+// is left untouched. That path is used instead of SD_MMC.begin(.., true)
+// because SD_MMC hardcodes allocation_unit_size 0 -- one-sector clusters --
+// which on a 128 GB card means a FAT of about a gigabyte to write. 32 KB
+// clusters are the usual FAT32 choice for large cards and format in seconds.
+#define SD_PROBE_PATH "/sdprobe"
+static esp_err_t sdProbe(bool format) {
+  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+  host.slot = SDMMC_HOST_SLOT_1;
+  host.flags = SDMMC_HOST_FLAG_1BIT;
+  host.max_freq_khz = BOARD_MAX_SDMMC_FREQ;   // SD_MMC.begin()'s own default
+  sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
+  slot.clk = (gpio_num_t)SDMMC_CLK;
+  slot.cmd = (gpio_num_t)SDMMC_CMD;
+  slot.d0 = (gpio_num_t)SDMMC_DATA;
+  slot.d1 = slot.d2 = slot.d3 = GPIO_NUM_NC;
+  slot.width = 1;
+  esp_vfs_fat_sdmmc_mount_config_t cfg = {};
+  cfg.format_if_mount_failed = format;
+  cfg.max_files = 1;
+  cfg.allocation_unit_size = 32 * 1024;
+  sdmmc_card_t *card = nullptr;
+  esp_err_t r = esp_vfs_fat_sdmmc_mount(SD_PROBE_PATH, &host, &slot, &cfg, &card);
+  if (r == ESP_OK) esp_vfs_fat_sdcard_unmount(SD_PROBE_PATH, card);
+  return r;
+}
+
 bool sdBegin() {
   SD_MMC.setPins(SDMMC_CLK, SDMMC_CMD, SDMMC_DATA);
-  sdReady = SD_MMC.begin("/sdcard", true /* modo 1-bit */, true /* formatea si no monta */);
+  sdNeedsFormat = false;
+  // NEVER format here. This used to pass format_if_mount_failed = true, which
+  // silently wiped any card it could not read -- an exFAT card, an NTFS one,
+  // one with a glitch -- along with everything the player kept on it.
+  sdReady = SD_MMC.begin("/sdcard", true /* modo 1-bit */, false /* never format unasked */);
+  if (!sdReady) {
+    esp_err_t r = sdProbe(false);
+    if (r == ESP_OK) {
+      // It mounted the second time (a slow card or a marginal contact): hand it
+      // back to SD_MMC, which everything else reads through.
+      sdReady = SD_MMC.begin("/sdcard", true, false);
+    } else if (r == ESP_FAIL) {
+      sdNeedsFormat = true;
+    }
+    if (!sdReady && !sdNeedsFormat) Serial.printf("SD: init 0x%x\n", (unsigned)r);
+  }
   if (sdReady) {
-    Serial.printf("SD montada: %llu MB\n", SD_MMC.cardSize() / (1024ULL * 1024ULL));
-    SD_MMC.mkdir("/mons");
-    sdScanRegionArt();
+    sdAfterMount();
+  } else if (sdNeedsFormat) {
+    Serial.println("SD present but unreadable: asking before formatting it");
   } else {
     Serial.println("SD no detectada (el juego usa los sprites de flash)");
   }
   return sdReady;
+}
+
+bool sdFormat() {
+  if (sdReady) return true;          // mounted already: there is nothing to erase
+  esp_err_t r = sdProbe(true);
+  if (r != ESP_OK) {
+    Serial.printf("SD: format failed (0x%x)\n", (unsigned)r);
+    return false;
+  }
+  sdReady = SD_MMC.begin("/sdcard", true, false);
+  if (!sdReady) {
+    Serial.println("SD: formatted but it does not mount");
+    return false;
+  }
+  sdNeedsFormat = false;
+  Serial.println("SD formatted");
+  sdAfterMount();
+  return true;
 }
 
 bool SdMon::load(int16_t dexNum, bool shiny) {
@@ -275,12 +366,11 @@ bool sdSerialCommand(const String &line) {
     }
     f.close();
     Serial.setTimeout(1000);
-    sdDirty = (remaining == 0);
-    // A pack file just landed, so which regions are playable may have changed.
-    // Flag it rather than rescanning here: this runs between the last data block
-    // and the DONE the host is waiting on, and 15 file opens belong nowhere near
-    // that. loop() picks it up.
-    if (remaining == 0) sdArtDirty = true;
+    // What a finished file is worth reloading -- the pet's sprite, the region
+    // scan -- is decided by the sketch, which knows the creature on screen.
+    // Nothing is reloaded here: this runs between the last data block and the
+    // DONE the host is waiting on. See sdPutLanded().
+    if (remaining == 0) sdPutLanded(path.c_str());
     Serial.println(remaining == 0 ? "DONE" : "ERR");
     return true;
   } else if (line == "LS") {

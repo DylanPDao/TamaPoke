@@ -34,6 +34,24 @@ uint16_t linkBuildTag() {
 
 uint8_t linkSafeMove(uint8_t m) { return m < MOVE_COUNT ? m : 0; }
 
+// Same framing checks as onPacket, so the radio layer and the protocol can
+// never disagree about what counts as a hello.
+bool linkIsHello(const uint8_t *buf, uint16_t len) {
+  if (!buf || len < HDR) return false;
+  uint8_t n = buf[1];
+  if (buf[0] != LM_HELLO || n > LINK_MAX_PAYLOAD) return false;
+  if ((uint16_t)HDR + n > len || n < HB_LEN) return false;
+  return true;
+}
+
+bool linkHelloCompatible(const uint8_t *buf, uint16_t len) {
+  if (!linkIsHello(buf, len)) return false;
+  const uint8_t *b = buf + HDR;
+  if (b[HB_PROTO] != LINK_PROTO) return false;
+  uint16_t build = (uint16_t)b[HB_BUILD] | ((uint16_t)b[HB_BUILD + 1] << 8);
+  return build == linkBuildTag();
+}
+
 void linkMonFrom(LinkMon &out, const Combatant &c) {
   memset(&out, 0, sizeof(out));
   out.dex = c.dex;
@@ -99,7 +117,10 @@ static void sendHello(Link &l) {
   uint16_t tag = linkBuildTag();
   b[HB_BUILD] = (uint8_t)(tag & 0xFF);
   b[HB_BUILD + 1] = (uint8_t)(tag >> 8);
-  memcpy(b + HB_NAME, l.peerName, LINK_NAME_LEN);
+  // OUR name. This used to send peerName, which the first hello we receive
+  // overwrites -- so every resent hello after that echoed the peer's own name
+  // back to it, and one device showed itself as the rival.
+  memcpy(b + HB_NAME, l.myName, LINK_NAME_LEN);
   put(l, LM_HELLO, b, HB_LEN);
 }
 
@@ -121,7 +142,7 @@ static void sendSquad(Link &l, uint8_t rot = 0) {
   }
 }
 
-void Link::begin(bool host, const char *myName) {
+void Link::begin(bool host, const char *name) {
   state = LINK_LISTENING;
   isHost = host;
   protoTheirs = 0;
@@ -143,7 +164,8 @@ void Link::begin(bool host, const char *myName) {
   sawRx = false;
   armed = false;
   peerName[0] = 0;
-  (void)myName;
+  memset(myName, 0, sizeof(myName));   // the wire field is sent whole
+  snprintf(myName, sizeof(myName), "%s", name ? name : "");
 }
 
 void Link::addMon(const LinkMon &m) {
@@ -194,8 +216,11 @@ void Link::sendBye() {
 
 void Link::sendRematch() {
   if (!theirsN || !mineN) return;
-  put(*this, LM_REMATCH, nullptr, 0);
   rearm();
+  // KEPT, after rearm() (which clears txLive): one lost REMATCH used to leave
+  // the peer sitting in DONE while we waited in READY and timed out. Resent
+  // until our first ACT or RESULT of the new fight supersedes it.
+  put(*this, LM_REMATCH, nullptr, 0, true);
 }
 
 // Same two squads, fresh fight. Nothing is re-exchanged: both sides already
@@ -241,7 +266,12 @@ void Link::tick(uint32_t now) {
     sendHello(*this);       // as a set: a squad is only useful complete
     sendSquad(*this, resendSeq);
   } else if (txLive) {
-    rawSend(*this, tx, txN);
+    rawSend(*this, tx, txN);       // doubles as the keepalive
+  } else if (state == LINK_READY || state == LINK_WAITING) {
+    // Nothing to resend, but the peer must still hear from us: without this an
+    // idle fight -- a player thinking over the first move, a guest reading the
+    // narration -- went LOST on both sides after LINK_BATTLE_TIMEOUT_MS.
+    put(*this, LM_PING, nullptr, 0);
   }
 }
 
@@ -350,8 +380,14 @@ void Link::onPacket(const uint8_t *buf, uint8_t len) {
       return;
     case LM_REMATCH:
       if (!theirsN || !mineN) return;
+      // Only from DONE. REMATCH is resent until superseded, so copies keep
+      // arriving after we have already rearmed and possibly started the new
+      // fight; rearming again would throw away its turn mid-exchange.
+      if (state != LINK_DONE) return;
       rearm();
       return;
+    case LM_PING:
+      return;                          // proof of life only; sawRx did the work
     default:
       return;                          // unknown type: ignore, do not desync
   }

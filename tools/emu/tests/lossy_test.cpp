@@ -27,13 +27,19 @@ static int dropEvery = 0;      // drop every Nth frame; 0 = drop nothing
 static int dupEvery = 0;       // deliver every Nth frame twice
 static bool deaf = false;      // nothing gets through at all
 static int seen = 0, dropped = 0;
+static uint8_t dropType = 0;   // drop the next frame of this type, once
+static int pings = 0;          // LM_PING frames put on the wire
+static int rematches = 0;      // and LM_REMATCH ones
 
 static void deliver(Link &to, const uint8_t *b, uint8_t n) {
   to.onPacket(b, n);
 }
 static void wire(Link &to, const uint8_t *b, uint8_t n) {
   seen++;
+  if (n && b[0] == LM_PING) pings++;
+  if (n && b[0] == LM_REMATCH) rematches++;
   if (deaf) { dropped++; return; }
+  if (dropType && n && b[0] == dropType) { dropType = 0; dropped++; return; }
   if (dropEvery && (seen % dropEvery) == 0) { dropped++; return; }
   // copy first: onPacket may send, which can clobber the caller's buffer
   uint8_t tmp[260]; if (n > sizeof(tmp)) return;
@@ -174,15 +180,53 @@ int main(){
     deaf=false;
   }
   {
-    // and mid-fight, on the shorter deadline
+    // and mid-fight, on the shorter deadline. The SAME idle stretch is run
+    // first with the channel open: if the sides gave up on that too, the
+    // "deaf" check below would pass without deafness having anything to do
+    // with it -- which it did, before the keepalive existed.
     seen=dropped=0; deaf=false;
     pair(true,false);
     run(3000);
-    ck(A.ready(), "paired");
+    ck(A.ready() && B.ready(), "paired");
+    run(LINK_BATTLE_TIMEOUT_MS + 2000, 500);
+    ck(A.ready() && B.ready(), "an idle fight over an open channel stays up");
     deaf=true;
     run(LINK_BATTLE_TIMEOUT_MS + 2000, 500);
-    ck(A.state==LINK_LOST && B.state==LINK_LOST, "both give up mid-fight");
+    ck(A.state==LINK_LOST && B.state==LINK_LOST, "a deaf one gives up mid-fight");
     deaf=false;
+  }
+
+  // --- nobody acting is not nobody being there -----------------------------
+  // Each place a side can legitimately be silent mid-fight: both thinking over
+  // the first move, the host holding its own latched move while the guest
+  // thinks, and the guest reading the narration after a result. Any of them
+  // used to drop the link after LINK_BATTLE_TIMEOUT_MS.
+  {
+    const uint32_t IDLE = 16000;
+    seen=dropped=0; dropEvery=0; dupEvery=0; deaf=false;
+    pair(true,false);
+    run(3000);
+    pings = 0;
+    run(IDLE);
+    ck(A.ready() && B.ready(), "16 s with nobody choosing a first move: still linked");
+    ck(pings > 0, "and it is the keepalive that kept it");
+
+    B.sendAct(LINK_ACT_MOVE(0));
+    run(IDLE);
+    ck(A.hasPeerAct() && B.state==LINK_WAITING,
+       "16 s with the guest waiting on the host: still linked");
+
+    LinkResult r{}; r.hostHp=50; r.guestHp=50;
+    A.sendResult((const uint8_t*)&r, sizeof(r));
+    run(IDLE);
+    ck(A.ready() && B.ready() && B.turn==A.turn,
+       "16 s with the guest reading the narration: still linked");
+
+    // the same, over a channel that drops a third of everything
+    dropEvery=3;
+    run(IDLE);
+    ck(A.ready() && B.ready(), "and 16 s idle over a lossy channel");
+    dropEvery=0;
   }
 
   // --- leaving on purpose is instant, not a timeout ------------------------
@@ -210,6 +254,37 @@ int main(){
     ck(A.state==LINK_READY && B.state==LINK_READY, "a rematch reopens both sides");
     ck(A.turn==0 && B.turn==0, "from turn zero");
     ck(A.theirsN==hadA && B.theirsN==hadB, "with the squads still in hand");
+  }
+
+  // --- a lost REMATCH is resent, not fatal ---------------------------------
+  {
+    seen=dropped=0; dropEvery=0; dupEvery=0; deaf=false;
+    pair(true,false);
+    run(3000);
+    A.sendEnd(true);
+    ck(A.state==LINK_DONE && B.state==LINK_DONE, "a fight ends");
+    dropType = LM_REMATCH;           // the guest's REMATCH never lands
+    B.sendRematch();
+    ck(dropType==0 && A.state==LINK_DONE, "the first REMATCH is lost");
+    run(2000);
+    ck(A.state==LINK_READY && B.state==LINK_READY,
+       "a resend reopens the side that missed it");
+    run(LINK_BATTLE_TIMEOUT_MS + 2000);
+    ck(A.ready() && B.ready(), "and neither side times out waiting on it");
+
+    // The copies keep coming until the sender's first ACT or RESULT of the
+    // new fight. The host asks this time, so its REMATCH is still being
+    // resent while the guest has already acted -- and must not rearm it.
+    A.sendEnd(true);
+    A.sendRematch();
+    run(200);
+    ck(B.state==LINK_READY, "the host's rematch reopens the guest");
+    B.sendAct(LINK_ACT_MOVE(0));
+    rematches = 0;
+    run(2000);
+    ck(rematches > 0, "the host is still resending its REMATCH");
+    ck(A.hasPeerAct() && B.state==LINK_WAITING,
+       "and a late copy does not rearm a fight already under way");
   }
 
   printf("%s\n", bad?"FAILURES":"all good");

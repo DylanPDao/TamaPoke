@@ -12,6 +12,9 @@ static uint64_t g_virtUs = 0;      // accumulated in us so the scaling cannot dr
 static uint32_t g_timeScale = 1;   // >1 makes in-game minutes pass faster
 
 void emuSetTimeScale(uint32_t s) { g_timeScale = s ? s : 1; }
+// Jump the clock forward, so a test can take millis() across its 49.7-day wrap
+// (or 25 days past a deadline) without waiting for it.
+void emuAdvanceMs(uint64_t ms) { g_virtUs += ms * 1000; }
 uint32_t emuTimeScale() { return g_timeScale; }
 
 // The sketch times gestures off this same clock -- a tap needs dt < 1500 and a

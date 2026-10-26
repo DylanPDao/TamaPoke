@@ -50,17 +50,72 @@ struct PmdMon {
   bool has(uint8_t a) const { return loaded && a < PMD_NACTS && acts[a].frames > 0; }
 };
 
+// Does this action actually advance? A frame walk subtracts each duration from
+// the elapsed time until it runs out, so an action whose durations are ALL zero
+// never runs out: pmdFrameAt() spun forever and froze the panel (the loop task
+// has no watchdog to break it). Only a corrupt file has that, so the loaders
+// refuse it, and pmdFrameAt() asks this too rather than trusting every caller.
+// Inline and SD-free so the firmware loader and the emulator's share it.
+static inline bool pmdActTimed(const PmdAct &a) {
+  uint8_t n = a.frames > 24 ? 24 : a.frames;
+  for (uint8_t k = 0; k < n; k++)
+    if (a.ms[k]) return true;
+  return false;
+}
+
 // miniaturas de la galeria (thumbs.bin entero en PSRAM)
 struct SdThumbs {
   bool loaded = false;
   uint8_t *data = nullptr;
+  uint32_t size = 0;      // bytes actually read: every offset is checked against it
   uint16_t count = 0;
   bool load();
   const uint8_t *get(int16_t dex) const;  // blob: w,h,palCount,pal[],idx[]
 };
 extern SdThumbs thumbs;
 
+// thumbs.bin, checked against the bytes that were actually READ.
+//
+//   char[4] "TPTH", u16 count, u32 offset[count], then per species:
+//   u8 w, u8 h, u8 palCount, u16 pal[palCount], u8 idx[w*h]
+//
+// PUT writes a file in place, so an upload cut short leaves a perfectly valid
+// header whose later offsets point past the end of what arrived -- and the
+// gallery read straight off the end of the buffer. These two are shared by the
+// firmware and the emulator (inline, no SD dependency) so the tests exercise
+// the same bounds the board runs.
+static inline bool sdThumbsHeader(const uint8_t *d, uint32_t size, uint16_t *count) {
+  if (!d || size < 6 || memcmp(d, "TPTH", 4) != 0) return false;
+  uint16_t n;
+  memcpy(&n, d + 4, 2);
+  if ((uint32_t)6 + 4u * n > size) return false;   // the offset table itself is cut
+  *count = n;
+  return true;
+}
+// A species' blob, or nullptr when any byte of it would lie outside the file.
+static inline const uint8_t *sdThumbAt(const uint8_t *d, uint32_t size, uint16_t count,
+                                       int16_t dex) {
+  if (!d || dex < 1 || dex > count) return nullptr;
+  uint32_t off;
+  memcpy(&off, d + 6 + 4 * (uint32_t)(dex - 1), 4);
+  if (off > size || size - off < 3) return nullptr;
+  const uint8_t *b = d + off;
+  uint32_t need = 3 + (uint32_t)b[2] * 2 + (uint32_t)b[0] * b[1];
+  if (size - off < need) return nullptr;
+  return b;
+}
+
 bool sdBegin();                 // monta la SD (SDMMC 1-bit), true si hay tarjeta
+// A card ANSWERED but its filesystem would not mount (exFAT -- which this
+// FATFS build lacks -- on most cards over 32 GB, NTFS, corruption). sdBegin()
+// no longer formats such a card by itself: it sets this and the UI asks first,
+// because formatting erases whatever the player keeps on it. No card at all
+// leaves this false and stays the silent no-sprites path.
+extern bool sdNeedsFormat;
+// Erase the card (FAT32) and mount it, then the same post-mount work sdBegin()
+// does. BLOCKING, and on a large card it can take a long time, so the caller
+// must have the panel saying so first. True when the card is mounted after.
+bool sdFormat();
 // The three species sdScanRegionArt() looks for to decide a region's pack is on
 // the card. Inline and free of any SD dependency so the tests can check them --
 // A PROBE MUST LAND ON A SPECIES THAT IS ACTUALLY PACKED. Alola's midpoint is
@@ -88,3 +143,8 @@ extern bool sdDirty;  // true tras recibir archivos: recargar sprite
 // until the board was rebooted, which looked exactly like the download failing.
 // The main loop rescans when this is set; the transfer itself is never delayed.
 extern bool sdArtDirty;
+// Called by the PUT handler for every file that arrived whole. Defined in the
+// sketch: it sets sdDirty only when the file is the live creature's own sprite
+// (or thumbs.bin), and arms sdArtDirty for a rescan loop() runs once the
+// transfer has gone quiet -- not after every one of a pack's ~300 files.
+void sdPutLanded(const char *path);

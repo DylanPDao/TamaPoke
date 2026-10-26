@@ -39,7 +39,7 @@ static void loadBlob(Preferences &p, const char *key, void *dst, size_t n) {
 
 void Pet::begin() {
   prefs.begin("tamapoke", false);
-  opened = true;
+  prefs.opened = true;
   // Zeroed BEFORE the branch below, not inside load(): getBytes() leaves its
   // destination untouched when the key is missing, and the fresh-install path
   // returns without ever calling load(). Without this a begin() after a factory
@@ -50,6 +50,7 @@ void Pet::begin() {
   memset(badgesHardX, 0, sizeof(badgesHardX));
   memset(dexReg, 0, sizeof(dexReg));
   memset(dexShinyReg, 0, sizeof(dexShinyReg));
+  dexChanged();
   for (int i = 0; i < REGION_COUNT; i++) eggByRegion[i] = 0;
   if (!prefs.getBool("init", false)) {
     prefs.putBool("init", true);
@@ -87,6 +88,12 @@ void Pet::newEgg() {
   ageMinutes = 0;
   careMistakes = 0;
   mistakeCooldown = 0;
+  // An offer belongs to the creature that unlocked it. Left set, an egg would
+  // open the learn screen -- and now that the queue is saved, keep doing so.
+  learnQCount = 0;
+  evoDeclinedLv = 0;
+  farDeclinedAge = 0;
+  farKeep = false;
   sleeping = false;
   frozen = false;
   save();
@@ -117,7 +124,10 @@ void Pet::syncClock(uint32_t nowEpoch) {
   if (mins > 14UL * 24 * 60) mins = 14UL * 24 * 60;  // tope: 2 semanas
 
   for (uint32_t i = 0; i < mins; i++) {
-    ageMinutes++;
+    // tick() has always skipped this for a revived companion; the offline
+    // catch-up did not, so a frozen level 20 came back level 28 after a night
+    // switched off -- and level 100 after two weeks.
+    if (!frozen) ageMinutes++;
     if (isEgg()) {
       if (ageMinutes >= 3) hatch();  // eclosiona en tu ausencia
       continue;
@@ -149,8 +159,13 @@ void Pet::syncClock(uint32_t nowEpoch) {
 }
 
 void Pet::update(uint32_t nowMs) {
+  // Expired animation timers go back to 0, so they cannot read as active again
+  // 24.8 days later, when the signed difference in timerActive() turns over.
+  uint32_t *timers[] = { &eatUntil, &heartUntil, &evolveUntil, &medalUntil, &milestoneUntil };
+  for (uint32_t *t : timers)
+    if (*t && !timerActive(*t, millis())) *t = 0;
   // fin de ceremonia: la criatura se va y queda un huevo nuevo
-  if (ceremony != CER_NONE && millis() > ceremonyUntil) {
+  if (ceremony != CER_NONE && !timerActive(ceremonyUntil, millis())) {
     snapshotForParty();  // hand it over BEFORE newEgg() erases everything
     newEgg();
     return;
@@ -195,7 +210,12 @@ void Pet::tick() {
     return;
   }
 
-  if (ageMinutes % MINUTES_PER_LEVEL == 0) sfxPlay(SFX_LEVEL);  // subio de nivel (despierto)
+  // A level-up chime only when a level was actually gained. A frozen companion's
+  // age is a whole number of levels and never moves, so the bare modulo chimed
+  // EVERY minute it was awake; past level 100 it chimed every hour for nothing.
+  if (!frozen && ageMinutes % MINUTES_PER_LEVEL == 0 &&
+      ageMinutes <= (uint32_t)(MAX_LEVEL - 1) * MINUTES_PER_LEVEL)
+    sfxPlay(SFX_LEVEL);
 
   fullness = clamp100(fullness - 2);
   energy = clamp100(energy - 1);
@@ -216,8 +236,11 @@ void Pet::tick() {
   // Descuido: dejar una estadistica por los suelos cuenta como error de
   // cuidado (con enfriamiento para no contar el mismo descuido cada minuto)
   if (mistakeCooldown > 0) mistakeCooldown--;
-  if (lowestStat() <= 10 && mistakeCooldown == 0) {
-    careMistakes++;
+  if (lowestStat() <= CARE_MISTAKE_STAT && mistakeCooldown == 0) {
+    // Saturates rather than wraps: a revived companion never leaves, and 256
+    // mistakes (~10.7 days of neglect at one an hour) used to roll back to 0,
+    // which re-qualifies for MED_FIT and erases every evolution delay.
+    if (careMistakes < 255) careMistakes++;
     mistakeCooldown = 60;
     if (bond > 1) bond--;  // el descuido enfria el vinculo, pero sin arrasarlo:
                            // a -3 cada 30 min se perdia mucho mas de lo que se
@@ -370,11 +393,31 @@ uint8_t Pet::eggRarity() const {
   return (eggTarget >= 1 && eggTarget <= DEX_COUNT) ? DEX_TBL[eggTarget].rarity : R_COMUN;
 }
 
+// Picks uniformly among the species in lo..hi that satisfy `ok`, or returns 0
+// if none do.
+//
+// Two walks instead of a candidate array, so there is no capacity to outgrow.
+// The array this replaces was CAND_MAX = 260 entries, which was EXACTLY the
+// number of commons in the mixed pool at the time -- one more generation and
+// `n < CAND_MAX` would have silently cut the highest dex numbers out of every
+// egg, with nothing failing. (It began life as 80, sized for Kanto.) Sizing it
+// from DEX_COUNT instead would cost 1.6 KB of loop-task stack per call for a
+// loop over at most DEX_COUNT species. The pick is identical either way: the
+// same candidates in the same order, chosen by the same one random(n).
+template <typename Ok>
+static int16_t pickWhere(int16_t lo, int16_t hi, Ok ok) {
+  long n = 0;
+  for (int16_t d = lo; d <= hi; d++)
+    if (ok(d)) n++;
+  if (!n) return 0;
+  long k = random(n);
+  for (int16_t d = lo; d <= hi; d++)
+    if (ok(d) && k-- == 0) return d;
+  return 0;                         // unreachable: ok() is a pure function
+}
+
 // elige la especie del huevo: tirada de rareza (mejorada por una despedida
 // completa, castigada por una escapada) y sesgo hacia lineas incompletas
-// Room for the candidate list. A whole rarity tier of a 386-species dex is far
-// more than the 80 the Kanto-only build needed.
-#define CAND_MAX 260
 
 uint16_t gRegionArt = 0xFFFF;   // everything, until the SD narrows it
 
@@ -438,21 +481,18 @@ int16_t Pet::pickEggSpecies() {
   // si la pokedex del tier esta completa, vale cualquiera del tier
   for (int pass = 0; pass < 2; pass++) {
     for (int t = tier; t >= R_COMUN; t--) {
-      int16_t cand[CAND_MAX];
-      int n = 0;
-      for (int16_t d = rg.lo; d <= rg.hi && n < CAND_MAX; d++) {
-        if (DEX_TBL[d].rarity != t) continue;
-        if (pass == 0 && !lineHasUnregistered(d)) continue;
+      int16_t got = pickWhere(rg.lo, rg.hi, [&](int16_t d) {
+        if (DEX_TBL[d].rarity != t) return false;
+        if (pass == 0 && !lineHasUnregistered(d)) return false;
         // ALL spans every region, so filter per species: a missing Sinnoh pack
         // must not put a Sinnoh creature in a mixed egg.
-        if (!regionAvailable(regionOfDex(d))) continue;
+        if (!regionAvailable(regionOfDex(d))) return false;
         // And a species with no art ANYWHERE never hatches, pack or no pack --
         // it would be a creature that can only ever draw as a number. It keeps
         // its dex slot; it is simply not something an egg can contain.
-        if (!speciesHasArt(d)) continue;
-        cand[n++] = d;
-      }
-      if (n > 0) return cand[random(n)];
+        return speciesHasArt(d);
+      });
+      if (got) return got;
     }
   }
   return rg.starters[random(rg.starterCount)];  // inalcanzable, por si acaso
@@ -464,12 +504,11 @@ int16_t Pet::pickEggSpecies() {
 int16_t Pet::rollInRegion(uint8_t r, uint8_t tier) {
   const RegionInfo &rg = REGIONS[eggRegionFallback(r % REGION_COUNT)];
   for (int t = tier; t >= R_COMUN; t--) {
-    int16_t cand[CAND_MAX];
-    int n = 0;
-    for (int16_t d = rg.lo; d <= rg.hi && n < CAND_MAX; d++)
-      if (DEX_TBL[d].rarity == t && regionAvailable(regionOfDex(d)) &&
-          speciesHasArt(d)) cand[n++] = d;
-    if (n) return cand[random(n)];
+    int16_t got = pickWhere(rg.lo, rg.hi, [&](int16_t d) {
+      return DEX_TBL[d].rarity == t && regionAvailable(regionOfDex(d)) &&
+             speciesHasArt(d);
+    });
+    if (got) return got;
   }
   return rg.starters[0];      // a region with nothing in it cannot happen
 }
@@ -508,6 +547,7 @@ void Pet::setRegion(uint8_t r) {
 void Pet::registerSpecies(int16_t dex) {
   if (dex < 1 || dex > DEX_COUNT) return;
   dexReg[(dex - 1) >> 3] |= (1 << ((dex - 1) & 7));
+  dexChanged();
   if (shiny) dexShinyReg[(dex - 1) >> 3] |= (1 << ((dex - 1) & 7));
 }
 
@@ -539,7 +579,9 @@ void Pet::registerCare() {
     milestoneUntil = millis() + 4500;
   }
   checkMedals();
-  save();
+  // Every caller is a care action that marks the pet dirty itself; writing
+  // here made the first care of the day two or three full saves in a row.
+  saveLater();
 }
 
 void Pet::addBond(uint8_t amt) {
@@ -565,7 +607,10 @@ void Pet::checkMedals() {
     newMedal = gained;
     medalUntil = millis() + 4000;
     if (!sleeping) sfxPlay(SFX_MEDAL);
-    save();
+    // Deferred: hatch() and evolve() save right after calling this anyway, and
+    // a medal lost to a power cut is re-awarded by the next check, since every
+    // medal is derived from state that is itself saved.
+    saveLater();
   }
 }
 
@@ -848,9 +893,11 @@ void Pet::rollIVs() {
 }
 
 uint16_t Pet::registeredCount() const {
+  if (regCountCache >= 0) return (uint16_t)regCountCache;
   uint16_t n = 0;
   for (int i = 1; i <= DEX_COUNT; i++)
     if (isRegistered(i)) n++;
+  regCountCache = (int16_t)n;
   return n;
 }
 
@@ -888,8 +935,10 @@ bool Pet::canRetireNow() const {
 void Pet::startRetire() {
   if (!canRetireNow()) return;
   retirePending = !canFarewellNow();
-  save();
-  startFarewell();
+  // ONE save, after lastEnd is final. This used to save before the ceremony,
+  // again inside startFarewell(), and a third time to correct lastEnd -- and
+  // the first was pure cost: retirePending is never loaded (load() clears it).
+  if (!beginFarewell()) return;
   // An early retire is NOT the good ending and must not pay like one.
   // startFarewell() sets lastEnd = CER_FAREWELL, which blesses the next egg --
   // rare 27% -> 45%, legendary 3% -> 10%, shiny 1/48 -> 1/24. Combined with the
@@ -898,20 +947,22 @@ void Pet::startRetire() {
   // Neutral instead, exactly like a release. The ceremony on screen is still the
   // farewell -- this was a choice the player made, not a neglected creature
   // walking out -- but the reward is not.
-  if (retirePending) {
-    lastEnd = CER_RELEASE;
-    save();
-  }
+  if (retirePending) lastEnd = CER_RELEASE;
+  save();
 }
 
 void Pet::startFarewell() {
-  if (isEgg() || ceremony != CER_NONE) return;
+  if (beginFarewell()) save();
+}
+
+bool Pet::beginFarewell() {
+  if (isEgg() || ceremony != CER_NONE) return false;
   lastEnd = CER_FAREWELL;
   ceremony = CER_FAREWELL;
   ceremonyUntil = millis() + CEREMONY_MS;
   heartUntil = ceremonyUntil;  // corazones durante toda la despedida
   sfxPlay(SFX_BYE);
-  save();
+  return true;
 }
 
 void Pet::startRunaway() {
@@ -1022,7 +1073,7 @@ void Pet::feedBerry(uint8_t color) {
   }
   eatUntil = millis() + EAT_ANIM_MS;
   registerCare();
-  save();
+  saveLater();   // care is not worth a ~1 s stall per tap; see loop()
 }
 
 void Pet::feedCandy() {
@@ -1033,7 +1084,7 @@ void Pet::feedCandy() {
   weight = clamp100(weight + 12);  // las chuches pasan factura
   eatUntil = millis() + EAT_ANIM_MS;
   registerCare();
-  save();
+  saveLater();   // care is not worth a ~1 s stall per tap; see loop()
 }
 
 uint8_t Pet::playResult(uint8_t score) {
@@ -1062,8 +1113,24 @@ uint8_t Pet::playResult(uint8_t score) {
   // ceiling.
   addBond((uint8_t)(2 + gain / 6));
   registerCare();
-  save();
+  saveLater();
   return gain;
+}
+
+uint8_t Pet::battleBlock() const {
+  if (isEgg()) return FIGHT_EGG;
+  if (sleeping) return FIGHT_ASLEEP;
+  // Strictly above the care-mistake line AFTER paying: energy == cost + 11 may
+  // fight and lands on 11, cost + 10 may not, since it would land on 10.
+  if ((int)energy - BATTLE_ENERGY_COST <= CARE_MISTAKE_STAT) return FIGHT_TIRED;
+  return FIGHT_OK;
+}
+
+bool Pet::payBattleEnergy() {
+  if (!canBattle()) return false;
+  energy = clamp100((int)energy - BATTLE_ENERGY_COST);
+  save();   // like feeding: a reset right after the fight must not refund it
+  return true;
 }
 
 // saco de entrenamiento: los golpes entrenan la fuerza. Devuelve la subida.
@@ -1085,7 +1152,8 @@ uint8_t Pet::rewardTraining(uint8_t amount, uint8_t &which) {
   }
   // The IV-bound ceiling is never crossed: a mediocre individual not reaching
   // as far is the whole point of trMaxFor().
-  save();
+  // Deferred: on a first win the badge's own save, right after, carries it.
+  saveLater();
   return amount;
 }
 
@@ -1109,7 +1177,7 @@ uint8_t Pet::trainSpeed(uint16_t hits) {
   // ceiling.
   addBond((uint8_t)(2 + gain / 6));
   registerCare();
-  save();
+  saveLater();
   return gain;
 }
 
@@ -1134,7 +1202,7 @@ uint8_t Pet::trainStrength(uint16_t hits) {
   // ceiling.
   addBond((uint8_t)(2 + gain / 6));
   registerCare();
-  save();
+  saveLater();
   return gain;
 }
 
@@ -1147,7 +1215,7 @@ void Pet::play() {
   heartUntil = millis() + HEART_MS;
   addBond(2);
   registerCare();
-  save();
+  saveLater();
 }
 
 // The hour off the RTC, the same source the scene uses. With no clock at all
@@ -1198,7 +1266,10 @@ void Pet::setScreenOff(bool off) {
     sleepAuto = SLEEP_NONE;
   }
   applyAutoSleep();
-  save();
+  // Deferred. Going dark, loop() flushes it on the same pass (screenOff is one
+  // of its flush conditions); coming back, this was a full save on the very
+  // touch that woke the panel, which is exactly when a stall is most visible.
+  saveLater();
 }
 
 void Pet::toggleLight() {
@@ -1209,7 +1280,7 @@ void Pet::toggleLight() {
   // not be undone a minute later by the auto-sleep, and neither must putting
   // it to bed early.
   sleepAuto = SLEEP_PLAYER;
-  save();
+  saveLater();   // asleep, loop() flushes it on the next pass anyway
 }
 
 void Pet::clean() {
@@ -1218,7 +1289,7 @@ void Pet::clean() {
   hygiene = 100;
   addBond(1);
   registerCare();
-  save();
+  saveLater();
 }
 
 void Pet::caress() {
@@ -1233,7 +1304,7 @@ void Pet::caress() {
 void Pet::eggTap() {
   if (!isEgg()) return;
   if (++eggTaps >= 3) hatch();
-  else save();
+  else saveLater();   // a crack is not progress worth a stall; the hatch saves
 }
 
 PetMood Pet::mood() const {
@@ -1248,7 +1319,8 @@ void Pet::save() {
   // fixture, anything built to be read and thrown away. It shares the single
   // NVS namespace with the real creature, so letting it write means it
   // OVERWRITES the player's pet. See the note on `opened` in pet.h.
-  if (!opened) return;
+  if (!prefs.opened) return;
+  uint32_t t0 = millis();
   ticksSinceSave = 0;
   pendingSave = false;
   prefs.putUChar("full", fullness);
@@ -1266,6 +1338,13 @@ void Pet::save() {
   prefs.putUChar("tspe", trSpe);
   prefs.putBytes("mvs", moves, sizeof(moves));
   prefs.putUChar("mvlv", lastLearnLevel);
+  {
+    // Only the live entries: hatch() and reviveFrom() reset learnQCount without
+    // zeroing the array, so writing it raw would resurrect stale offers.
+    uint8_t q[sizeof(learnQueue)] = { 0 };
+    memcpy(q, learnQueue, learnQCount <= sizeof(q) ? learnQCount : sizeof(q));
+    prefs.putBytes("mvq", q, sizeof(q));
+  }
   prefs.putUChar("avtr", avatar);
   prefs.putUChar("reg", region);
   prefs.putBytes("badgX", badgesX, sizeof(badgesX));
@@ -1282,6 +1361,9 @@ void Pet::save() {
   prefs.putUChar("evop", evoPen);
   prefs.putUChar("slpa", sleepAuto);
   prefs.putBool("rtpn", retirePending);
+  prefs.putUChar("evoD", evoDeclinedLv);
+  prefs.putUInt("farD", farDeclinedAge);
+  prefs.putBool("farK", farKeep);
   prefs.putBytes("dexsh", dexShinyReg, sizeof(dexShinyReg));
   prefs.putUInt("age", ageMinutes);
   prefs.putShort("dexn", speciesId);
@@ -1303,6 +1385,8 @@ void Pet::save() {
   prefs.putUShort("shi", strHi);
   prefs.putUShort("qhi", spdHi);
   prefs.putString("nick", nick);
+  saveCount++;
+  lastSaveMs = millis() - t0;
 }
 
 void Pet::load() {
@@ -1338,8 +1422,15 @@ void Pet::load() {
   eggShiny = prefs.getBool("eshy", false);
   starterPick = prefs.getBool("stpk", false);
   evoPen = prefs.getUChar("evop", 0);
+  // absent on a save from before they were kept: zero asks, as it always did
+  evoDeclinedLv = prefs.getUChar("evoD", 0);
+  farDeclinedAge = prefs.getUInt("farD", 0);
+  farKeep = prefs.getBool("farK", false);
   sleepAuto = prefs.getUChar("slpa", SLEEP_NONE);
-  retirePending = prefs.getBool("rtpn", false);
+  // Never carried across a boot: the ceremony that spends it is not saved, so a
+  // reset inside those 10 s used to bring the creature back with the flag still
+  // set -- and its LATER, earned farewell then refused to bank it.
+  retirePending = false;
   loadBlob(prefs, "dexsh", dexShinyReg, sizeof(dexShinyReg));
   ageMinutes = prefs.getUInt("age", 0);
   if (prefs.isKey("dexn")) {
@@ -1358,6 +1449,7 @@ void Pet::load() {
   sleeping = prefs.getBool("sleep", false);
   lastEnd = prefs.getUChar("lend", CER_NONE);
   loadBlob(prefs, "dexreg", dexReg, sizeof(dexReg));
+  dexChanged();
   streak = prefs.getUShort("strk", 0);
   bestStreak = prefs.getUShort("bstrk", 0);
   lastCareDay = prefs.getUInt("cday", 0);
@@ -1392,13 +1484,63 @@ void Pet::load() {
   if (avatar >= AVATAR_COUNT) avatar = 0;   // a save from when there were four
   badges = prefs.getUShort("badg", 0);
   badgesHard = prefs.getUShort("badh", 0);
+
+  // Nothing above may be trusted to index a table yet. A save written by a
+  // build with a BIGGER dex (loadBlob() deliberately supports flashing an older
+  // build over a newer save) or an IMPORT block that passes its CRC can carry a
+  // dex this build does not have, and DEX_TBL[speciesId] is read unguarded all
+  // over -- stats, medals, evolution, every render. So every dex read from NVS
+  // is pinned to the table here, before relearnFromLevel()/checkLearnGates()
+  // below are the first to use it.
+  for (int i = 0; i < REGION_COUNT; i++)
+    if (eggByRegion[i] < 0 || eggByRegion[i] > DEX_COUNT) eggByRegion[i] = 0;
+  // setRegion() promotes eggByRegion[r] straight into eggTarget, hatch() makes
+  // eggTarget the creature. A common of the current region is the conservative
+  // re-roll: a corrupted value must never be a way to a rarer egg.
+  if (eggTarget < 1 || eggTarget > DEX_COUNT)
+    eggTarget = rollInRegion(region, R_COMUN);
+  if (speciesId < -1) speciesId = -1;          // every negative already means egg
+  if (speciesId == 0 || speciesId > DEX_COUNT) {
+    // A live creature this build cannot represent. There is no species to
+    // clamp it TO -- any other dex would be a creature the player never raised
+    // -- so it becomes a fresh egg, through newEgg() so that "a fresh egg" has
+    // one definition. Everything player-wide (Pokedex, badges, party, streak)
+    // was loaded above and newEgg() leaves it alone. newEgg() saves at once:
+    // the bytes it replaces were never playable on this build, and a player
+    // going back to the newer one has EXPORT for exactly that.
+    Serial.printf("load: dex %d is not in this build (1..%d), new egg\n",
+                  (int)speciesId, DEX_COUNT);
+    newEgg();
+    return;
+  }
+
   if (!isEgg() && moveCount() == 0 && lastLearnLevel == 0) {
     // save from before moves existed: hand it the set it should already have
     // rather than a queue of every gate it ever passed
     relearnFromLevel();
     lastLearnLevel = level();
   }
-  learnQCount = 0;      // rebuilt from lastLearnLevel by the next tick
+  // The pending level-up offers. lastLearnLevel ("mvlv") is saved, so the
+  // gates below it are never walked again after a reboot: an offer that was
+  // only queued in RAM used to be lost for good. The queue is persisted under
+  // its own key rather than rebuilt from the learnset, because a rebuild cannot
+  // tell an offer still waiting from one the player already DECLINED -- both
+  // are simply "a gated move it does not know" -- so it would re-offer every
+  // declined move on every boot. A new key is additive: a save without it
+  // loads an empty queue, which is exactly what every old save loaded before.
+  learnQCount = 0;
+  if (!isEgg()) {
+    uint8_t q[sizeof(learnQueue)] = { 0 };
+    loadBlob(prefs, "mvq", q, sizeof(q));
+    for (uint8_t i = 0; i < sizeof(q) && q[i]; i++) {
+      uint8_t mv = q[i];
+      if (mv >= MOVE_COUNT || knowsMove(mv)) continue;   // junk, or since learned
+      bool dup = false;
+      for (uint8_t j = 0; j < learnQCount; j++)
+        if (learnQueue[j] == mv) dup = true;
+      if (!dup) learnQueue[learnQCount++] = mv;
+    }
+  }
   checkLearnGates();
   // siembra: la mascota actual cuenta como criada (guardados antiguos)
   if (speciesId >= 1) registerSpecies(speciesId);

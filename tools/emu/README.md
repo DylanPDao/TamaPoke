@@ -47,6 +47,7 @@ clipped on real hardware.
 | `--save FILE` | where to persist NVS (default `tamapoke.nvs` in the cwd) |
 | `--wipe` | delete the save first |
 | `--sprites DIR` | sprite directory (defaults to `tools/sdcard/mons`) |
+| `--sd MODE` | boot as if the slot held `none` (no card), an `unreadable` card (the FORMAT / CANCEL dialog), or one whose format fails (`badformat`) |
 
 ### Headless captures
 

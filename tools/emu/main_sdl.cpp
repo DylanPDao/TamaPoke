@@ -136,6 +136,8 @@ void nvsSave(const char *path) {
 
 // the sketch
 void emuSetSpriteDir(const char *);
+void emuSetSdCard(int mode);       // 0 readable, 1 none, 2 unreadable
+void emuSetSdFormatResult(bool ok);
 void startBattle(int16_t dex, uint8_t lvl);
 extern Combatant btlYou, btlFoe;
 extern uint32_t btlLungeUntil[2], btlHitUntil[2];
@@ -409,6 +411,14 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--iv") && i + 1 < argc) shotIv = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--dex") && i + 1 < argc) shotDex = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--sprites") && i + 1 < argc) emuSetSpriteDir(argv[++i]);
+    // --sd none | unreadable | badformat: boot as if the slot held that card,
+    // which is the only way to see the format dialog without a board
+    else if (!strcmp(argv[i], "--sd") && i + 1 < argc) {
+      const char *m = argv[++i];
+      if (!strcmp(m, "none")) emuSetSdCard(1);
+      else if (!strcmp(m, "unreadable")) emuSetSdCard(2);
+      else if (!strcmp(m, "badformat")) { emuSetSdCard(2); emuSetSdFormatResult(false); }
+    }
     else if (!strcmp(argv[i], "--wipe")) { remove(save); }
   }
   // Audio preview: no SDL, no board -- just a file you can listen to.

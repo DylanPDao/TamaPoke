@@ -32,7 +32,11 @@
 // whole handshake without a radio, and a deliberately lossy transport exercises
 // all of the above. Only the radio itself is unverifiable here.
 
-#define LINK_PROTO 2        // bump on ANY wire change; a mismatch is refused
+// bump on ANY wire change; a mismatch is refused. 3: LM_PING keepalive, and the
+// hello carries the sender's own name. A proto-2 build never pings, so paired
+// with a 3 it would drop the link whenever its player paused -- refusing it at
+// the hello is the loud failure instead of a confusing one mid-fight.
+#define LINK_PROTO 3
 #define LINK_MAX_PAYLOAD 200
 #define LINK_NAME_LEN 12
 
@@ -45,6 +49,11 @@
 #define LINK_JITTER_MS 200
 #define LINK_PAIR_TIMEOUT_MS 20000    // waiting for a peer that may not exist
 #define LINK_BATTLE_TIMEOUT_MS 12000  // mid-fight, where one is known to be there
+// Mid-fight a side can be silent for a perfectly good reason: a player still
+// choosing, a host that latched its own move and is waiting for the guest's, a
+// guest reading the narration. Silence must not read as absence, so a side with
+// nothing kept to resend sends LM_PING on the resend interval instead. It
+// carries nothing; arriving at all is the point (see sawRx).
 
 // An action is a move slot, or a switch with the high bit set. One message
 // rather than two, so turn matching and resend have a single path -- which is
@@ -80,6 +89,7 @@ enum LinkMsg : uint8_t {
   LM_END,
   LM_BYE,        // leaving on purpose, so the peer need not wait for a timeout
   LM_REMATCH,    // go again with the same squads
+  LM_PING,       // keepalive: "still here", so an idle fight is not LOST
 };
 
 // A creature on the wire. Deliberately not `Combatant` itself: that carries
@@ -116,7 +126,8 @@ struct Link {
   uint16_t buildTheirs = 0;
   uint16_t id = 0;             // breaks the tie when both sides offer to host
   uint16_t peerId = 0;
-  char peerName[LINK_NAME_LEN] = "";
+  char myName[LINK_NAME_LEN] = "";    // what our hello says we are called
+  char peerName[LINK_NAME_LEN] = "";  // what theirs said
 
   LinkMon mine[TRAINER_TEAM_MAX];
   uint8_t mineN = 0;
@@ -149,7 +160,7 @@ struct Link {
   void (*send)(void *ctx, const uint8_t *buf, uint8_t len) = nullptr;
   void *ctx = nullptr;
 
-  void begin(bool host, const char *myName);
+  void begin(bool host, const char *name);
   void addMon(const LinkMon &m);
   void start();                       // announce: hello, then squad
   void onPacket(const uint8_t *buf, uint8_t len);
@@ -183,3 +194,10 @@ uint16_t linkBuildTag();
 void linkMonFrom(LinkMon &out, const Combatant &c);
 void linkMonTo(Combatant &out, const LinkMon &m);
 uint8_t linkSafeMove(uint8_t m);      // 0 unless it is a real move
+
+// For the radio layer, which has to decide who to listen to before the protocol
+// has seen a byte. linkIsHello: a well-formed hello frame of ANY protocol
+// version (an incompatible one must still reach Link so it can be refused
+// loudly). linkHelloCompatible: one this build would actually pair with.
+bool linkIsHello(const uint8_t *buf, uint16_t len);
+bool linkHelloCompatible(const uint8_t *buf, uint16_t len);

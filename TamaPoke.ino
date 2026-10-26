@@ -33,17 +33,121 @@
 #include "rtcbat.h"
 #include "i18n.h"
 #include "audio.h"
+#include <nvs.h>      // HEALTH: NVS entry use, for the soak test
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "3.11"
+#define FW_VERSION "3.13"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
 Arduino_CO5300 *panel = new Arduino_CO5300(
   bus, LCD_RESET, 0 /*rotation*/, LCD_WIDTH, LCD_HEIGHT, 6, 0, 0, 0);
+// Every render path ends in gfx->flush(), and a flush pushes the whole ~434 KB
+// framebuffer over QSPI (~30-56 ms). This canvas is the one place all 29 of
+// those calls pass through, so the decision whether a push is worth making
+// lives HERE rather than as a flag in every render function -- a new screen
+// gets it for free and cannot forget it.
+//
+// gPanelDark: brightness 0 (PWR pressed). Nothing pushed can be seen, so the
+// push is dropped and the next lit flush is forced, which is what makes the
+// frame fresh the instant the panel comes back on.
+//
+// An UNCHANGED frame is not pushed either. Most screens (party, box, cards,
+// gym list, chooser, clock, keyboard, learn, win, picker, LAN) are redrawn ten
+// times a second with nothing moving. Each row of the frame is hashed (FNV-1a
+// over its 233 words) and compared with the hash of that row as it was last
+// PUSHED. On a screen that is MOVING, the first row that differs ends the
+// scan, because the frame is going out anyway; rows past it are then unknown
+// (gRowValid), so the next frame cannot be declared unchanged until it has
+// hashed them -- a stale hash would otherwise vouch for a row the panel no
+// longer shows. On a screen that had SETTLED the scan always runs to the end,
+// so one change there costs one push, not two. An animated screen therefore
+// pays for the rows above its first moving one (the clouds, a sprite); a static
+// one reads the whole buffer once, a few ms against a 30-56 ms push. Any
+// single-word change is always caught: each FNV step is a bijection. As a
+// backstop against a missed change (a 32-bit collision) or a glitched panel, a
+// static screen is still pushed once every FRAME_REFRESH_SKIPS frames (~2 s).
+bool gPanelDark = false;
+bool gFramePushNext = true;     // the next flush pushes, whatever it holds
+uint32_t gFlushCalls = 0;       // every gfx->flush() a render path asked for
+uint32_t gFramePushes = 0;      // ... and the ones that really reached the panel
+uint32_t gFrameSkips = 0;       // ... and the ones dropped as unchanged
+#define FRAME_REFRESH_SKIPS 20
+static uint32_t gRowHash[LCD_HEIGHT];   // internal RAM, ~1.9 KB
+static uint16_t gRowValid = 0;          // rows [0, gRowValid) match the panel
+static uint8_t gSkipRun = 0;
+static bool gSettled = false;           // the last frame matched the one before it
+class FrameCanvas : public Arduino_Canvas {
+public:
+  using Arduino_Canvas::Arduino_Canvas;
+  // true if the frame differs from the one on the panel (or may: an unknown
+  // row counts as different). Updates the row hashes as it goes. `full` scans
+  // to the end even after a difference: used when the screen had settled, so a
+  // single change on a static screen costs ONE push rather than two (the early
+  // exit would leave rows unknown and force the next, identical frame out too).
+  bool frameChanged(bool full) {
+    // read as words through a may_alias type: the buffer is written as uint16_t
+    typedef uint32_t __attribute__((__may_alias__)) word_t;
+    const word_t *p = (const word_t *)getFramebuffer();
+    if (!p) return true;
+    const int W32 = LCD_WIDTH * 2 / 4;          // 466 px = 233 words a row
+    uint16_t known = gRowValid;
+    bool diff = false;
+    for (int r = 0; r < LCD_HEIGHT; r++, p += W32) {
+      uint32_t h = 2166136261u;
+      for (int k = 0; k < W32; k++) h = (h ^ p[k]) * 16777619u;
+      if (r >= known || diff) { gRowHash[r] = h; continue; }   // record, keep going
+      if (h != gRowHash[r]) {
+        gRowHash[r] = h;
+        diff = true;
+        if (!full) { gRowValid = r + 1; return true; }   // the rest are now unknown
+      }
+    }
+    gRowValid = LCD_HEIGHT;
+    return diff || known < LCD_HEIGHT;         // unknown rows: it may have changed
+  }
+  void flush(bool force_flush = false) override {
+    gFlushCalls++;
+    if (gPanelDark) { gFramePushNext = true; return; }
+    bool changed = frameChanged(gSettled);
+    gSettled = !changed;
+    if (!changed && !gFramePushNext && gSkipRun < FRAME_REFRESH_SKIPS) {
+      gSkipRun++;
+      gFrameSkips++;
+      return;
+    }
+    gSkipRun = 0;
+    gFramePushNext = false;
+    gFramePushes++;
+    Arduino_Canvas::flush(force_flush);
+  }
+};
 // Framebuffer completo en PSRAM: dibujamos todo y hacemos flush() (sin parpadeo)
-Arduino_Canvas *gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
+Arduino_Canvas *gfx = new FrameCanvas(LCD_WIDTH, LCD_HEIGHT, panel);
+
+// Sprites are drawn a pixel at a time, scaled, as s x s blocks. Neighbouring
+// pixels of one colour are common -- flat pixel art -- and each fillRect pays
+// the library's call, clipping and setup on top of the pixels themselves, so
+// a run of them along a row goes out as ONE fillRect instead. The covered
+// pixels are exactly the union of the blocks, so the picture is identical.
+// Feed it each opaque pixel of a row in order; a gap or a new colour ends the
+// run; end() draws whatever is left. One per row.
+struct RowRuns {
+  int x0, y, s;                  // where pixel 0 of this row lands, and the scale
+  int start = -1, len = 0;
+  uint16_t col = 0;
+  RowRuns(int x0_, int y_, int s_) : x0(x0_), y(y_), s(s_) {}
+  void put(int c, uint16_t k) {
+    if (len && c == start + len && k == col) { len++; return; }
+    end();
+    start = c; len = 1; col = k;
+  }
+  void end() {
+    if (len) gfx->fillRect(x0 + start * s, y, len * s, s, col);
+    len = 0;
+  }
+};
 
 TouchDrvCST92xx touch;
 Pet pet;
@@ -140,6 +244,12 @@ uint8_t boxDetail = 0;        // box slot + 1 whose sheet is open
 // because only one sheet can be open at a time and partyDetail/boxDetail
 // already say which.
 bool releaseConfirm = false;
+// The confirm while a newcomer waits for a slot (partyPick). Both ways out of
+// that state lose a creature for good -- letting the newcomer go, or writing it
+// over a banked one -- and both used to happen on a single tap or swipe.
+#define PICKCONF_NONE 0
+#define PICKCONF_LETGO 0xFF   // anything else: the party slot + 1 it would replace
+uint8_t pickConfirm = PICKCONF_NONE;
 #define BOX_PER_PAGE 6
 uint32_t partyBannerUntil = 0;   // "<name> joined the party!"
 char partyBannerName[14] = "";
@@ -156,6 +266,13 @@ uint32_t bathUntil = 0;
 bool bathPending = false;
 struct { int16_t x, y; uint8_t r, ph; } bubbles[14];
 uint32_t feedMenuUntil = 0;   // selector de comida abierto hasta este millis
+// The feed picker's panel: four 66 px cells, red / blue / green berry, candy.
+#define FEED_X 101
+#define FEED_Y 288
+#define FEED_W 264
+#define FEED_H 64
+#define FEED_CELL 66
+#define FEED_ITEMS 4
 
 // minijuego "toques": mantener la pokeball en el aire
 bool gameOpen = false;
@@ -211,9 +328,61 @@ enum : uint8_t {
   SCR_STARTER = 0, SCR_REGION, SCR_GALLERY, SCR_DEXPICK, SCR_MOVEPICK, SCR_BOX,
   SCR_PARTY, SCR_KEYBOARD, SCR_CARD, SCR_PLAYER, SCR_CLOCK, SCR_GYM, SCR_GYMPICK,
   SCR_LAN, SCR_PICK, SCR_BATTLE, SCR_WIN, SCR_LEARN, SCR_TRAIN, SCR_MENU,
-  SCR_GAME, SCR_MAIN, SCR_COUNT
+  SCR_GAME, SCR_MAIN,
+  // Appended, not inserted: the crash breadcrumb stores this index in RTC
+  // memory, and inserting would renumber every screen after it.
+  SCR_SDCARD,
+  SCR_LANG,
+  SCR_COUNT
 };
 extern const char *const SCREEN_NAME[SCR_COUNT];   // const is internal linkage in C++
+
+// ---------- the unreadable SD card ----------
+// A card answered at boot but its filesystem would not mount. It used to be
+// formatted on the spot, without a word; now the player is asked, because
+// formatting erases whatever was on it. Modal, and first in uiCurrentScreen()
+// after the language question below: it is a boot-time question, it decides
+// what gRegionArt says before the first-boot region chooser reads it, and
+// nothing behind it may take a tap.
+// Not persisted: CANCEL plays on without sprites and the question comes back
+// on the next boot, which is the harmless direction.
+enum : uint8_t { SDASK_NONE = 0, SDASK_ASK, SDASK_BUSY, SDASK_OK, SDASK_FAIL };
+uint8_t sdAsk = SDASK_NONE;
+uint32_t sdAskUntil = 0;     // the result page closes itself at this millis()
+// CANCEL sits above FORMAT, nearer the middle of the panel where a thumb lands;
+// the irreversible button has to be aimed for. The dead band between them is
+// 28 px and belongs to neither, and a tap outside both does nothing at all.
+#define SDASK_BTN_X 93
+#define SDASK_BTN_W 280
+#define SDASK_BTN_H 56
+#define SDASK_CANCEL_Y 262
+#define SDASK_FORMAT_Y 346
+static_assert(SDASK_FORMAT_Y >= SDASK_CANCEL_Y + SDASK_BTN_H + 24,
+              "FORMAT erases the card: it needs a real dead band above it");
+void renderSdAsk();
+void sdAskTap(int16_t x, int16_t y);
+void sdMountedLoad();
+void render();   // sdAskTap() draws the "formatting" frame before it blocks
+
+// ---------- the first-boot language question ----------
+// A board with no language ever picked -- a fresh install, or after WIPE --
+// asks for one before ANYTHING else, the SD question included, so that every
+// screen after it is already in the player's language. Each row names its
+// language in that language: whoever is choosing may not read English.
+// Only on a new game (awaitingStarter): a player upgrading from a build without
+// this question has a creature and never stored a language if they kept the
+// default, and must not be stopped mid-game to be asked.
+// Six rows tile their hit areas with no dead pixels, unlike the SD question:
+// nothing here is irreversible, and SETTINGS changes it at any time.
+#define LANGPICK_X 103
+#define LANGPICK_W 260
+#define LANGPICK_H 48
+#define LANGPICK_Y0 96
+#define LANGPICK_PITCH 54
+#define LANGPICK_Y(i) (LANGPICK_Y0 + (i) * LANGPICK_PITCH)
+void renderLangPick();
+void langPickTap(int16_t x, int16_t y);
+int langPickRowAt(int16_t x, int16_t y);   // exposed for lang_test
 
 // Declared HERE, above every use. tools/emu/build.sh generates a proto.h with
 // every prototype at the top, so the emulator compiled these happily while
@@ -221,21 +390,28 @@ extern const char *const SCREEN_NAME[SCR_COUNT];   // const is internal linkage 
 // produce one -- did not. A green emulator build is not proof the firmware
 // builds; only arduino-cli is.
 void bootReport();
+void bootReportAgain();
 uint8_t uiCurrentScreen();
 // Declared here because renderMonSheet() and the sheet's tap handlers use both
 // ~4000 lines above where they are defined. The emulator generates a proto.h and
 // would compile it either way; arduino-cli would not, and that has shipped once.
 void uiConfirmRects(int *b1Top, int *b1Bot, int *b2Top, int *b2Bot);
+void uiConfirmRect3(int *b3Top, int *b3Bot);
 void renderParty();
 void renderBox();
+void partyReset(bool closeParty);
 void drawConfirmPanel(const char *q, const char *sub1, const char *sub2,
                       uint16_t subCol, const char *o1, uint16_t c1, uint16_t t1,
                       const char *o2, uint16_t c2, uint16_t t2);
+void drawConfirmPanel3(const char *q, const char *sub1, const char *sub2,
+                       uint16_t subCol, const char *o1, uint16_t c1, uint16_t t1,
+                       const char *o2, uint16_t c2, uint16_t t2,
+                       const char *o3, uint16_t c3, uint16_t t3);
 const char *const SCREEN_NAME[SCR_COUNT] = {
   "starter", "region", "gallery", "dexpick", "movepick", "box",
   "party", "keyboard", "card", "player", "clock", "gym", "gympick",
   "lan", "pick", "battle", "win", "learn", "train", "menu",
-  "minigame", "main"
+  "minigame", "main", "sdcard", "lang"
 };
 
 // Badge art for a region, or nullptr when that region has none yet.
@@ -312,9 +488,13 @@ static int regionPickTap(int16_t x, int16_t y, uint8_t mode);
 static void drawEggRegion();          // defined with the egg screen helpers
 static int eggRegionTap(int16_t x, int16_t y);
 static void drawBtlBack();
-static void btlLinkPoll();   // defined with the battle code, called from render()
+static void btlLinkPoll();   // defined with the battle code, called from loop()
+static void crumbDrop();     // loop() leaves the breadcrumb itself while the panel is off
 static void btlSwitchTo(uint8_t i);
 static void btlResolve(uint8_t yourMove);
+static void btlSettleFaints();       // who replaces a fainted creature, or the end
+static void closeScreensForBattle(); // the console's BATTLE clears what hides it
+int btlSwitchCellAt(int16_t x, int16_t y);   // exposed for hit_test
 // The peer's whole team, kept live. A trainer's replacements are built fresh
 // from TRAINERS[] because they only ever arrive once; a linked opponent can
 // switch OUT and back IN, so its creatures have to remember how battered they
@@ -340,6 +520,15 @@ uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
 #define LANBTN_H UI_TAP_MIN
 #define LANBTN_X (233 - LANBTN_W / 2)
 #define LANBTN_Y 336
+
+// The LAN battle button at the foot of a region's gym LIST (the chooser above has
+// its own). It was literal numbers in two places and 32 px tall. 376..420 clears
+// the page dots (366 +- 5) and the last leader row (ends at 354); at y=420 the
+// panel is still 278 px wide, and its corners sit at radius ~205 of 231.
+#define GYMLAN_W 170
+#define GYMLAN_H UI_TAP_MIN
+#define GYMLAN_X (233 - GYMLAN_W / 2)
+#define GYMLAN_Y 376
 
 #define BOXBTN_X 146
 #define BOXBTN_Y 320
@@ -369,6 +558,10 @@ uint8_t btlMyAct = 0;        // host: our own action, latched until theirs lands
 #define CONFIRM_BTN_H 52
 #define CONFIRM_B1_Y 206
 #define CONFIRM_B2_Y 268
+// The farewell asks a THIRD question ("keep forever"), so its panel grows down
+// by one button. Every other caller keeps the two-button panel above.
+#define CONFIRM_B3_Y 330
+#define CONFIRM_H3 236
 
 // The two buttons on the party/box detail sheet. A third full-width row would
 // not fit above BACK, and BRING BACK was h=38 -- under UI_TAP_MIN, the shape
@@ -406,6 +599,11 @@ uint8_t btlTrainGain = 0;    // what the win trained, for the win screen
 uint8_t btlTrainWhich = 0;
 bool btlLink = false;      // this fight is against another device
 bool btlLinkHost = false;
+// Whether the squad offered to the LAN peer holds the live pet. Recorded when
+// the offer is built, because the fight itself is rebuilt from lan.mine, which
+// no longer says who is who -- and the live pet pays for the fight only when it
+// actually starts, so a pairing that never completes costs nothing.
+bool lanPetIn = false;
 static bool gymUnlocked(uint8_t idx, bool hard) {
   return idx == 0 || pet.hasBadge(gymRegion, idx - 1, hard);
 }
@@ -525,11 +723,29 @@ uint8_t btlMsgCount = 0;   // queued lines; a tap shows the next
 // made the bottom row hard to press was a gap, not a wrong rectangle.
 int btlCellIndexAt(int16_t x, int16_t y);
 
-// Used by BOTH the move grid and the switch grid. They had a copy each of the
-// same rectangle test, which is exactly how two halves of one control drift.
+// Used by the move grid and the FIGHT/POKEMON/RUN menu. They had a copy each of
+// the same rectangle test, which is exactly how two halves of one control drift.
 static inline bool btlCellHit(int i, int16_t x, int16_t y) {
   return x >= BTL_HIT_X0(i) && x <= BTL_HIT_X1(i) &&
          y >= BTL_HIT_Y0(i) && y <= BTL_HIT_Y1(i);
+}
+
+// The switch grid is THREE columns over the move grid's two rows, so a full
+// squad of six fits on one screen. The 2x2 grid only ever listed slots 0-3, and
+// easy mode and LAN both bring six -- members 5 and 6 could not be sent in at
+// all. Same overall width and the same two rows, so it sits inside the round
+// panel exactly where the move grid does (cells 104x44, still >= UI_TAP_MIN).
+// Rows reuse the move grid's hit rows, so the bottom row keeps its extra reach
+// downward and stops short of BACK; columns tile the same way the 2x2 does.
+#define BTL_SW_COLS 3
+#define BTL_SW_GAP 8
+#define BTL_SW_W ((2 * BTL_CELL_W + 8 - (BTL_SW_COLS - 1) * BTL_SW_GAP) / BTL_SW_COLS)
+#define BTL_SW_X(i) (BTL_GRID_X + ((i) % BTL_SW_COLS) * (BTL_SW_W + BTL_SW_GAP))
+#define BTL_SW_ROW(i) (((i) / BTL_SW_COLS) * 2)   // the move-grid cell on that row
+#define BTL_SW_Y(i) BTL_CELL_Y(BTL_SW_ROW(i))
+static inline bool btlSwitchHit(int i, int16_t x, int16_t y) {
+  return x >= BTL_SW_X(i) - BTL_HIT_PAD && x <= BTL_SW_X(i) + BTL_SW_W + BTL_HIT_PAD - 1 &&
+         y >= BTL_HIT_Y0(BTL_SW_ROW(i)) && y <= BTL_HIT_Y1(BTL_SW_ROW(i));
 }
 #define TRAIN_X 73
 #define TRAIN_Y 96
@@ -666,7 +882,14 @@ void setup() {
   // QSPI a 80MHz (por defecto 40): el flush del framebuffer es el cuello de
   // botella del fps (~56ms a 40MHz). Si el panel mostrara basura, bajar a 40M.
   if (!gfx->begin(80000000)) Serial.println("gfx->begin() fallo");
-  panel->setBrightness(180);
+  // Dark, with a black frame pushed, until loop() draws the first real one.
+  // The framebuffer is fresh PSRAM -- whatever was in it -- and setup() still
+  // has the touch retries, the SD mount and the offline catch-up to run, so
+  // lighting the panel here showed that for a second or more on every boot.
+  // updateBrightness() turns it on in the same loop() that renders.
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->flush();
+  panel->setBrightness(0);
 
   touch.setPins(TP_RESET, TP_INT);
   bool touchOk = false;
@@ -687,7 +910,8 @@ void setup() {
   party.begin();
   pet.begin();
   sdBegin();
-  thumbs.load();
+  if (sdNeedsFormat) sdAsk = SDASK_ASK;   // a card is there but unreadable: ask
+  sdMountedLoad();
 
   // reloj real: aplica el tiempo que estuvo apagado
   rtcBegin();
@@ -704,6 +928,31 @@ void setup() {
   audioBegin();  // ES8311 + I2S + amplificador (suena un jingle de arranque)
 
   lastInteract = millis();
+}
+
+// A file arrived whole over PUT (sdmon.cpp). Every file used to set sdDirty,
+// so during a pack install ensureMon() threw away and re-streamed the pet's
+// ~135 KB sprite after EACH of ~300 files. Only the creature's own sprite --
+// PMD or the old TPK1 format, shiny or not -- or thumbs.bin can change what
+// it shows, so only those mark it now. The region rescan is armed and left to
+// loop(), which waits for the transfer to go quiet.
+#define SD_ART_SETTLE_MS 2000
+uint32_t gSdArtDirtyAt = 0;
+bool sdPathIsMonOf(const char *path, int16_t dex) {
+  if (dex < 1) return false;
+  const char *b = strrchr(path, '/');
+  b = b ? b + 1 : path;
+  if (*b == 'p') b++;                    // PMD (TPK2)
+  if (*b == 's') b++;                    // shiny
+  if (*b < '0' || *b > '9') return false;
+  char *end = nullptr;
+  long n = strtol(b, &end, 10);
+  return end && !strcmp(end, ".bin") && n == dex;
+}
+void sdPutLanded(const char *path) {
+  sdArtDirty = true;
+  gSdArtDirtyAt = millis();
+  if (sdPathIsMonOf(path, pet.speciesId) || strstr(path, "thumbs.bin")) sdDirty = true;
 }
 
 // carga/descarga el sprite de SD cuando cambia la especie
@@ -723,6 +972,11 @@ void ensureMon() {
   }
 }
 
+// 2 min: the longest a change waits unsaved while the panel stays lit. Short on
+// purpose -- this is the window a crash or a flat battery can still take, and
+// losing progress is exactly what players report. The panel dims after 90 s
+// without a touch, and that flushes at once anyway.
+#define SAVE_MAX_DEFER_MS 120000UL
 void loop() {
   uint32_t now = millis();
   pet.update(now);
@@ -752,13 +1006,21 @@ void loop() {
   handleSerial();
   ensureMon();
 
+  // the format result page closes itself; a tap closes it sooner
+  if (sdAsk >= SDASK_OK && (int32_t)(now - sdAskUntil) >= 0) sdAsk = SDASK_NONE;
+
   // A sprite pack can arrive long after the card was mounted: the web installer
   // streams it over PUT into the FIRMWARE THAT IS ALREADY RUNNING. gRegionArt was
   // computed once in sdBegin(), so without this the region a player just spent ten
   // minutes downloading stayed greyed out reading NEEDS PACK until they rebooted --
   // indistinguishable, from the player's side, from the download having failed.
   // Quietly, because the host is still parsing this serial stream.
-  if (sdArtDirty) {
+  //
+  // Debounced: a pack is ~300 files, and rescanning (~20 file opens) after
+  // every one of them was pure overhead in the middle of the transfer. It runs
+  // once the PUTs have stopped for SD_ART_SETTLE_MS -- a couple of seconds
+  // after the pack completes, still without a reboot.
+  if (sdArtDirty && millis() - gSdArtDirtyAt >= SD_ART_SETTLE_MS) {
     sdArtDirty = false;
     sdScanRegionArt(false);
   }
@@ -770,11 +1032,14 @@ void loop() {
     // party first, then the box; only a full box makes it your choice
     if (party.add(pet.endedMon) || party.boxAdd(pet.endedMon)) {
       snprintf(partyBannerName, sizeof(partyBannerName), "%s",
-               pet.endedMon.nick[0] ? pet.endedMon.nick : DEX_TBL[pet.endedMon.dex].name);
+               pet.endedMon.nick[0] ? pet.endedMon.nick : speciesName(pet.endedMon.dex));
       partyBannerUntil = now + 3500;
       pet.endedKind = CER_NONE;
       sfxPlay(SFX_MEDAL);
     } else {
+      // From a clean grid: a sheet, the box or an armed swap left over from
+      // earlier would otherwise sit on top of the choice, or answer it.
+      partyReset(false);
       partyPick = true;
       partyOpen = true;
       menuOpen = false;
@@ -792,14 +1057,41 @@ void loop() {
     }
   }
 
+  // The panel goes dark or comes back (PWR, or the touch that wakes it in
+  // handleTouch). While it is dark nothing is drawn or pushed -- see the render
+  // gate below -- so the panel's own memory still holds whatever it showed when
+  // it went off, possibly minutes old. Coming back, a fresh frame is drawn and
+  // FORCED out BEFORE updateBrightness() lights the panel, so the stale one is
+  // never the first thing seen.
+  if (screenOff != gPanelDark) {
+    gPanelDark = screenOff;
+    if (!screenOff) {
+      gFramePushNext = true;
+      lastRender = now;
+      render();
+    }
+  }
+
   updateBrightness(now);
 
-  // vuelca el autoguardado periodico SOLO con la pantalla atenuada/apagada o
-  // durmiendo: la escritura a NVS congela ~1s ambos cores (caché de flash off),
-  // y aqui no hay animacion que se corte ni dedo esperando respuesta. Con 90s
-  // de inactividad la pantalla ya atenua, asi que se vuelca enseguida; el uso
-  // activo persiste igual por los guardados de cada accion (comer/jugar/...).
-  if (pet.savePending() && (screenOff || dimStage >= 1 || pet.sleeping)) {
+  // The deferred save is flushed ONLY with the panel dimmed or off, or the
+  // creature asleep: an NVS write stalls both cores for up to ~1 s (the flash
+  // cache is off), and then there is no animation to cut and no finger waiting
+  // on a reply. 90 s without a touch already dims the panel, so it goes out
+  // soon after the player puts the device down.
+  //
+  // Care actions (feed, clean, play, the minigames' results, the light, waking
+  // the screen) are deferred to this too; what is irreversible or progress the
+  // player would mourn -- badges, evolving, hatching, the endings, release,
+  // retire, revive, the starter, rename, region, an import -- still writes on
+  // the spot. So that continuous play cannot hold an unsaved change forever,
+  // one that has waited SAVE_MAX_DEFER_MS is flushed anyway, between minigames.
+  static uint32_t pendingSince = 0;
+  if (!pet.savePending()) pendingSince = 0;
+  else if (!pendingSince) pendingSince = now ? now : 1;
+  bool overdue = pendingSince && now - pendingSince >= SAVE_MAX_DEFER_MS &&
+                 !(gameOpen || sackOpen || spdOpen);
+  if (pet.savePending() && (screenOff || dimStage >= 1 || pet.sleeping || overdue)) {
     pet.flushSave();
   }
 
@@ -815,16 +1107,48 @@ void loop() {
   static uint32_t lastHealth = 0;
   if (now - lastHealth > 300000) {
     lastHealth = now;
-    Serial.printf("HEALTH up=%lus heap=%u min=%u\n", (unsigned long)(now / 1000),
-                  ESP.getFreeHeap(), ESP.getMinFreeHeap());
+    // pmu_err: PWR-button status reads that failed on I2C (see rtcbat.cpp).
+    // Nonzero on a board is the confirmation that the bus really does glitch.
+    Serial.printf("HEALTH up=%lus heap=%u min=%u pmu_err=%u saves=%lu last=%lums\n",
+                  (unsigned long)(now / 1000), ESP.getFreeHeap(), ESP.getMinFreeHeap(),
+                  (unsigned)pmuReadErrors(),
+                  (unsigned long)pet.saveCount, (unsigned long)pet.lastSaveMs);
   }
 
   // 85 ms en juego/saco: margen seguro para que el redibujado no pise el envio
   // DMA del frame anterior (a 40-65 ms solapaba y causaba flashes negros; con
   // sprites grandes el dibujo tarda mas, asi que se deja colchon)
-  if (now - lastRender >= (uint32_t)((gameOpen || sackOpen || spdOpen) ? 85 : 100)) {
+  //
+  // Nobody can see a dark panel, and at dimStage 2 (brightness 8, five minutes
+  // without a touch) nobody is looking: 2 fps there instead of 10. A touch drops
+  // dimStage straight back to 0, and lastRender is by then >= 100 ms old, so the
+  // first lit frame is drawn on the very next pass.
+  //
+  // The link battle's turn engine runs HERE, before the frame, on every pass.
+  // It used to run from render(), and btlApplyResult()/btlSwitchTo() ->
+  // btlSyncSprite() can stream a ~135 KB sprite from SD: that load happened in
+  // the middle of drawing a frame, and stopped whenever drawing did (the
+  // screen off). Same screens as before -- the fight and its win screen.
+  {
+    uint8_t scr = uiCurrentScreen();
+    if (scr == SCR_BATTLE || scr == SCR_WIN) btlLinkPoll();
+  }
+  // The first frame goes out on the first pass whatever the clock says, so the
+  // panel updateBrightness() just lit is never showing setup()'s black frame.
+  static bool firstFrame = true;
+  bool game = gameOpen || sackOpen || spdOpen;
+  uint32_t every = game ? 85 : (dimStage >= 2 ? 500 : 100);
+  if (firstFrame || now - lastRender >= every) {
+    firstFrame = false;
     lastRender = now;
-    render();
+    // Screen off: draw nothing, push nothing -- but still leave the crash
+    // breadcrumb, which render() would have. The exception is a render path
+    // that IS game logic: the three minigames step and score inside their
+    // render functions, and drawBath() is what applies pet.clean() when the
+    // bath ends. Those keep running (FrameCanvas drops the push while dark), so
+    // turning the screen off mid-game changes nothing but what is visible.
+    if (screenOff && !game && !bathUntil) crumbDrop();
+    else render();
   }
 }
 
@@ -834,7 +1158,11 @@ void updateBrightness(uint32_t now) {
   if (pet.evolving() || pet.ceremony || pet.eating() || pet.showHeart()) {
     lastInteract = now;
   }
-  uint32_t idle = now - lastInteract;
+  // `now` was taken at the top of loop(), but handleTouch() stamps lastInteract
+  // with a FRESH millis() after an I2C read -- so lastInteract is routinely a few
+  // ms ahead of `now`. Unsigned, that "negative" idle was ~4.29e9: dimStage 2,
+  // brightness 8, on every press and release. The brief black flashes.
+  uint32_t idle = (int32_t)(now - lastInteract) > 0 ? now - lastInteract : 0;
   dimStage = (idle > 300000) ? 2 : (idle > 90000) ? 1 : 0;
   uint8_t target = pet.sleeping ? 25 : (usbPresent() ? 180 : 145);
   if (dimStage == 1) target = pet.sleeping ? 10 : 60;
@@ -849,9 +1177,55 @@ void updateBrightness(uint32_t now) {
 
 // ---------- consola serie (provision de SD + depuracion) ----------
 
+// The moveset a creature of this species and level would have, chosen by the
+// SAME Pet::relearnFromLevel() every hatched pet and every gym opponent uses --
+// so the console cannot bank a set the player could not have. A scratch Pet is
+// safe here: it is never begin()'d, so its save() is a no-op (foesave_test).
+void legalMovesFor(int16_t dex, uint8_t lvl, uint8_t *out) {
+  Pet tmp;
+  tmp.dbgHatchAs(dex, false);
+  tmp.ageMinutes = (uint32_t)(lvl ? lvl - 1 : 0) * MINUTES_PER_LEVEL;
+  tmp.relearnFromLevel();
+  for (int i = 0; i < MOVE_SLOTS; i++) out[i] = tmp.moves[i];
+}
+
+// The console line being typed. Serial.readStringUntil('\n') used to wait out
+// its 1 s timeout for the rest of any partial line -- and most terminals send
+// each keystroke as it is typed -- so the whole loop (touch, animation, the
+// render cadence) froze for up to a second per keystroke. Bytes now gather
+// here as they arrive and a line runs when its '\n' does.
+//
+// Exactly the bytes up to and including the '\n' are taken, never one more:
+// PUT's binary payload follows its header line on the same stream and
+// sdSerialCommand() reads it with Serial.readBytes(). One line per call, as
+// before. A line that never gets a '\n' (a terminal set to send no line
+// ending) still runs once the sender has been quiet for SERIAL_IDLE_MS, which
+// is what the old timeout did for it.
+#define SERIAL_LINE_MAX 1024
+#define SERIAL_IDLE_MS 1000
+static char gRxBuf[SERIAL_LINE_MAX + 1];
+static size_t gRxN = 0;
+static bool gRxOverflow = false;   // the current line outgrew the buffer: drop it
+static uint32_t gRxLast = 0;
+
 void handleSerial() {
-  if (!Serial.available()) return;
-  String line = Serial.readStringUntil('\n');
+  bool complete = false;
+  int c;
+  while ((c = Serial.read()) >= 0) {
+    gRxLast = millis();
+    if (c == '\n') { complete = true; break; }
+    if (gRxN < SERIAL_LINE_MAX) gRxBuf[gRxN++] = (char)c;
+    else gRxOverflow = true;
+  }
+  if (!complete && (gRxN == 0 || millis() - gRxLast < SERIAL_IDLE_MS)) return;
+  gRxBuf[gRxN] = 0;
+  gRxN = 0;
+  if (gRxOverflow) {
+    gRxOverflow = false;
+    Serial.println("ERR line too long");
+    return;
+  }
+  String line(gRxBuf);
   line.trim();
   if (line.length() == 0) return;
   if (sdSerialCommand(line)) return;
@@ -967,8 +1341,13 @@ void handleSerial() {
     // BATTLE <dex> [level] -- the only way in until the trainer roster exists
     int dex = 0, lvl = 0;
     int n = sscanf(line.c_str() + 6, "%d %d", &dex, &lvl);
-    if (n >= 1 && dex >= 1 && dex <= DEX_COUNT) {
+    if (partyPick || (battleOpen && btlLink)) {
+      // A creature waiting for a party slot would be dropped by closing the
+      // party, and a LAN fight would be abandoned without telling the peer.
+      Serial.println("finish the party choice or the LAN battle first");
+    } else if (n >= 1 && dex >= 1 && dex <= DEX_COUNT) {
       startBattle(dex, lvl > 0 ? (uint8_t)lvl : pet.level());
+      if (battleOpen) closeScreensForBattle();
       Serial.printf("battle vs %s Lv.%u\n", DEX_TBL[dex].name, btlFoe.level);
     } else {
       Serial.println("uso: BATTLE <dex> [nivel]");
@@ -1064,6 +1443,8 @@ void handleSerial() {
         m.level = 50;
         m.ivAtk = m.ivDef = m.ivSpe = m.ivHp = 20;
         m.trAtk = m.trDef = m.trSpe = 50;
+        // Without a moveset it could only switch or run once in a fight.
+        legalMovesFor(m.dex, (uint8_t)m.level, m.moves);
         Serial.println(party.add(m) ? "added" : "party full");
       }
     }
@@ -1087,9 +1468,30 @@ void handleSerial() {
                   ESP.getMinFreeHeap(), sdReady, pmd.loaded || mon.loaded);
     // PSRAM is where the sprites and the framebuffer live, so a memory problem
     // shows up here long before it shows up in the heap figure above.
-    Serial.printf("psram=%u screen=%s btlspr=%d/%d\n", (unsigned)ESP.getFreePsram(),
+    Serial.printf("psram=%u screen=%s btlspr=%d/%d pmu_err=%u\n", (unsigned)ESP.getFreePsram(),
                   SCREEN_NAME[uiCurrentScreen() % SCR_COUNT],
-                  btlPmd[0].loaded ? 1 : 0, btlPmd[1].loaded ? 1 : 0);
+                  btlPmd[0].loaded ? 1 : 0, btlPmd[1].loaded ? 1 : 0,
+                  (unsigned)pmuReadErrors());
+    // what FrameCanvas did with the frames it was handed since boot
+    Serial.printf("frames: asked=%lu pushed=%lu unchanged=%lu\n",
+                  (unsigned long)gFlushCalls, (unsigned long)gFramePushes,
+                  (unsigned long)gFrameSkips);
+    // Pet::save() writes ~52 NVS keys and stalls both cores while it does.
+    //
+    // nvs= is used/total NVS entries, for the soak test. The first board soak
+    // (1.8 h) showed the heap stepping down by exactly 144 bytes now and then:
+    // one 128-byte NVS hash-list block plus the allocator's header and the
+    // light-poisoning canaries. NVS appends a changed value as a new entry and
+    // indexes each page in RAM; the blocks go when a full page is erased, so
+    // the drift is bounded by the partition, not a leak. Printing the entry
+    // count lets the next soak tie each heap step to a write instead of
+    // guessing.
+    nvs_stats_t nvs;
+    if (nvs_get_stats(NULL, &nvs) != ESP_OK) nvs = nvs_stats_t{};
+    Serial.printf("saves=%lu last=%lums pending=%d nvs=%u/%u\n", (unsigned long)pet.saveCount,
+                  (unsigned long)pet.lastSaveMs, pet.savePending() ? 1 : 0,
+                  (unsigned)nvs.used_entries, (unsigned)nvs.total_entries);
+    bootReportAgain();
     Serial.println("DONE");
   } else if (line == "STATS") {
     Serial.printf("spec=%d nv=%u com=%u fel=%u ene=%u lim=%u desc=%u sd=%d mon=%d bat=%d usb=%d rtc=%u\n",
@@ -1182,55 +1584,113 @@ void handleTouch() {
   wasPressed = pressed;
 }
 
+// Closes whichever detail sheet is up, and its RELEASE confirm WITH it. Closing
+// the sheet by a swipe used to clear partyDetail and leave releaseConfirm set,
+// so the NEXT sheet opened came up already asking "Release <someone else>?" --
+// with YES sitting where that creature's move rows are.
+void monSheetClose() {
+  partyDetail = 0;
+  boxDetail = 0;
+  releaseConfirm = false;
+}
+
+// EVERY way out of the party or the box comes through here: a swipe on either
+// axis, BACK, CLOSE, the top band, BRING BACK, a completed or declined newcomer.
+// Each exit used to clear its own subset of the selection state, and the gaps
+// were bugs: a stale boxSel hijacked the next party-slot tap (even ahead of a
+// waiting newcomer), a stale boxDetail reopened a sheet nobody asked for. One
+// function, so a new exit -- or a new piece of state -- cannot be half-handled.
+//
+// closeParty=false is "back from the box to the party grid"; true leaves the
+// party altogether. partyPick is deliberately NOT cleared: a newcomer waiting
+// for a slot is only ever resolved by placing it or by a confirmed let-go.
+void partyReset(bool closeParty) {
+  monSheetClose();
+  boxOpen = false;
+  boxSwapFrom = 0;
+  boxSel = 0;
+  pickConfirm = PICKCONF_NONE;
+  if (closeParty) partyOpen = false;
+}
+
+// A swipe on the party screen while a newcomer is waiting does NOT let it go: it
+// asks. Leaving that screen loses the creature for good, so it goes through the
+// same confirm as the LET GO button. While a confirm is up a swipe does nothing.
+void partySwipeOut() {
+  if (partyDetail) { monSheetClose(); return; }
+  if (partyPick) {
+    if (pickConfirm == PICKCONF_NONE) { pickConfirm = PICKCONF_LETGO; sfxPlay(SFX_TAP); }
+    return;
+  }
+  partyReset(true);
+}
+
+// The box's swipe out: a sheet closes first (with its confirm), otherwise the
+// box backs out to the party grid.
+void boxSwipeOut() {
+  if (boxDetail) { monSheetClose(); return; }
+  partyReset(false);
+}
+
 // deslizar vertical: abre/cierra la ficha del bicho
 
 void openClock();  // prototipo
 
 void onSwipeV(int dir) {
-  if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (uiCurrentScreen() == SCR_DEXPICK || uiCurrentScreen() == SCR_GYMPICK)
-    return;                 // on the chooser, vertical does nothing: pick a row
-  if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
-  if (battleOpen) return;   // no swiping out of a fight
-  if (pickOpen) { pickOpen = false; return; }
-  if (lanOpen) { lanLeave(); lanOpen = false; return; }
-  if (gymOpen) {
-    // Same gesture as the Pokedex: vertical changes region, horizontal pages.
-    gymRegion = (uint8_t)((gymRegion + (dir > 0 ? 1 : GYM_REGIONS - 1)) % GYM_REGIONS);
-    gymPage = 0;
-    sfxPlay(SFX_TAP);
-    return;
+  switch (uiCurrentScreen()) {
+    case SCR_REGION:
+    case SCR_STARTER: return;     // bloqueado durante la eleccion de inicial
+    case SCR_SDCARD: return;      // modal: only its two buttons answer
+    case SCR_LANG: return;        // only a language row answers
+    case SCR_DEXPICK:
+    case SCR_GYMPICK: return;     // on the chooser, vertical does nothing: pick a row
+    case SCR_MENU: menuOpen = false; return;   // any swipe closes the menu
+    case SCR_BATTLE:
+    case SCR_WIN: return;         // no swiping out of a fight
+    case SCR_PICK: pickOpen = false; return;
+    case SCR_LAN: lanLeave(); lanOpen = false; return;
+    case SCR_GYM:
+      // Same gesture as the Pokedex: vertical changes region, horizontal pages.
+      gymRegion = (uint8_t)((gymRegion + (dir > 0 ? 1 : GYM_REGIONS - 1)) % GYM_REGIONS);
+      gymPage = 0;
+      sfxPlay(SFX_TAP);
+      return;
+    case SCR_PLAYER: playerOpen = false; return;
+    case SCR_TRAIN: trainOpen = false; return;
+    case SCR_MOVEPICK: movePickOpen = false; return;
+    case SCR_BOX: boxSwipeOut(); return;   // vertical backs out
+    case SCR_PARTY: partySwipeOut(); return;
+    case SCR_GAME:
+      // Either minigame exits on a swipe. A swipe cannot be confused with a ball
+      // hit -- the gesture resolver separates them -- which the header tap no
+      // longer can now that the ball is hittable up there.
+      if (gameOpen) leaveGame();
+      else if (sackOpen) leaveSack();
+      else leaveSpeed();
+      return;
+    case SCR_GALLERY:
+      if (galleryDetail) { galleryDetail = 0; galleryPmd.unload(); galleryDirty = true; return; }
+      galleryRegion = (uint8_t)((galleryRegion + (dir > 0 ? 1 : GAL_REGIONS - 1)) % GAL_REGIONS);
+      galleryPage = 0;
+      galleryDirty = true;
+      sfxPlay(SFX_TAP);
+      return;
+    case SCR_KEYBOARD: return;
+    // Modal: it decides the creature's moveset for good, so nothing -- not a
+    // swipe either -- happens until it is answered. A swipe here used to open
+    // the player card behind it.
+    case SCR_LEARN: return;
+    case SCR_CLOCK:
+      if (pet.ceremony) return;
+      clockOpen = false;
+      return;
+    case SCR_CARD:
+      if (pet.ceremony) return;
+      if (dir < 0) cardOpen = false;  // arriba cierra la ficha
+      return;
+    default: break;   // SCR_MAIN
   }
-  if (playerOpen) { playerOpen = false; return; }
-  if (trainOpen) { trainOpen = false; return; }
-  if (movePickOpen) { movePickOpen = false; return; }
-  if (boxOpen) { boxOpen = false; boxSel = 0; return; }   // vertical backs out
-  if (partyOpen) {
-    if (partyDetail) { partyDetail = 0; return; }
-    if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
-    partyOpen = false;
-    return;
-  }
-  // Either minigame exits on a swipe. A swipe cannot be confused with a ball
-  // hit -- the gesture resolver separates them -- which the header tap no
-  // longer can now that the ball is hittable up there.
-  if (gameOpen) { leaveGame(); return; }
-  if (sackOpen) { leaveSack(); return; }
-  if (spdOpen) { leaveSpeed(); return; }
-  if (galleryOpen) {
-    if (galleryDetail) { galleryDetail = 0; galleryPmd.unload(); galleryDirty = true; return; }
-    galleryRegion = (uint8_t)((galleryRegion + (dir > 0 ? 1 : GAL_REGIONS - 1)) % GAL_REGIONS);
-    galleryPage = 0;
-    galleryDirty = true;
-    sfxPlay(SFX_TAP);
-    return;
-  }
-  if (kbOpen || pet.ceremony) return;
-  if (clockOpen) { clockOpen = false; return; }
-  if (cardOpen) {
-    if (dir < 0) cardOpen = false;  // arriba cierra la ficha
-    return;
-  }
+  if (pet.ceremony) return;
   // Swipe down is the PLAYER card, up is the creature's. The clock lost this
   // gesture on purpose -- the menu's SETTINGS row already opens it, and the
   // player card is the thing you reach for far more often.
@@ -1255,7 +1715,7 @@ void renderMonSheet(const PartyMon &m, bool fromBox) {
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
   char head[36];
   snprintf(head, sizeof(head), "%s%s Lv.%u", m.shiny ? "*" : "",
-           m.nick[0] ? m.nick : d.name, (unsigned)m.level);
+           m.nick[0] ? m.nick : speciesName(m.dex), (unsigned)m.level);
   gfx->setTextColor(d.accent);
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(head) * 6, 40);
@@ -1328,7 +1788,7 @@ void renderMonSheet(const PartyMon &m, bool fromBox) {
   // a farewell, it does not join anything, and there is no undo.
   if (releaseConfirm) {
     char q[40];
-    snprintf(q, sizeof(q), T(S_RELEASE_FMT), m.nick[0] ? m.nick : d.name);
+    snprintf(q, sizeof(q), T(S_RELEASE_FMT), m.nick[0] ? m.nick : speciesName(m.dex));
     drawConfirmPanel(q, T(S_RELEASE_GONE), nullptr, UI_BAR_BAD,
                      T(S_YES), UI_BAR_BAD, UI_WHITE, T(S_NO), UI_TRACK, UI_INK);
   }
@@ -1341,8 +1801,7 @@ void renderPartyDetail() {
   // leaves the previous frame frozen on the panel -- the exact failure
   // flush_test exists to catch, and invisible to any screenshot.
   if (party.slots[partyDetail - 1].empty()) {
-    partyDetail = 0;
-    releaseConfirm = false;
+    monSheetClose();
     renderParty();
     return;
   }
@@ -1351,8 +1810,7 @@ void renderPartyDetail() {
 
 void renderBoxDetail() {
   if (party.box[boxDetail - 1].empty()) {
-    boxDetail = 0;
-    releaseConfirm = false;
+    monSheetClose();
     renderBox();
     return;
   }
@@ -1364,7 +1822,7 @@ void renderBoxDetail() {
 // Every primary button's height, so a test can hold them all to UI_TAP_MIN
 // instead of waiting for somebody to report the next one by hand.
 void uiButtonHeights(int *out, int max, int *n) {
-  const int h[] = { BOXBTN_H, PARTYCLOSE_H, LANBTN_H, BTL_CELL_H + BTL_HIT_PAD * 2 };
+  const int h[] = { BOXBTN_H, PARTYCLOSE_H, LANBTN_H, BTL_CELL_H + BTL_HIT_PAD * 2, GYMLAN_H };
   int c = (int)(sizeof(h) / sizeof(h[0]));
   if (c > max) c = max;
   for (int i = 0; i < c; i++) out[i] = h[i];
@@ -1401,6 +1859,13 @@ void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop) {
   if (rowTop) *rowTop = GYM_ROW_Y(0);
 }
 
+void gymLanRect(int *x, int *y, int *w, int *h) {
+  if (x) *x = GYMLAN_X;
+  if (y) *y = GYMLAN_Y;
+  if (w) *w = GYMLAN_W;
+  if (h) *h = GYMLAN_H;
+}
+
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot) {
   if (boxTop) *boxTop = BOXBTN_Y - BOXBTN_PAD;
   if (boxBot) *boxBot = BOXBTN_Y + BOXBTN_H + BOXBTN_PAD;
@@ -1428,18 +1893,66 @@ bool monSheetConfirmTap(int16_t x, int16_t y, bool fromBox) {
   uiConfirmRects(&c1t, &c1b, &c2t, &c2b);
   if (x < CONFIRM_BTN_X || x > CONFIRM_BTN_X + CONFIRM_BTN_W) return false;
   if (y >= c1t && y <= c1b) {            // YES -- and it does not come back
-    if (fromBox) { party.boxReleaseAt(boxDetail - 1); boxDetail = 0; }
-    else { party.releaseAt(partyDetail - 1); partyDetail = 0; }
+    if (fromBox) party.boxReleaseAt(boxDetail - 1);
+    else party.releaseAt(partyDetail - 1);
+    monSheetClose();
     // A half-finished swap named a slot that may now be empty, so disarm both
     // sides rather than leaving one pointing at a creature that is gone.
     boxSwapFrom = 0;
     boxSel = 0;
-    releaseConfirm = false;
     sfxPlay(SFX_BYE);
     return true;
   }
   if (y >= c2t && y <= c2b) {            // NO
     releaseConfirm = false;
+    sfxPlay(SFX_TAP);
+    return true;
+  }
+  return false;
+}
+
+// The party screen's CLOSE / LET GO button, off the same PARTYCLOSE_* constants
+// renderParty() draws it with. The tap used to test literal numbers 4 px above
+// the drawing (372..416 against 376..420), so the bottom of the button was dead
+// and the gap above it was live.
+bool partyCloseHit(int16_t x, int16_t y) {
+  return y >= PARTYCLOSE_Y && y <= PARTYCLOSE_Y + PARTYCLOSE_H &&
+         x >= PARTYCLOSE_X && x <= PARTYCLOSE_X + PARTYCLOSE_W;
+}
+
+// The waiting newcomer takes party slot i, and whoever was there is gone.
+void partyPlaceNewcomer(int i) {
+  party.replaceAt(i, pet.endedMon);
+  snprintf(partyBannerName, sizeof(partyBannerName), "%s",
+           pet.endedMon.nick[0] ? pet.endedMon.nick : speciesName(pet.endedMon.dex));
+  partyBannerUntil = millis() + 3500;
+  pet.endedKind = CER_NONE;
+  partyPick = false;
+  partyReset(true);
+  sfxPlay(SFX_MEDAL);
+}
+
+// YES / NO while a newcomer waits: either "let the newcomer go" or "replace
+// this banked creature with it". Modal exactly like the sheet's confirm --
+// returns false on a miss and the caller swallows the tap, so fumbling at the
+// dialog can never reach the slot drawn underneath it.
+bool partyPickConfirmTap(int16_t x, int16_t y) {
+  int c1t, c1b, c2t, c2b;
+  uiConfirmRects(&c1t, &c1b, &c2t, &c2b);
+  if (x < CONFIRM_BTN_X || x > CONFIRM_BTN_X + CONFIRM_BTN_W) return false;
+  if (y >= c1t && y <= c1b) {            // YES
+    if (pickConfirm == PICKCONF_LETGO) {
+      partyPick = false;
+      pet.endedKind = CER_NONE;
+      partyReset(true);
+      sfxPlay(SFX_BYE);
+    } else {
+      partyPlaceNewcomer(pickConfirm - 1);
+    }
+    return true;
+  }
+  if (y >= c2t && y <= c2b) {            // NO: back to choosing
+    pickConfirm = PICKCONF_NONE;
     sfxPlay(SFX_TAP);
     return true;
   }
@@ -1461,9 +1974,7 @@ void partyTap(int16_t x, int16_t y) {
       if (!pet.isEgg() || pet.awaitingStarter()) { sfxPlay(SFX_DENY); return; }
       pet.reviveFrom(party.slots[partyDetail - 1]);
       party.releaseAt(partyDetail - 1);      // it is alive now, not banked
-      partyDetail = 0;
-      boxSwapFrom = 0;
-      partyOpen = false;
+      partyReset(true);
       sfxPlay(SFX_HATCH);
       return;
     }
@@ -1482,11 +1993,12 @@ void partyTap(int16_t x, int16_t y) {
       sfxPlay(SFX_TAP);
       return;
     }
-    partyDetail = 0;
-    releaseConfirm = false;
+    monSheetClose();
     sfxPlay(SFX_TAP);
     return;
   }
+  // The newcomer's confirm is modal: a miss does nothing at all.
+  if (partyPick && pickConfirm != PICKCONF_NONE) { partyPickConfirmTap(x, y); return; }
   if (!partyPick && y >= BOXBTN_Y - BOXBTN_PAD && y <= BOXBTN_Y + BOXBTN_H + BOXBTN_PAD &&
       x >= BOXBTN_X - BOXBTN_PAD && x <= BOXBTN_X + BOXBTN_W + BOXBTN_PAD) {
     boxOpen = true;                  // open the box, nothing picked yet
@@ -1495,13 +2007,11 @@ void partyTap(int16_t x, int16_t y) {
     sfxPlay(SFX_TAP);
     return;
   }
-  // exit button, and the top band, both always work
-  if ((y >= 372 && y <= 416 && x >= 133 && x <= 333) || y < 34) {
-    if (partyPick) {                 // declined the swap: the pet is let go
-      partyPick = false;
-      pet.endedKind = CER_NONE;
-    }
-    partyOpen = false;
+  // exit button, and the top band, both always work -- but with a newcomer
+  // waiting, leaving lets it go for good, so that is asked first
+  if (partyCloseHit(x, y) || y < 34) {
+    if (partyPick) pickConfirm = PICKCONF_LETGO;
+    else partyReset(true);
     sfxPlay(SFX_TAP);
     return;
   }
@@ -1509,33 +2019,32 @@ void partyTap(int16_t x, int16_t y) {
     int cx0 = PARTY_GRID_X + (i % 2) * (PARTY_CELL_W + 10);
     int cy0 = PARTY_GRID_Y + (i / 2) * (PARTY_CELL_H + 8);
     if (x < cx0 || x > cx0 + PARTY_CELL_W || y < cy0 || y > cy0 + PARTY_CELL_H) continue;
+    // A waiting newcomer is checked BEFORE boxSel: a box swap armed earlier must
+    // never answer the newcomer's choice. An occupied slot asks first, since the
+    // creature in it is gone for good; an empty one (none, normally -- the pick
+    // only starts when party and box are both full) loses nothing.
+    if (partyPick) {
+      if (party.slots[i].empty()) { partyPlaceNewcomer(i); return; }
+      pickConfirm = (uint8_t)(i + 1);
+      sfxPlay(SFX_TAP);
+      return;
+    }
     if (boxSel) {                    // a box creature is waiting for a slot
       party.swapPartyBox(i, boxSel - 1);
       boxSel = 0;
       sfxPlay(SFX_MEDAL);
       return;
     }
-    if (!partyPick) {
-      if (boxSwapFrom == i + 1) {    // tapped again: take it to the box
-        boxOpen = true;
-        boxPage = 0;
-        sfxPlay(SFX_TAP);
-        return;
-      }
-      if (party.slots[i].empty()) { boxSwapFrom = i + 1; sfxPlay(SFX_TAP); return; }
-      partyDetail = i + 1;
-      boxSwapFrom = i + 1;           // armed, in case the box is opened next
+    if (boxSwapFrom == i + 1) {      // tapped again: take it to the box
+      boxOpen = true;
+      boxPage = 0;
       sfxPlay(SFX_TAP);
       return;
     }
-    party.replaceAt(i, pet.endedMon);
-    snprintf(partyBannerName, sizeof(partyBannerName), "%s",
-             pet.endedMon.nick[0] ? pet.endedMon.nick : DEX_TBL[pet.endedMon.dex].name);
-    partyBannerUntil = millis() + 3500;
-    pet.endedKind = CER_NONE;
-    partyPick = false;
-    partyOpen = false;
-    sfxPlay(SFX_MEDAL);
+    if (party.slots[i].empty()) { boxSwapFrom = i + 1; sfxPlay(SFX_TAP); return; }
+    partyDetail = i + 1;
+    boxSwapFrom = i + 1;             // armed, in case the box is opened next
+    sfxPlay(SFX_TAP);
     return;
   }
 }
@@ -1547,327 +2056,372 @@ void onSwipe(int dir) {
   // own horizontal handler that would otherwise swallow the gesture. Paging a
   // screen by closing it is the bug this project shipped four times.
   if (rpickSwipe(dir)) return;
-  if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (menuOpen) { menuOpen = false; return; }   // any swipe closes the menu
-  if (battleOpen) return;   // no swiping out of a fight
-  if (pickOpen) {   // horizontal pages the candidates, as everywhere else
-    uint8_t pages = (pickCandidates() + PICK_PER_PAGE - 1) / PICK_PER_PAGE;
-    if (!pages) pages = 1;
-    int p = (int)pickPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= pages) pickOpen = false;
-    else pickPage = (uint8_t)p;
-    return;
-  }
-  if (gymOpen) {   // horizontal pages the ladder; vertical backs out
-    uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
-    int p = (int)gymPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= pages) { gymPick = true; rpickPage = 0; }  // back to the chooser
-    else gymPage = (uint8_t)p;
-    return;
-  }
-  if (playerOpen) {   // horizontal pages it, like the card and the gallery
-    int p = (int)playerPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= PLAYER_PAGES) playerOpen = false;
-    else playerPage = (uint8_t)p;
-    return;
-  }
-  if (trainOpen) { trainOpen = false; return; }
-  if (movePickOpen) {   // the picker is paged; without this its later pages
-    uint8_t all[64];    // were simply unreachable
-    uint8_t n = learnableList(all, sizeof(all));
-    uint8_t pages = n ? (n + MOVE_PICK_PER_PAGE - 1) / MOVE_PICK_PER_PAGE : 1;
-    int p = (int)movePickPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= pages) movePickOpen = false;
-    else movePickPage = (uint8_t)p;
-    return;
-  }
-  if (boxOpen) {   // horizontal pages the box, as every other paged screen
-    uint8_t pages = BOX_SLOTS / BOX_PER_PAGE;
-    int p = (int)boxPage + (dir > 0 ? -1 : 1);
-    if (p < 0 || p >= pages) { boxOpen = false; boxSel = 0; }
-    else boxPage = (uint8_t)p;
-    return;
-  }
-  if (partyOpen) {
-    if (partyDetail) { partyDetail = 0; return; }
-    if (partyPick) { partyPick = false; pet.endedKind = CER_NONE; }
-    partyOpen = false;
-    return;
-  }
-  if (gameOpen) { leaveGame(); return; }   // swipe out, keeping what you earned
-  if (spdOpen) { leaveSpeed(); return; }
-  if (kbOpen || clockOpen) return;
-  if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
-    int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
-    cardPage = p < 0 ? 0 : (p > CARD_PAGES - 1 ? CARD_PAGES - 1 : p);
-    return;
-  }
-  if (!galleryOpen) {
-    // Swipe LEFT is the gym ladder, RIGHT is the party. The Pokedex lost this
-    // gesture: it has a menu row, and gestures are worth more spent on screens
-    // without one.
-    if (!pet.ceremony && !confirmUntil) {
-      if (dir < 0) { gymOpen = true; gymPick = true; gymPage = 0; rpickPage = 0; }
-      else partyOpen = true;
+  switch (uiCurrentScreen()) {
+    case SCR_REGION:
+    case SCR_STARTER: return;     // bloqueado durante la eleccion de inicial
+    case SCR_SDCARD: return;      // modal: only its two buttons answer
+    case SCR_LANG: return;        // only a language row answers
+    case SCR_DEXPICK:
+    case SCR_GYMPICK: return;     // rpickSwipe() above owns these
+    case SCR_MENU: menuOpen = false; return;   // any swipe closes the menu
+    case SCR_BATTLE:
+    case SCR_WIN: return;         // no swiping out of a fight
+    case SCR_PICK: {  // horizontal pages the candidates, as everywhere else
+      uint8_t pages = (pickCandidates() + PICK_PER_PAGE - 1) / PICK_PER_PAGE;
+      if (!pages) pages = 1;
+      int p = (int)pickPage + (dir > 0 ? -1 : 1);
+      if (p < 0 || p >= pages) pickOpen = false;
+      else pickPage = (uint8_t)p;
+      return;
     }
-    return;
+    // Not paged, so a swipe backs out -- exactly as the vertical one always
+    // did. There was no case here at all: the gesture fell through to the main
+    // screen's handler and opened the party OVER the LAN screen while lanOpen
+    // stayed set, so taps on a party slot hit HOST/JOIN underneath.
+    case SCR_LAN: lanLeave(); lanOpen = false; return;
+    case SCR_GYM: {   // horizontal pages the ladder; vertical backs out
+      uint8_t pages = (TRAINER_COUNT + GYM_ROWS - 1) / GYM_ROWS;
+      int p = (int)gymPage + (dir > 0 ? -1 : 1);
+      if (p < 0 || p >= pages) { gymPick = true; rpickPage = 0; }  // back to the chooser
+      else gymPage = (uint8_t)p;
+      return;
+    }
+    case SCR_PLAYER: {   // horizontal pages it, like the card and the gallery
+      int p = (int)playerPage + (dir > 0 ? -1 : 1);
+      if (p < 0 || p >= PLAYER_PAGES) playerOpen = false;
+      else playerPage = (uint8_t)p;
+      return;
+    }
+    case SCR_TRAIN: trainOpen = false; return;
+    case SCR_MOVEPICK: {   // the picker is paged; without this its later pages
+      uint8_t all[64];     // were simply unreachable
+      uint8_t n = learnableList(all, sizeof(all));
+      uint8_t pages = n ? (n + MOVE_PICK_PER_PAGE - 1) / MOVE_PICK_PER_PAGE : 1;
+      int p = (int)movePickPage + (dir > 0 ? -1 : 1);
+      if (p < 0 || p >= pages) movePickOpen = false;
+      else movePickPage = (uint8_t)p;
+      return;
+    }
+    case SCR_BOX: {   // horizontal pages the box, as every other paged screen
+      // ...but not underneath an open sheet: that closes the sheet, as on the party
+      if (boxDetail) { monSheetClose(); return; }
+      uint8_t pages = BOX_SLOTS / BOX_PER_PAGE;
+      int p = (int)boxPage + (dir > 0 ? -1 : 1);
+      if (p < 0 || p >= pages) boxSwipeOut();
+      else boxPage = (uint8_t)p;
+      return;
+    }
+    case SCR_PARTY: partySwipeOut(); return;
+    case SCR_GAME:   // swipe out, keeping what you earned
+      if (gameOpen) leaveGame();
+      else if (spdOpen) leaveSpeed();
+      return;        // the bag reads raw touches and never resolves a swipe
+    case SCR_KEYBOARD:
+    case SCR_CLOCK: return;
+    case SCR_LEARN: return;   // modal, see onSwipeV()
+    case SCR_CARD: {  // dentro de la ficha: cambiar entre las 4 paginas
+      int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
+      cardPage = p < 0 ? 0 : (p > CARD_PAGES - 1 ? CARD_PAGES - 1 : p);
+      return;
+    }
+    case SCR_GALLERY: {
+      if (galleryDetail) {  // en detalle: volver a la rejilla
+        galleryDetail = 0;
+        galleryPmd.unload();
+        galleryDirty = true;
+        return;
+      }
+      int np = galleryPage - dir;  // deslizar a la izquierda avanza pagina
+      if (np < 0) {                // back past the first page = the region chooser
+        galleryPick = true;
+        rpickPage = 0;
+        galleryPmd.unload();
+        return;
+      }
+      if (np > GAL_PAGES - 1) np = GAL_PAGES - 1;
+      if (np != galleryPage) {
+        galleryPage = np;
+        galleryDirty = true;
+      }
+      return;
+    }
+    default: break;   // SCR_MAIN
   }
-  if (galleryDetail) {  // en detalle: volver a la rejilla
-    galleryDetail = 0;
-    galleryPmd.unload();
-    galleryDirty = true;
-    return;
-  }
-  int np = galleryPage - dir;  // deslizar a la izquierda avanza pagina
-  if (np < 0) {                // back past the first page = the region chooser
-    galleryPick = true;
-    rpickPage = 0;
-    galleryPmd.unload();
-    return;
-  }
-  if (np > GAL_PAGES - 1) np = GAL_PAGES - 1;
-  if (np != galleryPage) {
-    galleryPage = np;
-    galleryDirty = true;
+  // Swipe LEFT is the gym ladder, RIGHT is the party. The Pokedex lost this
+  // gesture: it has a menu row, and gestures are worth more spent on screens
+  // without one.
+  if (!pet.ceremony && !confirmUntil) {
+    if (dir < 0) { gymOpen = true; gymPick = true; gymPage = 0; rpickPage = 0; }
+    else partyOpen = true;
   }
 }
 
+// Which feed-picker item a tap is on, or -1. The panel is 264 px wide (an
+// inclusive 101..365) and four cells of 66 are exactly 264, so the right edge
+// itself divided out to item 4 -- which does not exist, and fell through to
+// feedBerry(4): a "berry" no species ever loves, so a plain +25 fullness from a
+// tap on the candy's border. The last pixel belongs to the last cell.
+int feedItemAt(int16_t x, int16_t y) {
+  if (y < FEED_Y || y > FEED_Y + FEED_H || x < FEED_X || x > FEED_X + FEED_W) return -1;
+  int item = (x - FEED_X) / FEED_CELL;
+  return item < FEED_ITEMS ? item : FEED_ITEMS - 1;
+}
+
 void onTap(int16_t x, int16_t y) {
-  if (pet.awaitingStarter()) {  // primera partida: region y luego inicial
-    if (!starterRegionDone) {
-      int r = regionPickTap(x, y, RPICK_FOR_START);
-      if (r >= 0) {
-        pet.setRegion((uint8_t)r);   // the region picked here is where eggs come from too
-        starterRegionDone = true;
-        sfxPlay(SFX_TAP);
-      }
-      return;
-    }
-    for (int i = 0; i < starterCountShown(pet.region); i++) {
-      int ry = STARTER_ROW_Y + i * (STARTER_ROW_H + STARTER_ROW_GAP);
-      if (x >= 70 && x <= 396 && y >= ry && y <= ry + STARTER_ROW_H) {
-        pet.chooseStarter(starterOf(pet.region, (uint8_t)i));
-        sfxPlay(SFX_TAP);
-        break;
-      }
-    }
-    return;
-  }
-  if (battleOpen) {
-    battleTap(x, y);
-    return;
-  }
-  if (playerOpen) {
-    if (playerPage == 0 && y >= 32 && y < 68) {   // the name: rename yourself
-      openKeyboardFor(KB_TRAINER);
-      sfxPlay(SFX_TAP);
-      return;
-    }
-    // the avatar is the only other live target; everything else backs out
-    if (playerPage == 0 && x > CX - 40 && x < CX + 40 && y > 70 && y < 146) {
-      pet.avatar = (uint8_t)((pet.avatar + 1) % AVATAR_COUNT);
-      pet.flushSave();
-      sfxPlay(SFX_TAP);
-      return;
-    }
-    playerOpen = false;
-    return;
-  }
-  if (pickOpen) {
-    pickTap(x, y);
-    return;
-  }
-  if (lanOpen) {
-    lanTap(x, y);
-    return;
-  }
-  if (gymOpen && gymPick) {
-    int r = regionPickTap(x, y, RPICK_FOR_GYMS);
-    if (r >= 0) {
-      gymRegion = (uint8_t)r;
-      gymPage = 0;
-      gymPick = false;
-      sfxPlay(SFX_TAP);
-      return;
-    }
-    if (y >= LANBTN_Y && y <= LANBTN_Y + LANBTN_H &&
-        x >= LANBTN_X && x <= LANBTN_X + LANBTN_W) {   // LAN battle
-      gymOpen = false; gymPick = false;
-      lan.state = LINK_OFF;
-      lanOpen = true;
-      sfxPlay(SFX_TAP);
-      return;
-    }
-    if (y > 380) { gymOpen = false; gymPick = false; }
-    return;
-  }
-  if (gymOpen) {
-    if (y >= GYMDIF_Y && y <= GYMDIF_Y + GYMDIF_H) {   // the difficulty pill
-      gymHard = !gymHard;
-      sfxPlay(SFX_TAP);
-      return;
-    }
-    if (y >= 380 && y <= 412 && x >= 148 && x <= 318) {   // LAN battle
-      gymOpen = false;
-      lan.state = LINK_OFF;
-      lanOpen = true;
-      sfxPlay(SFX_TAP);
-      return;
-    }
-    for (int i = 0; i < GYM_ROWS; i++) {
-      uint8_t idx = gymPage * GYM_ROWS + i;
-      if (idx >= TRAINER_COUNT) break;
-      int ry = GYM_ROW_Y(i);
-      if (x < 70 || x > 396 || y < ry || y > ry + 44) continue;
-      if (!gymUnlocked(idx, gymHard)) { sfxPlay(SFX_DENY); return; }
-      sfxPlay(SFX_TAP);
-      gymOpen = false;
-      pickTrainer = idx;
-      pickHard = gymHard;
-      pickPage = 0;
-      pickDefault(squadCap(idx, gymHard));
-      pickOpen = true;
-      return;
-    }
-    gymOpen = false;
-    return;
-  }
-  if (pet.hasLearnOffer()) {
-    for (int i = 0; i < MOVE_SLOTS; i++) {
-      int ry = LEARN_ROW_Y(i);
-      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
-      sfxPlay(SFX_TAP);
-      pet.acceptLearn(i);
-      return;
-    }
-    if (x >= 70 && x <= 396 && y >= LEARN_SKIP_Y && y <= LEARN_SKIP_Y + 44) {
-      sfxPlay(SFX_TAP);
-      pet.declineLearn();
-    }
-    return;   // modal: nothing else on screen responds until it is answered
-  }
-  if (trainOpen) {
-    bool inPanel = (x >= TRAIN_X && x <= TRAIN_X + TRAIN_W &&
-                    y >= TRAIN_Y && y <= TRAIN_Y + TRAIN_H);
-    if (!inPanel) { trainOpen = false; return; }   // tap outside = back to the pet
-    for (int i = 0; i < 3; i++) {   // all three train something now
-      int ry = TRAIN_ROW_Y(i);
-      if (x < TRAIN_X + 18 || x > TRAIN_X + TRAIN_W - 18) continue;
-      if (y < ry || y > ry + TRAIN_ROW_H) continue;
-      sfxPlay(SFX_TAP);
-      trainOpen = false;
-      if (i == 0) startSack();
-      else if (i == 1) startSpeedGame();
-      else startGame();          // the ball game trains DEF
-      return;
-    }
-    return;
-  }
-  // The menu is modal and has three independent ways out: the CLOSE row, a tap
-  // anywhere on the dimmed area outside the panel, and any swipe (see onSwipe).
-  // Deliberately no timeout: a menu that vanishes while you read it is worse
-  // than one that lingers.
-  if (menuOpen) {
-    bool inPanel = (x >= MENU_X && x <= MENU_X + MENU_W &&
-                    y >= MENU_Y && y <= MENU_Y + MENU_H);
-    if (!inPanel) { menuOpen = false; return; }   // tap outside = back to the pet
-    for (int i = 0; i < MENU_ROWS; i++) {
-      int ry = MENU_ROW_Y(i);
-      if (x < MENU_X + 18 || x > MENU_X + MENU_W - 18) continue;
-      if (y < ry || y > ry + MENU_ROW_H) continue;
-      sfxPlay(SFX_TAP);
-      menuOpen = false;
-      if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
-      else if (i == 1) { galleryOpen = true; galleryPick = true; galleryPage = 0; rpickPage = 0; galleryDetail = 0; galleryDirty = true; }
-      else if (i == 2) { openClock(); }
-      else if (i == 3) {
-        if (!pet.canRetireNow()) { sfxPlay(SFX_DENY); return; }
-        choiceKind = 3; choiceUntil = millis() + 12000;
-      }
-      return;                                     // i == 4 is CLOSE: just shut
-    }
-    return;
-  }
-  if (movePickOpen) {
-    uint8_t all[64];
-    uint8_t n = learnableList(all, sizeof(all));
-    for (uint8_t i = 0; i < MOVE_PICK_PER_PAGE; i++) {
-      uint8_t idx = movePickPage * MOVE_PICK_PER_PAGE + i;
-      if (idx >= n) break;
-      int ry = MOVE_PICK_Y(i);
-      if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
-      sfxPlay(SFX_TAP);
-      // Swapping for a move already in another slot would silently duplicate
-      // it, so trade the two slots instead of overwriting.
-      uint8_t *tgt = pickTargetMoves();
-      for (int s = 0; s < MOVE_SLOTS; s++)
-        if (tgt[s] == all[idx] && s != movePickSlot) tgt[s] = tgt[movePickSlot];
-      tgt[movePickSlot] = all[idx];
-      if (movePickParty) party.save(); else pet.flushSave();
-      movePickOpen = false;
-      return;
-    }
-    movePickOpen = false;   // tap anywhere else = back to the moves page
-    return;
-  }
-  if (partyOpen) {
-    partyTap(x, y);
-    return;
-  }
-  if (galleryOpen) {
-    if (galleryPick) {
-      int r = regionPickTap(x, y, RPICK_FOR_DEX);
-      if (r >= 0) {
-        galleryRegion = (uint8_t)r;
-        galleryPage = 0;
-        galleryDetail = 0;
-        galleryDirty = true;
-        galleryPick = false;
-        sfxPlay(SFX_TAP);
-      } else if (y > 380) {
-        galleryOpen = false;
-      }
-      return;
-    }
-    galleryTap(x, y);
-    return;
-  }
-  if (kbOpen) {
-    keyboardTap(x, y);
-    return;
-  }
-  if (clockOpen) {
-    clockTap(x, y);
-    return;
-  }
-  if (pet.ceremony) return;  // durante la despedida no hay botones
-  if (cardOpen) {
-    if (cardPage == 0 && y < 84) openKeyboard();  // tocar el nombre = renombrar
-    else if (cardPage == 2) {
-      for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a slot to change it
-        int ry = MOVE_ROW_Y(i);
-        if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
-        sfxPlay(SFX_TAP);
-        movePickParty = 0;      // the live pet
-        movePickSlot = i;
-        movePickPage = 0;
-        movePickOpen = true;
+  switch (uiCurrentScreen()) {
+    case SCR_SDCARD: sdAskTap(x, y); return;
+    case SCR_LANG: langPickTap(x, y); return;
+    case SCR_REGION:
+    case SCR_STARTER: {
+      if (!starterRegionDone) {
+        int r = regionPickTap(x, y, RPICK_FOR_START);
+        if (r >= 0) {
+          pet.setRegion((uint8_t)r);   // the region picked here is where eggs come from too
+          starterRegionDone = true;
+          sfxPlay(SFX_TAP);
+        }
         return;
       }
-      cardOpen = false;            // anywhere else on the page still exits
-    } else {
-      cardOpen = false;
+      for (int i = 0; i < starterCountShown(pet.region); i++) {
+        int ry = STARTER_ROW_Y + i * (STARTER_ROW_H + STARTER_ROW_GAP);
+        if (x >= 70 && x <= 396 && y >= ry && y <= ry + STARTER_ROW_H) {
+          pet.chooseStarter(starterOf(pet.region, (uint8_t)i));
+          sfxPlay(SFX_TAP);
+          break;
+        }
+      }
+      return;
     }
-    return;
+    case SCR_BATTLE:
+    case SCR_WIN: {
+      battleTap(x, y);
+      return;
+    }
+    case SCR_PLAYER: {
+      if (playerPage == 0 && y >= 32 && y < 68) {   // the name: rename yourself
+        openKeyboardFor(KB_TRAINER);
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      // the avatar is the only other live target; everything else backs out
+      if (playerPage == 0 && x > CX - 40 && x < CX + 40 && y > 70 && y < 146) {
+        pet.avatar = (uint8_t)((pet.avatar + 1) % AVATAR_COUNT);
+        // saveNow(), not flushSave(): flushSave() only writes when a save is
+        // already PENDING, so with nothing pending this choice never reached
+        // NVS and a reboot put the old avatar back.
+        pet.saveNow();
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      playerOpen = false;
+      return;
+    }
+    case SCR_PICK: {
+      pickTap(x, y);
+      return;
+    }
+    case SCR_LAN: {
+      lanTap(x, y);
+      return;
+    }
+    case SCR_GYMPICK: {
+      int r = regionPickTap(x, y, RPICK_FOR_GYMS);
+      if (r >= 0) {
+        gymRegion = (uint8_t)r;
+        gymPage = 0;
+        gymPick = false;
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      if (y >= LANBTN_Y && y <= LANBTN_Y + LANBTN_H &&
+          x >= LANBTN_X && x <= LANBTN_X + LANBTN_W) {   // LAN battle
+        gymOpen = false; gymPick = false;
+        lan.state = LINK_OFF;
+        lanOpen = true;
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      if (y > 380) { gymOpen = false; gymPick = false; }
+      return;
+    }
+    case SCR_GYM: {
+      if (y >= GYMDIF_Y && y <= GYMDIF_Y + GYMDIF_H) {   // the difficulty pill
+        gymHard = !gymHard;
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      if (y >= GYMLAN_Y && y <= GYMLAN_Y + GYMLAN_H &&
+          x >= GYMLAN_X && x <= GYMLAN_X + GYMLAN_W) {   // LAN battle
+        gymOpen = false;
+        lan.state = LINK_OFF;
+        lanOpen = true;
+        sfxPlay(SFX_TAP);
+        return;
+      }
+      for (int i = 0; i < GYM_ROWS; i++) {
+        uint8_t idx = gymPage * GYM_ROWS + i;
+        if (idx >= TRAINER_COUNT) break;
+        int ry = GYM_ROW_Y(i);
+        if (x < 70 || x > 396 || y < ry || y > ry + 44) continue;
+        if (!gymUnlocked(idx, gymHard)) { sfxPlay(SFX_DENY); return; }
+        sfxPlay(SFX_TAP);
+        gymOpen = false;
+        pickTrainer = idx;
+        pickHard = gymHard;
+        pickPage = 0;
+        pickDefault(squadCap(idx, gymHard));
+        pickOpen = true;
+        return;
+      }
+      gymOpen = false;
+      return;
+    }
+    case SCR_LEARN: {
+      for (int i = 0; i < MOVE_SLOTS; i++) {
+        int ry = LEARN_ROW_Y(i);
+        if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+        sfxPlay(SFX_TAP);
+        pet.acceptLearn(i);
+        return;
+      }
+      if (x >= 70 && x <= 396 && y >= LEARN_SKIP_Y && y <= LEARN_SKIP_Y + 44) {
+        sfxPlay(SFX_TAP);
+        pet.declineLearn();
+      }
+      return;   // modal: nothing else on screen responds until it is answered
+    }
+    case SCR_TRAIN: {
+      bool inPanel = (x >= TRAIN_X && x <= TRAIN_X + TRAIN_W &&
+                      y >= TRAIN_Y && y <= TRAIN_Y + TRAIN_H);
+      if (!inPanel) { trainOpen = false; return; }   // tap outside = back to the pet
+      for (int i = 0; i < 3; i++) {   // all three train something now
+        int ry = TRAIN_ROW_Y(i);
+        if (x < TRAIN_X + 18 || x > TRAIN_X + TRAIN_W - 18) continue;
+        if (y < ry || y > ry + TRAIN_ROW_H) continue;
+        sfxPlay(SFX_TAP);
+        trainOpen = false;
+        if (i == 0) startSack();
+        else if (i == 1) startSpeedGame();
+        else startGame();          // the ball game trains DEF
+        return;
+      }
+      return;
+    }
+    // The menu is modal and has three independent ways out: the CLOSE row, a tap
+    // anywhere on the dimmed area outside the panel, and any swipe (see onSwipe).
+    // Deliberately no timeout: a menu that vanishes while you read it is worse
+    // than one that lingers.
+    case SCR_MENU: {
+      bool inPanel = (x >= MENU_X && x <= MENU_X + MENU_W &&
+                      y >= MENU_Y && y <= MENU_Y + MENU_H);
+      if (!inPanel) { menuOpen = false; return; }   // tap outside = back to the pet
+      for (int i = 0; i < MENU_ROWS; i++) {
+        int ry = MENU_ROW_Y(i);
+        if (x < MENU_X + 18 || x > MENU_X + MENU_W - 18) continue;
+        if (y < ry || y > ry + MENU_ROW_H) continue;
+        sfxPlay(SFX_TAP);
+        menuOpen = false;
+        if (i == 0) { cardOpen = true; cardPage = 1; }   // straight to the stats page
+        else if (i == 1) { galleryOpen = true; galleryPick = true; galleryPage = 0; rpickPage = 0; galleryDetail = 0; galleryDirty = true; }
+        else if (i == 2) { openClock(); }
+        else if (i == 3) {
+          if (!pet.canRetireNow()) { sfxPlay(SFX_DENY); return; }
+          choiceKind = 3; choiceUntil = millis() + 12000;
+        }
+        return;                                     // i == 4 is CLOSE: just shut
+      }
+      return;
+    }
+    case SCR_MOVEPICK: {
+      uint8_t all[64];
+      uint8_t n = learnableList(all, sizeof(all));
+      for (uint8_t i = 0; i < MOVE_PICK_PER_PAGE; i++) {
+        uint8_t idx = movePickPage * MOVE_PICK_PER_PAGE + i;
+        if (idx >= n) break;
+        int ry = MOVE_PICK_Y(i);
+        if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+        sfxPlay(SFX_TAP);
+        // Swapping for a move already in another slot would silently duplicate
+        // it, so trade the two slots instead of overwriting.
+        uint8_t *tgt = pickTargetMoves();
+        for (int s = 0; s < MOVE_SLOTS; s++)
+          if (tgt[s] == all[idx] && s != movePickSlot) tgt[s] = tgt[movePickSlot];
+        tgt[movePickSlot] = all[idx];
+        // The live pet's moveset is a decision, saved at once like the party's
+        // is. flushSave() wrote nothing unless a save happened to be pending.
+        if (movePickParty) party.save(); else pet.saveNow();
+        movePickOpen = false;
+        return;
+      }
+      movePickOpen = false;   // tap anywhere else = back to the moves page
+      return;
+    }
+    case SCR_PARTY:
+    case SCR_BOX: {
+      partyTap(x, y);
+      return;
+    }
+    case SCR_DEXPICK:
+    case SCR_GALLERY: {
+      if (galleryPick) {
+        int r = regionPickTap(x, y, RPICK_FOR_DEX);
+        if (r >= 0) {
+          galleryRegion = (uint8_t)r;
+          galleryPage = 0;
+          galleryDetail = 0;
+          galleryDirty = true;
+          galleryPick = false;
+          sfxPlay(SFX_TAP);
+        } else if (y > 380) {
+          galleryOpen = false;
+        }
+        return;
+      }
+      galleryTap(x, y);
+      return;
+    }
+    case SCR_KEYBOARD: {
+      keyboardTap(x, y);
+      return;
+    }
+    case SCR_CLOCK: {
+      clockTap(x, y);
+      return;
+    }
+    case SCR_CARD: {
+      if (pet.ceremony) return;  // durante la despedida no hay botones
+      if (cardPage == 0 && y < 84) openKeyboard();  // tocar el nombre = renombrar
+      else if (cardPage == 2) {
+        for (int i = 0; i < MOVE_SLOTS; i++) {   // tap a slot to change it
+          int ry = MOVE_ROW_Y(i);
+          if (x < 70 || x > 396 || y < ry || y > ry + 50) continue;
+          sfxPlay(SFX_TAP);
+          movePickParty = 0;      // the live pet
+          movePickSlot = i;
+          movePickPage = 0;
+          movePickOpen = true;
+          return;
+        }
+        cardOpen = false;            // anywhere else on the page still exits
+      } else {
+        cardOpen = false;
+      }
+      return;
+    }
+    case SCR_GAME:
+      if (pet.ceremony) return;
+      if (spdOpen) {
+        spdTap(x, y);
+        return;
+      }
+      if (gameOpen) {
+        gameTap(x, y);
+        return;
+      }
+      return;   // the bag reads its taps raw, in handleTouch()
+    default: break;   // SCR_MAIN
   }
-  if (spdOpen) {
-    spdTap(x, y);
-    return;
-  }
-  if (gameOpen) {
-    gameTap(x, y);
-    return;
-  }
+  if (pet.ceremony) return;  // durante la despedida no hay botones
   if (choiceKind) {          // dialogo de decision: boton accion (arriba) / mantener (abajo)
     int c1t, c1b, c2t, c2b;
     uiConfirmRects(&c1t, &c1b, &c2t, &c2b);
@@ -1880,25 +2434,31 @@ void onTap(int16_t x, int16_t y) {
     } else if (choiceKind == 3) {          // retirada a peticion
       if (b1) pet.startRetire();
       // b2 is simply "no": nothing to decline, the row is always there
-    } else if (choiceKind == 2) {          // despedida
+    } else if (choiceKind == 2) {          // farewell
+      int c3t, c3b;
+      uiConfirmRect3(&c3t, &c3b);
       if (b1) pet.startFarewell();
-      else if (b2) pet.declineFarewell();
+      else if (inX && y >= c3t && y <= c3b) pet.keepForever();
+      // Anything else -- a miss included -- is "stay together". Closing the
+      // question unanswered used to leave the button up, and the button lies
+      // over the creature, so the next tap meant to pet it asked again at once.
+      else pet.declineFarewell();
     }
     choiceKind = 0;
     return;
   }
   if (confirmUntil) {        // dialogo "soltar?": SI / NO
-    if (millis() < confirmUntil && x >= 118 && x <= 218 && y >= 252 && y <= 304) {
+    if (timerActive(confirmUntil, millis()) && x >= 118 && x <= 218 && y >= 252 && y <= 304) {
       pet.release();
     }
     confirmUntil = 0;
     return;
   }
   if (feedMenuUntil) {       // selector de comida
-    if (millis() < feedMenuUntil && y >= 288 && y <= 352 && x >= 101 && x <= 365) {
-      int item = (x - 101) / 66;
-      if (item == 3) pet.feedCandy();
-      else pet.feedBerry(item);
+    int item = timerActive(feedMenuUntil, millis()) ? feedItemAt(x, y) : -1;
+    if (item >= 0) {
+      if (item == FEED_ITEMS - 1) pet.feedCandy();
+      else pet.feedBerry((uint8_t)item);
       sfxPlay(SFX_EAT);
     }
     feedMenuUntil = 0;
@@ -2092,7 +2652,7 @@ void renderStarterSelect() {
     gfx->setTextColor(UI_INK);
     gfx->setTextSize(3);
     gfx->setCursor(178, ry + 24);
-    gfx->print(de.name);
+    gfx->print(speciesName(d));
   }
   gfx->flush();
 }
@@ -2113,24 +2673,35 @@ RTC_NOINIT_ATTR uint32_t gCrumbScreen;
 RTC_NOINIT_ATTR uint32_t gCrumbHeap;
 
 
-// Which screen is on the panel RIGHT NOW, in the same order render() tests.
+// Which screen is on the panel -- and therefore which screen a tap or a swipe
+// belongs to. THE ONE ANSWER: render(), onTap(), onSwipe(), onSwipeV(), the
+// long-press gate and the crash breadcrumb all switch on this.
+//
+// They used to keep their own if-chains over the same flags, each in its own
+// order, and the orders disagreed. render() drew the minigame while onTap()
+// asked hasLearnOffer() first, so a level-up during the ball game turned every
+// tap into an invisible "replace this move?" answer -- a move overwritten for
+// good. The keyboard opened from the player card was drawn while taps went to
+// the card underneath. The order here is render()'s, because what is DRAWN is
+// what the player is pressing.
 uint8_t uiCurrentScreen() {
+  if (!langChosen() && pet.awaitingStarter()) return SCR_LANG;   // before any question
+  if (sdAsk) return SCR_SDCARD;   // boot-time and modal: ahead of the first-boot flow
   if (pet.awaitingStarter()) return starterRegionDone ? SCR_STARTER : SCR_REGION;
   if (galleryOpen) return galleryPick ? SCR_DEXPICK : SCR_GALLERY;
   if (movePickOpen) return SCR_MOVEPICK;
   if (partyOpen) return boxOpen ? SCR_BOX : SCR_PARTY;
+  if (gameOpen || sackOpen || spdOpen) return SCR_GAME;
+  if (trainOpen) return SCR_TRAIN;
   if (kbOpen) return SCR_KEYBOARD;
-  if (cardOpen) return SCR_CARD;
-  if (playerOpen) return SCR_PLAYER;
   if (clockOpen) return SCR_CLOCK;
-  if (btlWinUntil) return SCR_WIN;
-  if (battleOpen) return SCR_BATTLE;
+  if (battleOpen) return btlWinUntil ? SCR_WIN : SCR_BATTLE;
   if (pickOpen) return SCR_PICK;
   if (lanOpen) return SCR_LAN;
   if (gymOpen) return gymPick ? SCR_GYMPICK : SCR_GYM;
+  if (playerOpen) return SCR_PLAYER;
   if (pet.hasLearnOffer()) return SCR_LEARN;
-  if (gameOpen || sackOpen || spdOpen) return SCR_GAME;
-  if (trainOpen) return SCR_TRAIN;
+  if (cardOpen) return SCR_CARD;
   if (menuOpen) return SCR_MENU;
   return SCR_MAIN;
 }
@@ -2156,101 +2727,215 @@ static const char *resetReasonName(int r) {
   }
 }
 
+// What bootReport() found, kept for HEALTH. The boot line itself is printed
+// before USB CDC has enumerated (the port IS the firmware, so it does not exist
+// until it runs) and with a TX timeout of 0, so it is usually lost -- exactly
+// after the crash it is meant to explain. HEALTH asks again, any time later.
+static int gBootReset = 0;
+static int16_t gBootCrashScreen = -1;   // -1 no crash, SCR_COUNT crash w/o crumb
+static uint32_t gBootCrashHeap = 0;
+
 // Printed once at boot. On a clean start it is one line; after a crash it says
 // which screen was up and how much heap was left, which is the whole point.
 void bootReport() {
   int r = (int)esp_reset_reason();
   bool bad = (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT ||
               r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT);
+  gBootReset = r;
   Serial.printf("boot: reset=%s heap=%u psram=%u\n", resetReasonName(r),
                 (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getFreePsram());
   if (bad && gCrumbMagic == CRUMB_MAGIC) {
+    gBootCrashScreen = gCrumbScreen < SCR_COUNT ? (int16_t)gCrumbScreen : (int16_t)SCR_COUNT;
+    gBootCrashHeap = gCrumbHeap;
     Serial.printf("CRASH: it died on the '%s' screen with heap=%u\n",
                   gCrumbScreen < SCR_COUNT ? SCREEN_NAME[gCrumbScreen] : "?",
                   (unsigned)gCrumbHeap);
   } else if (bad) {
+    gBootCrashScreen = SCR_COUNT;
     Serial.println("CRASH: no breadcrumb (RTC memory was lost too)");
   }
   gCrumbMagic = 0;   // one report per crash, not on every later boot
 }
 
+// The same report on demand (HEALTH), from what bootReport() kept.
+void bootReportAgain() {
+  Serial.printf("last boot: reset=%s", resetReasonName(gBootReset));
+  if (gBootCrashScreen >= 0 && gBootCrashScreen < SCR_COUNT)
+    Serial.printf(" crash on '%s' heap=%u", SCREEN_NAME[gBootCrashScreen],
+                  (unsigned)gBootCrashHeap);
+  else if (gBootCrashScreen == SCR_COUNT)
+    Serial.printf(" crash, no breadcrumb");
+  Serial.println();
+}
+
+// Everything the sketch loads once a card is mounted. setup() and the format
+// path both call THIS, so a card formatted at boot ends up exactly like one
+// that mounted by itself -- two copies of this list is how one drifts.
+void sdMountedLoad() {
+  thumbs.load();
+  sdDirty = true;   // ensureMon() retries the creature's sprite off the card
+}
+
+// The two buttons' hit areas, so a test can hold them to UI_TAP_MIN and prove
+// the dead band between them without restating the numbers.
+void sdAskRects(int *x0, int *x1, int *cTop, int *cBot, int *fTop, int *fBot) {
+  *x0 = SDASK_BTN_X;
+  *x1 = SDASK_BTN_X + SDASK_BTN_W;
+  *cTop = SDASK_CANCEL_Y;
+  *cBot = SDASK_CANCEL_Y + SDASK_BTN_H;
+  *fTop = SDASK_FORMAT_Y;
+  *fBot = SDASK_FORMAT_Y + SDASK_BTN_H;
+}
+
+// One centred line, dropping to the small font when a translation is too wide
+// for the round panel at this height.
+static void sdAskLine(const char *s, int y, uint16_t col) {
+  int n = (int)strlen(s);
+  int size = (n * 12 <= 400) ? 2 : 1;
+  gfx->setTextSize(size);
+  gfx->setTextColor(col);
+  gfx->setCursor(CX - n * 3 * size, y);
+  gfx->print(s);
+}
+
+static void sdAskButton(int y, const char *label, uint16_t fill, uint16_t ink) {
+  gfx->fillRoundRect(SDASK_BTN_X, y, SDASK_BTN_W, SDASK_BTN_H, 12, fill);
+  gfx->setTextSize(2);
+  gfx->setTextColor(ink);
+  gfx->setCursor(CX - (int)strlen(label) * 6, y + SDASK_BTN_H / 2 - 8);
+  gfx->print(label);
+}
+
+void renderSdAsk() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  if (sdAsk == SDASK_ASK) {
+    sdAskLine(T(S_SD_BAD), 110, UI_INK);
+    sdAskLine(T(S_SD_BAD_WHY), 158, UI_INK);
+    // what it costs, on screen BEFORE the tap, in the warning colour
+    sdAskLine(T(S_SD_BAD_LOSS), 204, UI_BAR_BAD);
+    sdAskButton(SDASK_CANCEL_Y, T(S_SD_CANCEL), UI_TRACK, UI_INK);
+    sdAskButton(SDASK_FORMAT_Y, T(S_SD_FORMAT), UI_BAR_BAD, UI_WHITE);
+  } else if (sdAsk == SDASK_BUSY) {
+    sdAskLine(T(S_SD_FORMATTING), 200, UI_INK);
+    sdAskLine(T(S_SD_KEEP_IN), 244, UI_BAR_BAD);
+  } else {
+    bool ok = (sdAsk == SDASK_OK);
+    sdAskLine(ok ? T(S_SD_READY) : T(S_SD_FAILED), 200, ok ? UI_INK : UI_BAR_BAD);
+    sdAskLine(ok ? T(S_SD_READY_SUB) : T(S_SD_FAILED_SUB), 244, UI_INK);
+  }
+  gfx->flush();
+}
+
+void sdAskTap(int16_t x, int16_t y) {
+  if (sdAsk >= SDASK_OK) { sdAsk = SDASK_NONE; return; }   // result page: any tap closes it
+  if (sdAsk != SDASK_ASK) return;
+  // A miss does NOTHING -- not even close the question. One of these two
+  // buttons erases a card, so the only way past them is to press one.
+  if (x < SDASK_BTN_X || x > SDASK_BTN_X + SDASK_BTN_W) return;
+  if (y >= SDASK_CANCEL_Y && y < SDASK_CANCEL_Y + SDASK_BTN_H) {
+    sdAsk = SDASK_NONE;      // the no-SD path; the question returns next boot
+    Serial.println("SD: format declined, playing without sprites");
+    sfxPlay(SFX_TAP);
+    return;
+  }
+  if (y >= SDASK_FORMAT_Y && y < SDASK_FORMAT_Y + SDASK_BTN_H) {
+    sfxPlay(SFX_TAP);
+    sdAsk = SDASK_BUSY;
+    // Drawn and flushed BEFORE the call, which blocks the loop for as long as
+    // the card takes. Without this the panel would sit on the question with
+    // its FORMAT button apparently dead, inviting the card to be pulled.
+    render();
+    bool ok = sdFormat();
+    if (ok) sdMountedLoad();
+    sdAsk = ok ? SDASK_OK : SDASK_FAIL;
+    sdAskUntil = millis() + 4000;
+    lastInteract = millis();   // a long format must not come back to a dimmed panel
+    return;
+  }
+}
+
+static_assert(LANGPICK_H >= UI_TAP_MIN, "a language row must be a full finger high");
+
+// Which language row a tap lands on, or -1. The rows tile: each owns half the
+// gap above and below it, and the sides reach a little past the drawn edge.
+int langPickRowAt(int16_t x, int16_t y) {
+  if (x < LANGPICK_X - 16 || x > LANGPICK_X + LANGPICK_W + 16) return -1;
+  int top = LANGPICK_Y0 - (LANGPICK_PITCH - LANGPICK_H) / 2;
+  if (y < top) return -1;
+  int r = (y - top) / LANGPICK_PITCH;
+  return r < LANG_COUNT ? r : -1;
+}
+
+void renderLangPick() {
+  gfx->fillScreen(RGB565_BLACK);
+  gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
+  // The heading cycles through the six words for "language": a fixed English
+  // one would assume the very thing this screen is asking.
+  const char *ttl = TL((Lang)((millis() / 1500) % LANG_COUNT), S_LANG_LABEL);
+  gfx->setTextColor(UI_INK);
+  gfx->setTextSize(3);
+  gfx->setCursor(CX - (int)strlen(ttl) * 9, 50);
+  gfx->print(ttl);
+  for (uint8_t i = 0; i < LANG_COUNT; i++) {
+    int y = LANGPICK_Y(i);
+    gfx->fillRoundRect(LANGPICK_X, y, LANGPICK_W, LANGPICK_H, 12, UI_WHITE);
+    gfx->drawRoundRect(LANGPICK_X, y, LANGPICK_W, LANGPICK_H, 12, UI_INK);
+    const char *nm = langNativeName((Lang)i);
+    gfx->setTextColor(UI_INK);
+    gfx->setTextSize(3);
+    gfx->setCursor(CX - (int)strlen(nm) * 9, y + LANGPICK_H / 2 - 11);
+    gfx->print(nm);
+  }
+  gfx->flush();
+}
+
+void langPickTap(int16_t x, int16_t y) {
+  int r = langPickRowAt(x, y);
+  if (r < 0) return;
+  setLang((Lang)r);
+  sfxPlay(SFX_TAP);
+  Serial.printf("language: %s\n", langNativeName((Lang)r));
+}
+
 void render() {
   crumbDrop();   // so a crash can name the screen it happened on
-  if (pet.awaitingStarter()) {  // primera partida: region y luego inicial
-    if (!starterRegionDone) renderRegionPick(RPICK_FOR_START);
-    else renderStarterSelect();
-    return;
-  }
-  if (galleryOpen) {
-    if (galleryPick) { renderRegionPick(RPICK_FOR_DEX); return; }
-    renderGallery();
-    return;
-  }
-  if (movePickOpen) {
-    renderMovePick();
-    return;
-  }
-  if (partyOpen) {
-    if (boxOpen) {
+  switch (uiCurrentScreen()) {
+    case SCR_REGION: renderRegionPick(RPICK_FOR_START); return;
+    case SCR_STARTER: renderStarterSelect(); return;
+    case SCR_DEXPICK: renderRegionPick(RPICK_FOR_DEX); return;
+    case SCR_GALLERY: renderGallery(); return;
+    case SCR_MOVEPICK: renderMovePick(); return;
+    case SCR_BOX:
       if (boxDetail) renderBoxDetail();
       else renderBox();
-    } else if (partyDetail) renderPartyDetail();
-    else renderParty();
-    return;
-  }
-  if (gameOpen) {
-    renderGame();
-    return;
-  }
-  if (sackOpen) {
-    renderSack();
-    return;
-  }
-  if (spdOpen) {
-    renderSpeed();
-    return;
-  }
-  if (trainOpen) {
-    renderTrain();
-    return;
-  }
-  if (kbOpen) {
-    renderKeyboard();
-    return;
-  }
-  if (clockOpen) {
-    renderClock();
-    return;
-  }
-  if (battleOpen) {
-    btlLinkPoll();
-    renderBattle();
-    return;
-  }
-  if (pickOpen) {
-    renderPick();
-    return;
-  }
-  if (lanOpen) {
-    renderLan();
-    return;
-  }
-  if (gymOpen) {
-    if (gymPick) renderRegionPick(RPICK_FOR_GYMS);
-    else renderGyms();
-    return;
-  }
-  if (playerOpen) {
-    renderPlayer();
-    return;
-  }
-  if (pet.hasLearnOffer()) {
-    renderLearn();
-    return;
-  }
-  if (cardOpen) {
-    renderCard();
-    return;
+      return;
+    case SCR_PARTY:
+      if (partyDetail) renderPartyDetail();
+      else renderParty();
+      return;
+    case SCR_GAME:
+      if (gameOpen) renderGame();
+      else if (sackOpen) renderSack();
+      else renderSpeed();
+      return;
+    case SCR_TRAIN: renderTrain(); return;
+    case SCR_KEYBOARD: renderKeyboard(); return;
+    case SCR_CLOCK: renderClock(); return;
+    case SCR_BATTLE:
+    case SCR_WIN:
+      renderBattle();   // the link's turn engine runs from loop(), not here
+      return;
+    case SCR_PICK: renderPick(); return;
+    case SCR_LAN: renderLan(); return;
+    case SCR_GYMPICK: renderRegionPick(RPICK_FOR_GYMS); return;
+    case SCR_GYM: renderGyms(); return;
+    case SCR_PLAYER: renderPlayer(); return;
+    case SCR_LEARN: renderLearn(); return;
+    case SCR_SDCARD: renderSdAsk(); return;
+    case SCR_LANG: renderLangPick(); return;
+    case SCR_CARD: renderCard(); return;
+    default: break;   // SCR_MAIN, and SCR_MENU which is drawn over it
   }
   int h = sceneHour();
   gNight = pet.sleeping || h < 6 || h >= 20;
@@ -2263,7 +2948,7 @@ void render() {
     const char *msg = (pet.ceremony == CER_FAREWELL) ? T(S_FAREWELL)
                       : (pet.ceremony == CER_RUNAWAY) ? T(S_RUNAWAY)
                                                       : T(S_GOODBYE);
-    drawHeader(d.name, d.accent, msg);
+    drawHeader(speciesName(pet.speciesId), d.accent, msg);
     drawCeremony();
     gfx->flush();
     return;
@@ -2300,7 +2985,7 @@ void render() {
   } else {
     const DexEntry &d = DEX_TBL[pet.speciesId];
     char name[28];
-    const char *base = pet.nick[0] ? pet.nick : d.name;
+    const char *base = pet.nick[0] ? pet.nick : speciesName(pet.speciesId);
     snprintf(name, sizeof(name), T(S_NAME_FMT), pet.shiny ? "*" : "", base, pet.level());
     drawHeader(name, gNight ? UI_INK_NIGHT : d.accent, statusMsg());
     drawStreakBadge();
@@ -2326,11 +3011,11 @@ void render() {
 
   // selector de comida
   if (feedMenuUntil) {
-    if (millis() > feedMenuUntil) {
+    if (!timerActive(feedMenuUntil, millis())) {
       feedMenuUntil = 0;
     } else {
-      gfx->fillRoundRect(101, 288, 264, 64, 14, UI_WHITE);
-      gfx->drawRoundRect(101, 288, 264, 64, 14, inkColor());
+      gfx->fillRoundRect(FEED_X, FEED_Y, FEED_W, FEED_H, 14, UI_WHITE);
+      gfx->drawRoundRect(FEED_X, FEED_Y, FEED_W, FEED_H, 14, inkColor());
       drawMap(SPR_ICON_FOOD, 16, 110, 296, 3, false);
       drawMap(SPR_ICON_BERRY_B, 16, 176, 296, 3, false);
       drawMap(SPR_ICON_BERRY_G, 16, 242, 296, 3, false);
@@ -2340,13 +3025,13 @@ void render() {
 
   // dialogo "soltar?" (pulsacion larga sobre el bicho)
   if (confirmUntil) {
-    if (millis() > confirmUntil) {
+    if (!timerActive(confirmUntil, millis())) {
       confirmUntil = 0;
     } else {
       gfx->fillRoundRect(94, 168, 278, 152, 16, UI_WHITE);
       gfx->drawRoundRect(94, 168, 278, 152, 16, UI_INK);
       char q[28];
-      snprintf(q, sizeof(q), T(S_RELEASE_FMT), DEX_TBL[pet.speciesId].name);
+      snprintf(q, sizeof(q), T(S_RELEASE_FMT), speciesName(pet.speciesId));
       gfx->setTextColor(UI_INK);
       gfx->setTextSize(2);
       gfx->setCursor(CX - strlen(q) * 6, 196);
@@ -2363,13 +3048,16 @@ void render() {
 
   // dialogo de decision (evolucionar/mantener, despedirse/quedaros)
   if (choiceKind) {
-    if (millis() > choiceUntil) choiceKind = 0;
-    else drawChoiceDialog();
+    if (!timerActive(choiceUntil, millis())) {
+      // an unanswered farewell is "stay together", exactly as a miss is
+      if (choiceKind == 2) pet.declineFarewell();
+      choiceKind = 0;
+    } else drawChoiceDialog();
   }
 
   // "<name> joined the party!" after a farewell or release
   if (partyBannerUntil) {
-    if (millis() > partyBannerUntil) {
+    if (!timerActive(partyBannerUntil, millis())) {
       partyBannerUntil = 0;
     } else {
       char b[40];
@@ -2477,7 +3165,7 @@ void stepGame() {
     ballY = CY + ny * 205;
   }
   // the clock, or three misses, whichever lands first
-  if (gameUntil && millis() >= gameUntil && !gameOverUntil) {
+  if (gameUntil && !timerActive(gameUntil, millis()) && !gameOverUntil) {
     gameNewHi = (gameScore > pet.gameHi);
     pet.playResult(gameScore);
     sfxPlay(gameNewHi && gameScore > 0 ? SFX_MEDAL : SFX_LEVEL);
@@ -2514,7 +3202,7 @@ void startSack() {
 }
 
 void sackTap() {
-  if (millis() >= sackUntil) return;  // ya termino el tiempo
+  if (!timerActive(sackUntil, millis())) return;  // ya termino el tiempo
   sackHits++;
   sackShake = 16;  // sacude el saco
 }
@@ -2529,7 +3217,7 @@ void renderSack() {
 
   // pantalla de resultado
   if (sackOverUntil) {
-    if (now > sackOverUntil) { sackOpen = false; return; }
+    if (!timerActive(sackOverUntil, now)) { sackOpen = false; return; }
     char b[20];
     snprintf(b, sizeof(b), T(S_HITS_FMT), sackHits);
     gfx->setTextColor(ink);
@@ -2559,7 +3247,7 @@ void renderSack() {
   }
 
   // se acabaron los 10 s: aplicar entrenamiento
-  if (now >= sackUntil) {
+  if (!timerActive(sackUntil, now)) {
     sackNewHi = (sackHits > pet.strHi);
     sackGain = pet.trainStrength(sackHits);
     sfxPlay(sackNewHi ? SFX_MEDAL : SFX_PLAY);
@@ -2629,7 +3317,7 @@ void renderGame() {
 
   if (gameOverUntil) {
     drawGameScene();
-    if (millis() > gameOverUntil) {
+    if (!timerActive(gameOverUntil, millis())) {
       gameOpen = false;
       return;
     }
@@ -2682,7 +3370,7 @@ void renderGame() {
   // read the same way. Thin and near the rim: the middle belongs to the ball.
   if (!gameOverUntil) {
     uint32_t now2 = millis();
-    uint32_t left = (gameUntil > now2) ? gameUntil - now2 : 0;
+    uint32_t left = timerActive(gameUntil, now2) ? gameUntil - now2 : 0;
     int bw = 200, fw = (int)((uint32_t)bw * left / GAME_MS);
     gfx->fillRoundRect(CX - bw / 2, 124, bw, 10, 4, UI_TRACK);
     if (fw > 2)
@@ -2976,7 +3664,7 @@ void drawMedalBadge(int x, int y, int i) {
 // pagina 0: perfil (retrato grande, identidad, racha, vinculo, baya)
 void renderCardProfile() {
   const DexEntry &d = DEX_TBL[pet.speciesId];
-  const char *nm = pet.nick[0] ? pet.nick : d.name;
+  const char *nm = pet.nick[0] ? pet.nick : speciesName(pet.speciesId);
   char head[26];
   snprintf(head, sizeof(head), T(S_NAME_FMT), pet.shiny ? "*" : "", nm, pet.level());
   gfx->setTextColor(d.accent);
@@ -2990,8 +3678,8 @@ void renderCardProfile() {
   if (pet.nick[0]) {  // especie real bajo el apodo
     gfx->setTextColor(UI_TRACK);
     gfx->setTextSize(2);
-    gfx->setCursor(CX - (strlen(d.name) + 2) * 6, 64);
-    gfx->printf("(%s)", d.name);
+    gfx->setCursor(CX - (strlen(speciesName(pet.speciesId)) + 2) * 6, 64);
+    gfx->printf("(%s)", speciesName(pet.speciesId));
   }
 
   // retrato grande animado
@@ -3225,6 +3913,71 @@ static void drawBattleBack() {
   drawBack(BACKS[bi][night ? 1 : 0], 30);
 }
 
+// The same scene, scaled ONCE into PSRAM and copied in each frame. drawBack()
+// re-expands every run of every row ten times a second -- thousands of
+// fillRect calls for a picture that only changes when the foe's biome does
+// (a trainer's next creature may live elsewhere) or the day/night half turns.
+// 466 x 224 RGB565 is ~204 KB, held only while a fight is on: btlFreeSprites()
+// frees it with the two battle sprites. PSRAM during a fight is then the
+// ~434 KB framebuffer + two ~135 KB battle sprites + the pet's own sprite +
+// thumbs.bin + this, a little over 1.5 MB of the ~3.8 MB the board reports.
+//
+// The pixels are drawBack()'s exactly: same runs, same 2x, the same columns
+// cropped at the canvas edge, and the 30 black rows above the scene that
+// renderBattle()'s fillScreen() used to leave. Returns false -- and the caller
+// draws it the old way -- for no foe, a scene that would not cover the full
+// width, or no PSRAM to spare.
+#define BTLBG_Y 30
+#define BTLBG_ROWS 224              // 112 scene rows at 2x
+uint16_t *btlBgBuf = nullptr;       // not static: btlbg_test checks its pixels
+int16_t btlBgKey = -1;              // which BACKS entry it holds: biome * 2 + night
+static void btlBgFree() {
+  if (btlBgBuf) free(btlBgBuf);
+  btlBgBuf = nullptr;
+  btlBgKey = -1;
+}
+static bool drawBattleBackCached() {
+  int16_t dex = btlFoe.dex;
+  if (dex < 1 || dex > DEX_COUNT) return false;
+  uint8_t bi = DEX_TBL[dex].biome;
+  if (bi >= BACK_BIOMES) bi = 0;
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  const BackScene &b = BACKS[bi][night ? 1 : 0];
+  const int SC = 2;
+  int x0 = CX - (b.w * SC) / 2;
+  if (b.h * SC != BTLBG_ROWS || x0 > 0 || x0 + b.w * SC < LCD_WIDTH) return false;
+  if (!btlBgBuf) {
+    btlBgBuf = (uint16_t *)ps_malloc((size_t)LCD_WIDTH * BTLBG_ROWS * 2);
+    btlBgKey = -1;
+    if (!btlBgBuf) return false;
+  }
+  int16_t key = bi * 2 + (night ? 1 : 0);
+  if (key != btlBgKey) {
+    for (int r = 0; r < b.h; r++) {
+      const uint8_t *row = b.idx + (uint32_t)r * b.w;
+      uint16_t *d0 = btlBgBuf + (size_t)(r * SC) * LCD_WIDTH;
+      int c = 0;
+      while (c < b.w) {
+        uint8_t v = row[c];
+        int run = 1;
+        while (c + run < b.w && row[c + run] == v) run++;
+        uint16_t col = b.pal[v];
+        int xa = x0 + c * SC, xb = xa + run * SC;
+        if (xa < 0) xa = 0;
+        if (xb > LCD_WIDTH) xb = LCD_WIDTH;
+        for (int x = xa; x < xb; x++) d0[x] = col;
+        c += run;
+      }
+      for (int k = 1; k < SC; k++)
+        memcpy(d0 + (size_t)k * LCD_WIDTH, d0, LCD_WIDTH * 2);
+    }
+    btlBgKey = key;
+  }
+  gfx->fillRect(0, 0, LCD_WIDTH, BTLBG_Y, RGB565_BLACK);
+  gfx->draw16bitRGBBitmap(0, BTLBG_Y, btlBgBuf, LCD_WIDTH, BTLBG_ROWS);
+  return true;
+}
+
 // Streams a side's sprite if it is not already the one loaded. Called whenever
 // a creature steps in, never per frame.
 static void btlSyncSprite(uint8_t who, const Combatant &c) {
@@ -3238,6 +3991,7 @@ static void btlSyncSprite(uint8_t who, const Combatant &c) {
 
 static void btlFreeSprites() {
   for (int i = 0; i < 2; i++) { btlPmd[i].unload(); btlPmdDex[i] = 0; }
+  btlBgFree();   // the pre-scaled backdrop goes with them
 }
 
 static void btlSay(const char *fmt, ...) {
@@ -3307,7 +4061,10 @@ static void buildSquad(uint8_t maxLvl, uint8_t maxCount, uint16_t mask) {
   btlSquadAt = 0;
   btlPetIn = false;
   if (maxCount > TRAINER_TEAM_MAX) maxCount = TRAINER_TEAM_MAX;
-  if (!pet.isEgg() && btlSquadN < maxCount && (mask & 1)) {
+  // pet.canBattle() even when the mask says otherwise: the mask is UI state
+  // that can be stale (the pet fell asleep or tired with the picker open), and
+  // this is the last door before a fight.
+  if (!pet.isEgg() && btlSquadN < maxCount && (mask & 1) && pet.canBattle()) {
     Pet tmp = pet;                       // a copy: the real pet is untouched
     if (maxLvl && tmp.level() > maxLvl)
       tmp.ageMinutes = (uint32_t)(maxLvl - 1) * MINUTES_PER_LEVEL;
@@ -3331,8 +4088,16 @@ uint8_t squadCap(uint8_t idx, bool hard) {
 
 // A fight against another device. The squads are already exchanged; the host
 // owns resolution and the guest renders what it is sent.
+// Whether the live pet was offered to the peer and can no longer pay for the
+// fight -- energy drains while pairing, and a rematch costs again. The squad is
+// already promised, so the fight is refused rather than started without it.
+bool lanPetBlocked() {
+  return lanPetIn && !pet.canBattle();
+}
+
 void startLinkBattle() {
   if (!lan.mineN || !lan.theirsN) return;
+  if (lanPetBlocked()) return;
   // Rebuilt from lan.mine, NOT from squadMask. What we fight with has to be
   // exactly what the peer was told we have -- rebuilding from the party would
   // silently diverge if anything changed between offering and starting.
@@ -3342,6 +4107,10 @@ void startLinkBattle() {
     linkMonTo(btlSquad[btlSquadN++], lan.mine[i]);
   if (!btlSquadN) return;
   btlYou = btlSquad[0];
+  // Charged HERE, when the fight is really on -- not at the offer, where a
+  // pairing that never completes would have taken the energy for nothing.
+  btlPetIn = lanPetIn;
+  if (lanPetIn) pet.payBattleEnergy();
   btlLink = true;
   btlLinkHost = lan.isHost;
   btlTrainer = -1;
@@ -3370,7 +4139,13 @@ void startLinkBattle() {
 
 void startTrainerBattle(uint8_t idx, bool hard) {
   if (idx >= TRAINER_COUNT || pet.isEgg() || pet.ceremony != CER_NONE) return;
-  const Trainer &tr = TRAINERS[idx];
+  // The fight's region is pinned HERE, and everything below reads BTL_TRAINERS.
+  // btlRegion was declared for exactly this and never assigned, so it stayed 0:
+  // a Johto fight opened with Falkner's first creature (read via TRAINERS), then
+  // sent out Brock's ONIX as the second, and a win awarded a KANTO badge -- the
+  // Johto ladder could never get past its first leader.
+  btlRegion = gymRegion % GYM_REGIONS;
+  const Trainer &tr = BTL_TRAINERS[idx];
   uint8_t top = 0;
   for (int k = 0; k < tr.count; k++)
     if (tr.team[k].level > top) top = tr.team[k].level;
@@ -3379,11 +4154,14 @@ void startTrainerBattle(uint8_t idx, bool hard) {
   // size cap on top, plus a smarter AI and better opposing IVs.
   buildSquad(top, hard ? tr.count : TRAINER_TEAM_MAX, squadMask);
   if (!btlSquadN) return;
+  // The fight is on: the live pet pays for it, once, if it came. Banked
+  // members are retired and fight for free.
+  if (btlPetIn) pet.payBattleEnergy();
   btlTrainer = (int8_t)idx;
   btlHard = hard;
+  btlLink = false;
   btlFoeAt = 0;
-  const Trainer &t = TRAINERS[idx];
-  foeFromSpecies(btlFoe, t.team[0].dex, t.team[0].level, hard ? HARD_IV : EASY_IV);
+  foeFromSpecies(btlFoe, tr.team[0].dex, tr.team[0].level, hard ? HARD_IV : EASY_IV);
   btlMsgCount = 0;
   btlOver = false;
   btlWon = false;
@@ -3407,6 +4185,15 @@ void startBattle(int16_t dex, uint8_t lvl) {
   if (dex < 1 || dex > DEX_COUNT) return;
   buildSquad(0, TRAINER_TEAM_MAX, 0xFFFF);
   if (!btlSquadN) return;
+  // A debug entry, so it charges no energy -- but buildSquad() still leaves out
+  // a live pet that could not fight.
+  // Not a trainer and not a link fight. Without this the previous gym fight's
+  // btlTrainer survived, and winning a console BATTLE awarded that leader's
+  // badge -- whether or not it had actually been beaten.
+  btlTrainer = -1;
+  btlHard = false;
+  btlLink = false;
+  btlFoeAt = 0;
   // The opponent is built through Pet so it gets the same stat formula and the
   // same learnset-driven moveset the player's creature does -- no special-cased
   // "enemy" maths that could quietly diverge.
@@ -3464,8 +4251,12 @@ static void btlApplyResult() {
   }
   btlYou.hp = r.guestHp > btlYou.maxHp ? btlYou.maxHp : r.guestHp;
   btlFoe.hp = r.hostHp > btlFoe.maxHp ? btlFoe.maxHp : r.hostHp;
-  btlYou.ailment = r.guestAil;
-  btlFoe.ailment = r.hostAil;
+  // Off the wire, so nothing here may index a table unchecked: btlSide() looks
+  // the ailment up in a 7-entry table and the narration below indexes MOVE_TBL.
+  btlYou.ailment = r.guestAil <= AIL_CONFUSE ? r.guestAil : AIL_NONE;
+  btlFoe.ailment = r.hostAil <= AIL_CONFUSE ? r.hostAil : AIL_NONE;
+  r.hostMove = linkSafeMove(r.hostMove);
+  r.guestMove = linkSafeMove(r.guestMove);
 
   btlMsgCount = 0;
   if (r.hostMove) btlSay(T(S_BTL_USED), btlFoe.name, MOVE_TBL[r.hostMove].name);
@@ -3600,50 +4391,80 @@ static void btlResolve(uint8_t yourMove) {
   // Someone went down. The replacement is NOT swapped in here -- that made the
   // change instant and read as a jump cut. Flag it, let the sprite drop out of
   // frame, and swap when the player dismisses the message.
-  if (btlFoe.fainted() && btlLink && btlFoeAt + 1 < btlFoeSquadN) {
-    btlFaintUntil[1] = millis() + BTL_FAINT_MS;
-    btlSwapWho = 1;
-    return;
-  }
-  if (btlFoe.fainted() && btlTrainer >= 0 && btlFoeAt + 1 < BTL_TRAINERS[btlTrainer].count) {
-    btlFaintUntil[1] = millis() + BTL_FAINT_MS;
-    btlSwapWho = 1;
-    return;
-  }
-  if (btlYou.fainted() && btlSquadAt + 1 < btlSquadN) {
-    btlFaintUntil[0] = millis() + BTL_FAINT_MS;
-    btlSwapWho = 0;
-    return;
-  }
-  if (btlFoe.fainted() || btlYou.fainted()) {
-    btlOver = true;
-    btlWon = btlFoe.fainted();
-    btlNewBadge = false;
-    btlTrainGain = 0;
-    if (btlWon && btlTrainer >= 0 && !pet.hasBadge(btlRegion, btlTrainer, btlHard)) {
-      pet.winBadge(btlRegion, btlTrainer, btlHard);
-      btlNewBadge = true;
+  btlSettleFaints();
+}
+
+// Who comes on next for each side, or -1. ONE answer for the flag that
+// btlSettleFaints() sets, the swap btlDoSwap() makes on it, and the end of the
+// fight. Each used to say "the next index" on its own: switch from slot 0 to
+// slot 2, lose slot 2, and the fight was LOST with 0 and 1 untouched; or switch
+// back to a first creature, lose it, and the "next" slot sent out was already
+// at 0 HP.
+static int8_t btlYourNext() {
+  return battleNextAlive(btlSquad, btlSquadN, btlSquadAt);
+}
+static int8_t btlFoeNext() {
+  // Another device's team switches out and back like ours, so it follows the
+  // same rule. Only scanning forward left a fainted foe on the field with
+  // nobody flagged to replace it, and the fight never ended.
+  if (btlLink) return battleNextAlive(btlFoeSquad, btlFoeSquadN, btlFoeAt);
+  // A trainer never switches: the roster is a fixed queue, sent out in order.
+  if (btlTrainer >= 0 && btlFoeAt + 1 < BTL_TRAINERS[btlTrainer].count)
+    return (int8_t)(btlFoeAt + 1);
+  return -1;               // a one-off console fight has nobody behind it
+}
+
+// Runs after a turn, and again after a replacement comes on, because recoil can
+// put both creatures down in the same turn. A side with nobody left decides the
+// fight before anyone is sent out; otherwise the foe replaces first and you on
+// the following beat.
+static void btlSettleFaints() {
+  bool foeOut = btlFoe.fainted() && btlFoeNext() < 0;
+  bool youOut = btlYou.fainted() && btlYourNext() < 0;
+  if (!foeOut && !youOut) {
+    if (btlFoe.fainted()) {
+      btlFaintUntil[1] = millis() + BTL_FAINT_MS;
+      btlSwapWho = 1;
+    } else if (btlYou.fainted()) {
+      btlFaintUntil[0] = millis() + BTL_FAINT_MS;
+      btlSwapWho = 0;
     }
-    // A badge and nothing else made the ladder a one-way checklist. A win now
-    // trains the creature that fought for it -- so a leader you can already
-    // beat is worth returning to. It goes to the LIVE pet only: banked members
-    // are frozen at the level and training they were banked with, and battling
-    // already costs the live pet energy, which is what rate-limits the grind
-    // without needing a cooldown.
-    if (btlWon && btlTrainer >= 0 && btlPetIn) {
-      // Later leaders are worth more, and hard mode is worth roughly double.
-      uint8_t amt = (btlHard ? 6 + random(5) : 3 + random(3)) + btlTrainer / 3;
-      btlTrainGain = pet.rewardTraining(amt, btlTrainWhich);
-    }
-    audioMusic(btlWon ? MUS_VICTORY : MUS_NONE);
-    if (btlWon) sfxPlay(SFX_VICTORY);
-    // Tell the peer before anything else: if we stop here without sending, the
-    // other device sits on a battle that will never take another turn.
-    if (btlLink && btlLinkHost) lan.sendEnd(btlWon);
-    if (btlLink) { btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE)); return; }
-    if (btlWon && btlTrainer >= 0) { btlWinUntil = millis() + 60000; return; }
-    btlSay("%s", T(S_BTL_LOSE));
+    return;
   }
+  btlOver = true;
+  btlWon = foeOut;     // both out at once stays the win it always was
+  btlNewBadge = false;
+  btlTrainGain = 0;
+  bool firstWin = btlWon && btlTrainer >= 0 && !pet.hasBadge(btlRegion, btlTrainer, btlHard);
+  // A badge and nothing else made the ladder a one-way checklist. A win now
+  // trains the creature that fought for it -- so a leader you can already
+  // beat is worth returning to. It goes to the LIVE pet only: banked members
+  // are frozen at the level and training they were banked with, and battling
+  // already cost the live pet BATTLE_ENERGY_COST when the fight started
+  // (startTrainerBattle), which is what rate-limits the grind without needing
+  // a cooldown.
+  if (btlWon && btlTrainer >= 0 && btlPetIn) {
+    // Later leaders are worth more, and hard mode is worth roughly double.
+    uint8_t amt = (btlHard ? 6 + random(5) : 3 + random(3)) + btlTrainer / 3;
+    btlTrainGain = pet.rewardTraining(amt, btlTrainWhich);
+  }
+  // The reward is only marked dirty, and the badge -- which writes on the
+  // spot -- comes AFTER it, so a first win is ONE save carrying both rather
+  // than two back to back. A rematch has no badge, so the flush writes the
+  // reward instead. Either way it is on flash before the win screen is up.
+  if (firstWin) {
+    pet.winBadge(btlRegion, btlTrainer, btlHard);
+    btlNewBadge = true;
+  }
+  if (btlWon && btlTrainer >= 0) pet.flushSave();
+  audioMusic(btlWon ? MUS_VICTORY : MUS_NONE);
+  if (btlWon) sfxPlay(SFX_VICTORY);
+  // Tell the peer before anything else: if we stop here without sending, the
+  // other device sits on a battle that will never take another turn.
+  if (btlLink && btlLinkHost) lan.sendEnd(btlWon);
+  if (btlLink) { btlSay("%s", btlWon ? T(S_BTL_WIN) : T(S_BTL_LOSE)); return; }
+  if (btlWon && btlTrainer >= 0) { btlWinUntil = millis() + 60000; return; }
+  btlSay("%s", T(S_BTL_LOSE));
 }
 
 static void btlHpBar(int x, int y, int w, const Combatant &c, uint16_t shown) {
@@ -3690,23 +4511,23 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
   uint32_t now = millis();
   int ox = 0, oy = 0;
   bool flash = false;
-  if (now < btlFaintUntil[who]) {          // sinks out of frame as it faints
+  if (timerActive(btlFaintUntil[who], now)) {          // sinks out of frame as it faints
     uint32_t left = btlFaintUntil[who] - now;
     oy += (int)((BTL_FAINT_MS - left) * 70 / BTL_FAINT_MS);
   } else if (c.fainted() && btlSwapWho == (int8_t)who) {
     return;                                // gone, waiting to be replaced
   }
-  if (now < btlEnterUntil[who]) {          // and the next one rises into place
+  if (timerActive(btlEnterUntil[who], now)) {          // and the next one rises into place
     uint32_t left = btlEnterUntil[who] - now;
     oy += (int)(left * 70 / BTL_ENTER_MS);
   }
-  if (now < btlLungeUntil[who]) {          // lean in, then back out
+  if (timerActive(btlLungeUntil[who], now)) {          // lean in, then back out
     uint32_t left = btlLungeUntil[who] - now;
     int amt = (int)(left > BTL_LUNGE_MS / 2 ? BTL_LUNGE_MS - left : left) * 22 / (BTL_LUNGE_MS / 2);
     ox = who == 0 ? amt : -amt;            // you lunge right, the foe lunges left
     oy = who == 0 ? -amt / 2 : amt / 2;
   }
-  if (now < btlHitUntil[who]) {
+  if (timerActive(btlHitUntil[who], now)) {
     uint32_t left = btlHitUntil[who] - now;
     ox += ((left / 50) % 2) ? 5 : -5;      // jitter
   }
@@ -3719,9 +4540,9 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
     uint8_t act = PMD_IDLE;
     bool loop = true;
     uint32_t t = now;
-    if (now < btlHitUntil[who] && btlPmd[who].has(PMD_HURT)) {
+    if (timerActive(btlHitUntil[who], now) && btlPmd[who].has(PMD_HURT)) {
       act = PMD_HURT; loop = false; t = now - (btlHitUntil[who] - BTL_HIT_MS);
-    } else if (now < btlLungeUntil[who] && btlPmd[who].has(PMD_ATTACK)) {
+    } else if (timerActive(btlLungeUntil[who], now) && btlPmd[who].has(PMD_ATTACK)) {
       act = PMD_ATTACK; loop = false; t = now - (btlLungeUntil[who] - BTL_LUNGE_MS);
     }
     drawPmdActM(btlPmd[who], act, sx + 24 + ox, sy + 78 + oy, t, loop, false, 4);
@@ -3729,7 +4550,7 @@ static void btlSide(int tx, int ty, int sx, int sy, const Combatant &c, uint8_t 
   }
   const uint8_t *th = thumbs.get(c.dex);
   if (!th) return;
-  if (now < btlHitUntil[who]) flash = ((btlHitUntil[who] - now) / 60) % 2 == 0;
+  if (timerActive(btlHitUntil[who], now)) flash = ((btlHitUntil[who] - now) / 60) % 2 == 0;
   drawThumb(th, sx + ox, sy + oy, 3, flash);
 }
 
@@ -3773,14 +4594,16 @@ void renderWin() {
     }
     const BadgeArt *a = badgeArtFor(btlRegion, btlTrainer);
     if (a) {
-      for (int r = 0; r < BADGE_PX; r++)
+      // 3x, so it reads as a prize rather than a list entry
+      for (int r = 0; r < BADGE_PX; r++) {
+        RowRuns run(CX - BADGE_PX * 3 / 2, by - BADGE_PX * 3 / 2 + r * 3, 3);
         for (int c = 0; c < BADGE_PX; c++) {
           uint8_t v = a->idx[r * BADGE_PX + c];
           if (v == 0xFF) continue;
-          // 3x, so it reads as a prize rather than a list entry
-          gfx->fillRect(CX - BADGE_PX * 3 / 2 + c * 3, by - BADGE_PX * 3 / 2 + r * 3,
-                        3, 3, a->pal[v]);
+          run.put(c, a->pal[v]);
         }
+        run.end();
+      }
     } else {
       // This region has no badge art. Say so with a plain medal in the leader's
       // type colour rather than borrowing another region's badge.
@@ -3833,8 +4656,13 @@ void renderWin() {
 void renderBattle() {
   if (btlWinUntil) { renderWin(); return; }
   btlEaseBars();
-  gfx->fillScreen(RGB565_BLACK);
-  drawBattleBack();
+  // Everything below the scene is covered by the band right after, so the
+  // cached path only paints the 30 black rows above it rather than the whole
+  // screen first.
+  if (!drawBattleBackCached()) {
+    gfx->fillScreen(RGB565_BLACK);
+    drawBattleBack();
+  }
   // the lower band stays flat so the move grid and the HP text keep their
   // contrast against it
   gfx->fillRect(0, 254, 466, 212, UI_BG_DAY);
@@ -3894,12 +4722,12 @@ void renderBattle() {
   } else if (btlMenu == 2) {
     drawBtlBack();
     // who to bring on instead; the current one and anything fainted is inert
-    for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
-      int x = BTL_CELL_X(i), y = BTL_CELL_Y(i);
+    for (uint8_t i = 0; i < btlSquadN && i < TRAINER_TEAM_MAX; i++) {
+      int x = BTL_SW_X(i), y = BTL_SW_Y(i);
       const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
       bool usable = (i != btlSquadAt) && !m.fainted();
-      gfx->fillRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, usable ? UI_BG_DAY : UI_TRACK);
-      gfx->drawRoundRect(x, y, BTL_CELL_W, BTL_CELL_H, 10, usable ? UI_INK : 0x8410);
+      gfx->fillRoundRect(x, y, BTL_SW_W, BTL_CELL_H, 10, usable ? UI_BG_DAY : UI_TRACK);
+      gfx->drawRoundRect(x, y, BTL_SW_W, BTL_CELL_H, 10, usable ? UI_INK : 0x8410);
       gfx->setTextColor(usable ? UI_INK : 0x8410);
       gfx->setTextSize(1);
       gfx->setCursor(x + 10, y + 10);
@@ -3939,32 +4767,38 @@ void renderBattle() {
 // Brings on the flagged replacement and starts its entrance.
 static void btlDoSwap() {
   uint32_t now = millis();
-  if (btlSwapWho == 1 && btlLink) {
-    btlFoeSquad[btlFoeAt] = btlFoe;
-    // the next one still standing, not simply the next index
-    uint8_t nxt = btlFoeAt;
-    while (++nxt < btlFoeSquadN && btlFoeSquad[nxt].fainted()) {}
-    if (nxt >= btlFoeSquadN) { btlSwapWho = -1; return; }
-    btlFoeAt = nxt;
-    btlFoe = btlFoeSquad[btlFoeAt];
-    btlHpShown[1] = btlFoe.hp;
+  int8_t who = btlSwapWho;
+  btlSwapWho = -1;
+  if (who == 1) {
+    if (btlLink) btlFoeSquad[btlFoeAt] = btlFoe;   // remember how battered it was
+    // The same answer btlSettleFaints() flagged on, so this cannot come back
+    // empty -- but if it ever did, end the fight rather than leave a fainted
+    // foe standing with nobody due to replace it (that never ended at all).
+    int8_t nxt = btlFoeNext();
+    if (nxt < 0) { btlSettleFaints(); return; }
+    btlFoeAt = (uint8_t)nxt;
+    if (btlLink) {
+      btlFoe = btlFoeSquad[btlFoeAt];
+      btlHpShown[1] = btlFoe.hp;
+    } else {
+      const Trainer &t = BTL_TRAINERS[btlTrainer];
+      foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
+                     btlHard ? HARD_IV : EASY_IV);
+      btlHpShown[1] = btlFoe.maxHp;
+    }
     btlSyncSprite(1, btlFoe);
     btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
     btlEnterUntil[1] = now + BTL_ENTER_MS;
-    btlSay(T(S_BTL_SENDS), lan.peerName, btlFoe.name);
-  } else if (btlSwapWho == 1) {
-    const Trainer &t = BTL_TRAINERS[btlTrainer];
-    btlFoeAt++;
-    foeFromSpecies(btlFoe, t.team[btlFoeAt].dex, t.team[btlFoeAt].level,
-                   btlHard ? HARD_IV : EASY_IV);
-    btlHpShown[1] = btlFoe.maxHp;
-    btlSyncSprite(1, btlFoe);
-    btlLungeUntil[1] = btlHitUntil[1] = btlFaintUntil[1] = 0;
-    btlEnterUntil[1] = now + BTL_ENTER_MS;
-    btlSay(T(S_BTL_SENDS), t.name, btlFoe.name);
-  } else if (btlSwapWho == 0) {
+    btlSay(T(S_BTL_SENDS), btlLink ? lan.peerName : BTL_TRAINERS[btlTrainer].name,
+           btlFoe.name);
+    // Recoil can drop both in one turn: the foe's replacement is in, so now
+    // yours comes on (or the fight is lost) on the next beat.
+    if (btlYou.fainted()) btlSettleFaints();
+  } else if (who == 0) {
     btlSquad[btlSquadAt] = btlYou;     // remember how battered it was
-    btlSquadAt++;
+    int8_t nxt = btlYourNext();
+    if (nxt < 0) { btlSettleFaints(); return; }
+    btlSquadAt = (uint8_t)nxt;
     btlYou = btlSquad[btlSquadAt];
     btlHpShown[0] = btlYou.hp;
     btlSyncSprite(0, btlYou);
@@ -3972,7 +4806,6 @@ static void btlDoSwap() {
     btlEnterUntil[0] = now + BTL_ENTER_MS;
     btlSay(T(S_BTL_GO), btlYou.name);
   }
-  btlSwapWho = -1;
 }
 
 // Switching spends your turn: the opponent still acts. That is what stops it
@@ -3994,6 +4827,13 @@ static void btlSwitchTo(uint8_t i) {
 int btlCellIndexAt(int16_t x, int16_t y) {
   for (int i = 0; i < 4; i++)
     if (btlCellHit(i, x, y)) return i;
+  return -1;
+}
+
+// The same, for the six-slot switch grid.
+int btlSwitchCellAt(int16_t x, int16_t y) {
+  for (int i = 0; i < TRAINER_TEAM_MAX; i++)
+    if (btlSwitchHit(i, x, y)) return i;
   return -1;
 }
 
@@ -4063,8 +4903,8 @@ void battleTap(int16_t x, int16_t y) {
   }
   if (btlMenu == 2) {
     if (btlBackTap(x, y)) return;
-    for (uint8_t i = 0; i < btlSquadN && i < 4; i++) {
-      if (!btlCellHit(i, x, y)) continue;
+    for (uint8_t i = 0; i < btlSquadN && i < TRAINER_TEAM_MAX; i++) {
+      if (!btlSwitchHit(i, x, y)) continue;
       const Combatant &m = (i == btlSquadAt) ? btlYou : btlSquad[i];
       if (i == btlSquadAt || m.fainted()) { sfxPlay(SFX_DENY); return; }
       sfxPlay(SFX_TAP);
@@ -4177,12 +5017,15 @@ static void renderPlayerBadges() {
       gfx->drawCircle(bx, by, 14, UI_INK);
       continue;
     }
-    for (int r = 0; r < BADGE_PX; r++)
+    for (int r = 0; r < BADGE_PX; r++) {
+      RowRuns run(bx - BADGE_PX / 2, by - BADGE_PX / 2 + r, 1);
       for (int c = 0; c < BADGE_PX; c++) {
         uint8_t v = a->idx[r * BADGE_PX + c];
         if (v == 0xFF) continue;
-        gfx->fillRect(bx - BADGE_PX / 2 + c, by - BADGE_PX / 2 + r, 1, 1, a->pal[v]);
+        run.put(c, a->pal[v]);
       }
+      run.end();
+    }
   }
   char l[32];
   gfx->setTextColor(UI_INK);
@@ -4305,7 +5148,7 @@ void renderSpeed() {
   uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
 
   if (spdOverUntil) {
-    if (now > spdOverUntil) { spdOpen = false; return; }
+    if (!timerActive(spdOverUntil, now)) { spdOpen = false; return; }
     char b[24];
     snprintf(b, sizeof(b), T(S_SCORE_FMT), spdHits);
     gfx->setTextColor(ink);
@@ -4335,7 +5178,7 @@ void renderSpeed() {
   }
 
   // session over?
-  if (now >= spdUntil) {
+  if (!timerActive(spdUntil, now)) {
     spdNewHi = (spdHits > pet.spdHi);
     spdGain = pet.trainSpeed(spdHits);
     sfxPlay(spdNewHi ? SFX_MEDAL : SFX_PLAY);
@@ -4365,7 +5208,7 @@ void renderSpeed() {
   gfx->setCursor(CX - strlen(b) * 12, 30);
   gfx->print(b);
   // seconds left
-  uint32_t left = (spdUntil > now) ? (spdUntil - now + 999) / 1000 : 0;
+  uint32_t left = timerActive(spdUntil, now) ? (spdUntil - now + 999) / 1000 : 0;
   snprintf(b, sizeof(b), "%us", (unsigned)left);
   gfx->setTextSize(2);
   gfx->setCursor(CX - strlen(b) * 6, 76);
@@ -4384,17 +5227,38 @@ bool pickExists(uint8_t n) {
   if (n == 0) return !pet.isEgg();
   return n <= PARTY_SLOTS && !party.slots[n - 1].empty();
 }
+// Whether candidate n may be put in the squad. Banked members always may; the
+// live pet asks pet.canBattle(), the same answer buildSquad() gets.
+bool pickEligible(uint8_t n) {
+  return pickExists(n) && (n != 0 || pet.canBattle());
+}
 uint8_t pickChosen() {
   uint8_t c = 0;
   for (uint8_t n = 0; n <= PARTY_SLOTS; n++)
-    if (pickExists(n) && (squadMask & (1 << n))) c++;
+    if (pickEligible(n) && (squadMask & (1 << n))) c++;
   return c;
+}
+// Why the live pet may not fight, in words, or nullptr if it may.
+const char *fightBlockText() {
+  switch (pet.battleBlock()) {
+    case FIGHT_ASLEEP: return T(S_FIGHT_ASLEEP);
+    case FIGHT_TIRED:  return T(S_FIGHT_TIRED);
+    default:           return nullptr;
+  }
 }
 uint8_t pickCandidates() {
   uint8_t c = 0;
   for (uint8_t n = 0; n <= PARTY_SLOTS; n++)
     if (pickExists(n)) c++;
   return c;
+}
+// What the FIGHT button says. When the live pet is the ONLY candidate and may
+// not fight, the button carries the reason: a greyed FIGHT that does nothing
+// is the silent refusal this replaces.
+const char *pickGoLabel() {
+  const char *why = fightBlockText();
+  if (why && pickExists(0) && pickCandidates() == 1) return why;
+  return T(S_FIGHT);
 }
 // Trims the selection to the first `cap` candidates. The default used to be
 // "everything", which with a live pet plus six banked is seven against a cap of
@@ -4403,19 +5267,20 @@ void pickDefault(uint8_t cap) {
   squadMask = 0;
   uint8_t taken = 0;
   for (uint8_t n = 0; n <= PARTY_SLOTS && taken < cap; n++)
-    if (pickExists(n)) { squadMask |= (1 << n); taken++; }
+    if (pickEligible(n)) { squadMask |= (1 << n); taken++; }
 }
 
 static void drawPickCell(uint8_t n, int x, int y, uint8_t capLvl) {
-  bool on = (squadMask & (1 << n)) != 0;
+  bool on = pickEligible(n) && (squadMask & (1 << n)) != 0;
+  const char *why = (n == 0) ? fightBlockText() : nullptr;
   int16_t dex; uint16_t lvl; const char *nm; bool shiny;
   if (n == 0) {
     dex = pet.speciesId; lvl = pet.level(); shiny = pet.shiny;
-    nm = pet.nick[0] ? pet.nick : DEX_TBL[dex].name;
+    nm = pet.nick[0] ? pet.nick : speciesName(dex);
   } else {
     const PartyMon &m = party.slots[n - 1];
     dex = m.dex; lvl = m.level; shiny = m.shiny;
-    nm = m.nick[0] ? m.nick : DEX_TBL[dex].name;
+    nm = m.nick[0] ? m.nick : speciesName(dex);
   }
   if (capLvl && lvl > capLvl) lvl = capLvl;   // show the level it will FIGHT at
   gfx->fillRoundRect(x, y, PICK_CELL_W, PICK_CELL_H, 10, on ? UI_BG_DAY : UI_TRACK);
@@ -4432,12 +5297,19 @@ static void drawPickCell(uint8_t n, int x, int y, uint8_t capLvl) {
   gfx->print(l);
   // its typing is the whole reason you are on this screen
   const DexEntry &d = DEX_TBL[dex];
-  gfx->setTextColor(on ? d.accent : 0x8410);
-  gfx->setCursor(x + 54, y + 48);
-  gfx->print(typeName(d.type1));
-  if (d.type2 != T_NONE) {
-    gfx->setCursor(x + 54, y + 60);
-    gfx->print(typeName(d.type2));
+  if (why) {
+    // a live pet that cannot come says why, in place of a typing it cannot use
+    gfx->setTextColor(UI_BAR_BAD);
+    gfx->setCursor(x + 54, y + 48);
+    gfx->print(why);
+  } else {
+    gfx->setTextColor(on ? d.accent : 0x8410);
+    gfx->setCursor(x + 54, y + 48);
+    gfx->print(typeName(d.type1));
+    if (d.type2 != T_NONE) {
+      gfx->setCursor(x + 54, y + 60);
+      gfx->print(typeName(d.type2));
+    }
   }
   if (on) {
     gfx->fillCircle(x + PICK_CELL_W - 16, y + 16, 9, UI_BAR_OK);
@@ -4500,11 +5372,12 @@ void renderPick() {
   gfx->fillRoundRect(PICK_GO_X, PICK_GO_Y, PICK_BTN_W, PICK_BTN_H, 12,
                      ok ? UI_BAR_OK : UI_TRACK);
   gfx->drawRoundRect(PICK_GO_X, PICK_GO_Y, PICK_BTN_W, PICK_BTN_H, 12, UI_INK);
-  gfx->setTextColor(ok ? UI_BG_DAY : 0x8410);
+  const char *go = pickGoLabel();
+  gfx->setTextColor(ok ? UI_BG_DAY : (go != T(S_FIGHT) ? UI_BAR_BAD : 0x8410));
   gfx->setTextSize(2);
-  gfx->setCursor(PICK_GO_X + (PICK_BTN_W - (int)strlen(T(S_FIGHT)) * 12) / 2,
+  gfx->setCursor(PICK_GO_X + (PICK_BTN_W - (int)strlen(go) * 12) / 2,
                  PICK_GO_Y + 14);
-  gfx->print(T(S_FIGHT));
+  gfx->print(go);
   gfx->flush();
 }
 
@@ -4520,6 +5393,10 @@ void pickTap(int16_t x, int16_t y) {
   if (y >= PICK_GO_Y && y <= PICK_GO_Y + PICK_BTN_H &&
       x >= PICK_GO_X && x <= PICK_GO_X + PICK_BTN_W) {
     uint8_t cap = squadCap(pickTrainer, pickHard);
+    if (pickChosen() == 0 && pickGoLabel() != T(S_FIGHT)) {
+      sfxPlay(SFX_DENY);      // refused, and the button already says why
+      return;
+    }
     if (pickChosen() == 0 || pickChosen() > cap) return;   // GO stays inert
     sfxPlay(SFX_TAP);
     pickOpen = false;
@@ -4543,6 +5420,11 @@ void pickTap(int16_t x, int16_t y) {
     int cx0 = PICK_X(drawn), cy0 = PICK_Y(drawn);
     drawn++;
     if (x < cx0 || x > cx0 + PICK_CELL_W || y < cy0 || y > cy0 + PICK_CELL_H) continue;
+    if (!pickEligible(n)) {   // the cell says why; the tap does nothing else
+      squadMask &= ~(1 << n);
+      sfxPlay(SFX_DENY);
+      return;
+    }
     squadMask ^= (1 << n);
     sfxPlay(SFX_TAP);
     return;
@@ -4603,11 +5485,16 @@ void renderLan() {
     gfx->setTextSize(2);
     gfx->setCursor(CX - (int)strlen(l) * 6, 150);
     gfx->print(l);
-    gfx->fillRoundRect(120, 220, 226, 56, 12, UI_BAR_OK);
+    // The live pet was offered and can no longer pay for the fight: the button
+    // says why instead of FIGHT, and refuses.
+    const char *go = lanPetBlocked() ? fightBlockText() : T(S_FIGHT);
+    if (!go) go = T(S_FIGHT);
+    bool can = !lanPetBlocked();
+    gfx->fillRoundRect(120, 220, 226, 56, 12, can ? UI_BAR_OK : UI_TRACK);
     gfx->drawRoundRect(120, 220, 226, 56, 12, UI_INK);
-    gfx->setTextColor(UI_BG_DAY);
-    gfx->setCursor(CX - strlen(T(S_FIGHT)) * 6, 240);
-    gfx->print(T(S_FIGHT));
+    gfx->setTextColor(can ? UI_BG_DAY : UI_BAR_BAD);
+    gfx->setCursor(CX - strlen(go) * 6, 240);
+    gfx->print(go);
   } else if (lan.state == LINK_DONE) {
     // Both squads are still in hand on both devices, so going again costs one
     // packet -- there is nothing to re-exchange.
@@ -4617,12 +5504,14 @@ void renderLan() {
       gfx->setCursor(CX - (int)strlen(lan.peerName) * 6, 140);
       gfx->print(lan.peerName);
     }
-    gfx->fillRoundRect(120, 220, 226, 56, 12, UI_BG_DAY);
+    const char *again = lanPetBlocked() ? fightBlockText() : T(S_LAN_REMATCH);
+    if (!again) again = T(S_LAN_REMATCH);
+    gfx->fillRoundRect(120, 220, 226, 56, 12, lanPetBlocked() ? UI_TRACK : UI_BG_DAY);
     gfx->drawRoundRect(120, 220, 226, 56, 12, UI_INK);
-    gfx->setTextColor(UI_INK);
+    gfx->setTextColor(lanPetBlocked() ? UI_BAR_BAD : UI_INK);
     gfx->setTextSize(2);
-    gfx->setCursor(CX - strlen(T(S_LAN_REMATCH)) * 6, 240);
-    gfx->print(T(S_LAN_REMATCH));
+    gfx->setCursor(CX - strlen(again) * 6, 240);
+    gfx->print(again);
   }
   gfx->setTextColor(UI_TRACK);
   gfx->setTextSize(2);
@@ -4640,14 +5529,42 @@ void lanLeave() {
   lan.state = LINK_OFF;
 }
 
+// The console's BATTLE opens a fight from wherever the panel happens to be.
+// Taps go to the battle first, but render() draws the gallery, the party, the
+// minigames, the keyboard and the clock ON TOP of it -- so the fight ran
+// invisibly behind them. Everything but the battle is closed, through the same
+// exits a swipe uses, so a minigame still banks what it earned and the gallery
+// still frees its sprite. The gym and team picker reach a fight through their
+// own buttons and close themselves; this is only for the console's way in.
+static void closeScreensForBattle() {
+  if (gameOpen) leaveGame();
+  if (sackOpen) leaveSack();
+  if (spdOpen) leaveSpeed();
+  if (galleryOpen) { galleryOpen = false; galleryPick = false; galleryDetail = 0; galleryPmd.unload(); }
+  movePickOpen = false;
+  boxOpen = false; boxSel = 0;
+  partyOpen = false; partyDetail = 0;
+  kbOpen = false;
+  cardOpen = false;
+  playerOpen = false;
+  clockOpen = false;
+  trainOpen = false;
+  menuOpen = false;
+  pickOpen = false;
+  gymOpen = false; gymPick = false;
+  if (lanOpen) { lanLeave(); lanOpen = false; }
+}
+
 static void lanOffer(bool host) {
   // The squad is built BEFORE the radio is touched. What we advertise has to be
   // exactly what the player just chose in the picker, and that does not depend
   // on whether the radio comes up -- doing it the other way round meant a
   // failed radio skipped the squad entirely and left nothing to inspect.
+  // begin() keeps our name for the hello; peerName stays empty until the
+  // peer's own hello fills it.
   lan.begin(host, pet.trainerName);
-  snprintf(lan.peerName, sizeof(lan.peerName), "%s", pet.trainerName);
-  buildSquad(0, TRAINER_TEAM_MAX, squadMask);
+  buildSquad(0, TRAINER_TEAM_MAX, squadMask);   // asks pet.canBattle() itself
+  lanPetIn = btlPetIn;   // nothing is charged until startLinkBattle()
   for (uint8_t i = 0; i < btlSquadN; i++) {
     LinkMon m;
     linkMonFrom(m, btlSquad[i]);
@@ -4682,6 +5599,7 @@ void lanTap(int16_t x, int16_t y) {
     }
   } else if (lan.state == LINK_READY) {
     if (x >= 120 && x <= 346 && y >= 220 && y <= 276) {
+      if (lanPetBlocked()) { sfxPlay(SFX_DENY); return; }   // the button says why
       sfxPlay(SFX_TAP);
       lanOpen = false;
       startLinkBattle();
@@ -4689,6 +5607,8 @@ void lanTap(int16_t x, int16_t y) {
     }
   } else if (lan.state == LINK_DONE) {
     if (x >= 120 && x <= 346 && y >= 220 && y <= 276) {
+      // do not ask the peer for a fight we could not start
+      if (lanPetBlocked()) { sfxPlay(SFX_DENY); return; }
       sfxPlay(SFX_TAP);
       lan.sendRematch();      // both sides go back to READY and tap FIGHT
       return;
@@ -4764,11 +5684,11 @@ void renderGyms() {
     else gfx->drawCircle(dx, 366, 4, UI_INK);
   }
   // the other kind of battle lives here too
-  gfx->fillRoundRect(148, 380, 170, 32, 9, UI_BG_DAY);
-  gfx->drawRoundRect(148, 380, 170, 32, 9, UI_INK);
+  gfx->fillRoundRect(GYMLAN_X, GYMLAN_Y, GYMLAN_W, GYMLAN_H, 11, UI_BG_DAY);
+  gfx->drawRoundRect(GYMLAN_X, GYMLAN_Y, GYMLAN_W, GYMLAN_H, 11, UI_INK);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
-  gfx->setCursor(CX - strlen(T(S_LAN)) * 6, 388);
+  gfx->setCursor(CX - strlen(T(S_LAN)) * 6, GYMLAN_Y + 14);
   gfx->print(T(S_LAN));
   gfx->flush();
 }
@@ -5009,7 +5929,7 @@ void renderLearn() {
   gfx->fillCircle(CX, CY, 231, UI_BG_DAY);
   uint8_t mv = pet.learnOffer();
   char head[40];
-  const char *nm = pet.nick[0] ? pet.nick : DEX_TBL[pet.speciesId].name;
+  const char *nm = pet.nick[0] ? pet.nick : speciesName(pet.speciesId);
   snprintf(head, sizeof(head), T(S_LEARN_Q), nm);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(1);
@@ -5261,7 +6181,7 @@ void renderBox() {
     const PartyMon &p = party.slots[boxSwapFrom - 1];
     char sub[40];
     snprintf(sub, sizeof(sub), T(S_BOX_SWAP),
-             p.empty() ? "-" : (p.nick[0] ? p.nick : DEX_TBL[p.dex].name));
+             p.empty() ? "-" : (p.nick[0] ? p.nick : speciesName(p.dex)));
     gfx->setTextColor(UI_BAR_WARN);
     gfx->setTextSize(1);
     gfx->setCursor(CX - (int)strlen(sub) * 3, 64);
@@ -5288,7 +6208,7 @@ void renderBox() {
     gfx->setTextColor(UI_INK);
     gfx->setTextSize(1);
     gfx->setCursor(x + 52, y + 16);
-    gfx->print(m.nick[0] ? m.nick : DEX_TBL[m.dex].name);
+    gfx->print(m.nick[0] ? m.nick : speciesName(m.dex));
     char l[16];
     snprintf(l, sizeof(l), "Lv.%u%s", (unsigned)m.level, m.shiny ? " *" : "");
     gfx->setCursor(x + 52, y + 34);
@@ -5315,7 +6235,7 @@ void boxTap(int16_t x, int16_t y) {
       int free = party.firstFree();
       if (free < 0) { sfxPlay(SFX_DENY); return; }
       party.swapPartyBox((uint8_t)free, boxDetail - 1);
-      boxDetail = 0;
+      monSheetClose();
       boxSel = 0;
       sfxPlay(SFX_MEDAL);
       return;
@@ -5325,8 +6245,7 @@ void boxTap(int16_t x, int16_t y) {
       sfxPlay(SFX_TAP);
       return;
     }
-    boxDetail = 0;                          // anywhere else backs out
-    releaseConfirm = false;
+    monSheetClose();                        // anywhere else backs out
     sfxPlay(SFX_TAP);
     return;
   }
@@ -5352,8 +6271,8 @@ void boxTap(int16_t x, int16_t y) {
     // offers TO PARTY explicitly and shows what you are about to move.
     if (party.box[idx].empty()) { sfxPlay(SFX_DENY); return; }
     if (party.firstFree() < 0) {
-      boxSel = idx + 1;          // party is full: go choose who steps out
-      boxOpen = false;
+      partyReset(false);         // back to the party grid...
+      boxSel = idx + 1;          // ...to choose who steps out for this one
       sfxPlay(SFX_TAP);
       return;
     }
@@ -5362,10 +6281,7 @@ void boxTap(int16_t x, int16_t y) {
     sfxPlay(SFX_TAP);
     return;
   }
-  boxOpen = false;               // anywhere else backs out
-  boxSwapFrom = 0;
-  boxDetail = 0;
-  releaseConfirm = false;
+  partyReset(false);             // anywhere else backs out to the party
 }
 
 // ---------- party ----------
@@ -5386,7 +6302,7 @@ void drawPartySlot(int i, int x, int y) {
   const uint8_t *th = thumbs.get(m.dex);
   if (th) drawThumb(th, x - 6, y - 3, 1, false);
   const DexEntry &d = DEX_TBL[m.dex];
-  const char *nm = m.nick[0] ? m.nick : d.name;
+  const char *nm = m.nick[0] ? m.nick : speciesName(m.dex);
   gfx->setTextColor(d.accent);
   gfx->setTextSize(1);
   gfx->setCursor(x + 62, y + 18);
@@ -5434,7 +6350,7 @@ void renderParty() {
     const PartyMon &b = party.box[boxSel - 1];
     char sw[44];
     snprintf(sw, sizeof(sw), T(S_BOX_SWAP),
-             b.nick[0] ? b.nick : DEX_TBL[b.dex].name);
+             b.nick[0] ? b.nick : speciesName(b.dex));
     gfx->setTextColor(UI_BAR_WARN);
     gfx->setTextSize(1);
     gfx->setCursor(CX - (int)strlen(sw) * 3, 72);
@@ -5464,6 +6380,26 @@ void renderParty() {
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(ex) * 6, PARTYCLOSE_Y + 14);
   gfx->print(ex);
+
+  // Either way a creature is lost for good, so the price is on screen first:
+  // LET GO names the newcomer, a slot names who it would replace.
+  if (partyPick && pickConfirm != PICKCONF_NONE) {
+    const PartyMon &n = pet.endedMon;
+    const char *nn = n.nick[0] ? n.nick : speciesName(n.dex);
+    char q[40];
+    char sub[44];
+    const char *sub2 = nullptr;
+    if (pickConfirm == PICKCONF_LETGO) {
+      snprintf(q, sizeof(q), T(S_RELEASE_FMT), nn);
+    } else {
+      const PartyMon &o = party.slots[(pickConfirm - 1) % PARTY_SLOTS];
+      snprintf(q, sizeof(q), T(S_RELEASE_FMT), o.nick[0] ? o.nick : speciesName(o.dex));
+      snprintf(sub, sizeof(sub), T(S_PARTY_TAKES_FMT), nn);
+      sub2 = sub;
+    }
+    drawConfirmPanel(q, T(S_RELEASE_GONE), sub2, UI_BAR_BAD,
+                     T(S_YES), UI_BAR_BAD, UI_WHITE, T(S_NO), UI_TRACK, UI_INK);
+  }
   gfx->flush();
 }
 
@@ -5552,12 +6488,16 @@ void drawThumb(const uint8_t *b, int x, int y, int s, bool sil) {
   int ox = x + (GAL_CELL - w * s) / 2;
   int oy = y + (GAL_CELL - h * s) / 2;
   for (int r = 0; r < h; r++) {
+    RowRuns run(ox, oy + r * s, s);
     for (int c = 0; c < w; c++) {
       uint8_t idx = d[r * w + c];
-      if (idx == 0xFF) continue;
+      // idx >= n also skips an index past the palette, which only a damaged
+      // file has and which would read beyond this species' blob
+      if (idx == 0xFF || idx >= n) continue;
       uint16_t col = sil ? INK_K : (uint16_t)(pal[idx * 2] | (pal[idx * 2 + 1] << 8));
-      gfx->fillRect(ox + c * s, oy + r * s, s, s, col);
+      run.put(c, col);
     }
+    run.end();
   }
 }
 
@@ -5569,7 +6509,7 @@ void renderGallery() {
     bool reg = pet.isRegistered(galleryDetail);
     char head[24];
     snprintf(head, sizeof(head), "N.%03d %s%s", galleryDetail,
-             pet.isShinyRegistered(galleryDetail) ? "*" : "", reg ? d.name : "???");
+             pet.isShinyRegistered(galleryDetail) ? "*" : "", reg ? speciesName(galleryDetail) : "???");
     gfx->setTextColor(reg ? d.accent : UI_INK);
     int glen = strlen(head);
     int gts = (glen <= 13) ? 3 : 2;  // auto-encoge nombres largos (no caben a t3)
@@ -5768,14 +6708,28 @@ void uiConfirmRects(int *b1Top, int *b1Bot, int *b2Top, int *b2Bot) {
   *b2Bot = CONFIRM_B2_Y + CONFIRM_BTN_H;
 }
 
+void uiConfirmRect3(int *b3Top, int *b3Bot) {
+  *b3Top = CONFIRM_B3_Y;
+  *b3Bot = CONFIRM_B3_Y + CONFIRM_BTN_H;
+}
+
 // Draws the panel and its two buttons. sub1/sub2 are optional lines between the
 // question and the buttons -- what the choice COSTS, which for anything
 // irreversible has to be on screen before the tap, not after it.
 void drawConfirmPanel(const char *q, const char *sub1, const char *sub2,
                       uint16_t subCol, const char *o1, uint16_t c1, uint16_t t1,
                       const char *o2, uint16_t c2, uint16_t t2) {
-  gfx->fillRoundRect(CONFIRM_X, CONFIRM_Y, CONFIRM_W, CONFIRM_H, 16, UI_WHITE);
-  gfx->drawRoundRect(CONFIRM_X, CONFIRM_Y, CONFIRM_W, CONFIRM_H, 16, UI_INK);
+  drawConfirmPanel3(q, sub1, sub2, subCol, o1, c1, t1, o2, c2, t2, nullptr, 0, 0);
+}
+
+// The same panel with an optional third button (o3 == nullptr: two buttons).
+void drawConfirmPanel3(const char *q, const char *sub1, const char *sub2,
+                       uint16_t subCol, const char *o1, uint16_t c1, uint16_t t1,
+                       const char *o2, uint16_t c2, uint16_t t2,
+                       const char *o3, uint16_t c3, uint16_t t3) {
+  int h = o3 ? CONFIRM_H3 : CONFIRM_H;
+  gfx->fillRoundRect(CONFIRM_X, CONFIRM_Y, CONFIRM_W, h, 16, UI_WHITE);
+  gfx->drawRoundRect(CONFIRM_X, CONFIRM_Y, CONFIRM_W, h, 16, UI_INK);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
   gfx->setCursor(CX - (int)strlen(q) * 6, 176);
@@ -5802,12 +6756,20 @@ void drawConfirmPanel(const char *q, const char *sub1, const char *sub2,
   gfx->setTextColor(t2);
   gfx->setCursor(CX - (int)strlen(o2) * 6, CONFIRM_B2_Y + 18);
   gfx->print(o2);
+  if (o3) {
+    gfx->fillRoundRect(CONFIRM_BTN_X, CONFIRM_B3_Y, CONFIRM_BTN_W, CONFIRM_BTN_H, 12, c3);
+    gfx->setTextColor(t3);
+    gfx->setCursor(CX - (int)strlen(o3) * 6, CONFIRM_B3_Y + 18);
+    gfx->print(o3);
+  }
 }
 
 void drawChoiceDialog() {
-  const char *q, *o1, *o2;
+  const char *q, *o1, *o2, *o3 = nullptr;
   const char *sub1 = nullptr, *sub2 = nullptr;
-  uint16_t c1, c2, t1, t2;
+  uint16_t c1, c2, t1, t2, c3 = 0, t3 = 0;
+  uint16_t subCol = UI_BAR_BAD;   // a price, unless the branch says otherwise
+  char later[48];
   if (choiceKind == 1) {  // evolucion
     q = T(S_EVO_Q); o1 = T(S_EVO_TAP); o2 = T(S_EVO_KEEP);
     c1 = UI_BAR_BAD; t1 = UI_WHITE; c2 = UI_TRACK; t2 = UI_INK;
@@ -5823,8 +6785,13 @@ void drawChoiceDialog() {
   } else {                // despedida
     q = T(S_FAR_Q); o1 = T(S_FAR_GO); o2 = T(S_FAR_STAY);
     c1 = UI_BAR_WARN; t1 = UI_INK; c2 = UI_BAR_OK; t2 = UI_WHITE;
+    o3 = T(S_FAR_FOREVER); c3 = UI_TRACK; t3 = UI_INK;
+    // where the goodbye still is once "keep forever" has put this offer away
+    snprintf(later, sizeof(later), T(S_FAR_LATER_FMT), T(S_RETIRE));
+    sub1 = later;
+    subCol = UI_INK;              // information, not a cost
   }
-  drawConfirmPanel(q, sub1, sub2, UI_BAR_BAD, o1, c1, t1, o2, c2, t2);
+  drawConfirmPanel3(q, sub1, sub2, subCol, o1, c1, t1, o2, c2, t2, o3, c3, t3);
 }
 
 // boton-CTA rojo y grande para evolucionar (pulsa para llamar la atencion)
@@ -5850,7 +6817,7 @@ void drawFarewellButton() {
   gfx->fillRoundRect(x, y, w, h, 16, UI_BAR_WARN);
   gfx->drawRoundRect(x, y, w, h, 16, UI_INK);
   char buf[52];
-  const char *nm = pet.nick[0] ? pet.nick : DEX_TBL[pet.speciesId].name;
+  const char *nm = pet.nick[0] ? pet.nick : speciesName(pet.speciesId);
   snprintf(buf, sizeof(buf), T(S_FAREWELL_BTN), nm);
   gfx->setTextColor(UI_INK);
   gfx->setTextSize(2);
@@ -5867,7 +6834,7 @@ void drawRunawayButton() {
   gfx->fillRoundRect(x, y, w, h, 16, C565(0x3a, 0x44, 0x5a));
   gfx->drawRoundRect(x, y, w, h, 16, C565(0x70, 0x80, 0x98));
   char buf[52];
-  const char *nm = pet.nick[0] ? pet.nick : DEX_TBL[pet.speciesId].name;
+  const char *nm = pet.nick[0] ? pet.nick : speciesName(pet.speciesId);
   snprintf(buf, sizeof(buf), T(S_RUNAWAY_BTN), nm);
   gfx->setTextColor(C565(0xc8, 0xd2, 0xe0));
   gfx->setTextSize(2);
@@ -5987,7 +6954,7 @@ void startBath() {
 
 void drawBath() {
   uint32_t now = millis();
-  if (now > bathUntil) {
+  if (!timerActive(bathUntil, now)) {
     bathUntil = 0;
     if (bathPending) {
       bathPending = false;
@@ -6034,6 +7001,9 @@ uint32_t pmdActTotalMs(const PmdAct &a) {
 }
 
 uint8_t pmdFrameAt(const PmdAct &a, uint32_t t, bool loop) {
+  // No frames, or every duration 0: the walk below would never consume t and
+  // would spin forever on the loop task, freezing the panel for good.
+  if (!a.frames || !pmdActTimed(a)) return 0;
   uint32_t total = pmdActTotalMs(a);
   if (!loop && t >= total) return a.frames - 1;
   t %= total;
@@ -6062,11 +7032,13 @@ void drawPmdActM(PmdMon &m, uint8_t actId, int cx, int groundY, uint32_t t, bool
   int x0 = cx - a.w * s / 2, y0 = groundY - (a.base ? a.base : a.h) * s;
   for (int r = 0; r < a.h; r++) {
     const uint8_t *row = fr + r * a.w;
+    RowRuns run(x0, y0 + r * s, s);
     for (int c = 0; c < a.w; c++) {
       uint8_t idx = row[c];
       if (idx == 0xFF) continue;
-      gfx->fillRect(x0 + c * s, y0 + r * s, s, s, sil ? INK_K : m.pal[idx]);
+      run.put(c, sil ? INK_K : m.pal[idx]);
     }
+    run.end();
   }
 }
 void drawPmdAct(uint8_t actId, int cx, int groundY, uint32_t t, bool loop, bool sil, uint8_t maxS) {
@@ -6125,7 +7097,7 @@ void drawPetPMD() {
     act = PMD_HURT;
   } else {
     // contento: el planificador decide (idle / paseo / gesto)
-    if (now > beh.until) behNext();
+    if (!timerActive(beh.until, now)) behNext();
     if (beh.mode == 1) {
       float d = beh.targetX - beh.x;
       if (fabsf(d) < 4) {
@@ -6258,20 +7230,25 @@ const char *statusMsg() {
 // An 8bpp indexed avatar, same shape as the badge art: 0xFF is transparent.
 void drawAvatar(uint8_t which, int x, int y, int s) {
   const AvatarArt &a = AVATARS[which % AVATAR_COUNT];
-  for (int r = 0; r < AVATAR_PX; r++)
+  for (int r = 0; r < AVATAR_PX; r++) {
+    RowRuns run(x, y + r * s, s);
     for (int c = 0; c < AVATAR_PX; c++) {
       uint8_t v = a.idx[r * AVATAR_PX + c];
       if (v == 0xFF) continue;
-      gfx->fillRect(x + c * s, y + r * s, s, s, a.pal[v]);
+      run.put(c, a.pal[v]);
     }
+    run.end();
+  }
 }
 
 void drawMap(const char *const *map, int n, int x, int y, int s, bool silhouette) {
   for (int r = 0; r < n; r++) {
+    RowRuns run(x, y + r * s, s);
     for (int c = 0; c < n; c++) {
       char ch = map[r][c];
       if (ch == '.') continue;
-      gfx->fillRect(x + c * s, y + r * s, s, s, silhouette ? INK_K : spriteColor(ch));
+      run.put(c, silhouette ? INK_K : spriteColor(ch));
     }
+    run.end();
   }
 }

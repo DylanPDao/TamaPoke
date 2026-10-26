@@ -215,7 +215,14 @@ static void audioTask(void *) {
     }
 
     if (m == MUS_NONE) {
-      if (ampOn && !gSyn.busy()) { digitalWrite(PA, LOW); ampOn = false; }
+      // Music stopped mid-note -- which is how it always stops: the victory
+      // fanfare ending, or audioMusic(MUS_NONE) when a fight is left. Nothing
+      // renders on this path, so the tail's `left` never counted down and
+      // busy() stayed true for good. That kept the queue wait above at 0 and
+      // this task spun flat out on core 0 after every battle, starving the
+      // idle task (task watchdog) and holding the amplifier on. Cut the tail.
+      if (gSyn.busy()) gSyn.allOff();
+      if (ampOn) { digitalWrite(PA, LOW); ampOn = false; }
       playing = MUS_NONE; mi1 = mi2 = 0; at1 = at2 = clock = 0;
       continue;
     }

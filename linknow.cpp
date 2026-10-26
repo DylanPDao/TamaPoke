@@ -19,7 +19,8 @@
 
 static Link *gLink = nullptr;
 static bool gUp = false;
-static bool gLocked = false;
+// written by the receive callback (WiFi task), read on the main loop
+static volatile bool gLocked = false;
 static bool gPeerAdded = false;
 static uint8_t gPeer[6];
 static LinkNowStats gStats;
@@ -54,13 +55,27 @@ static void onRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len
     gStats.foreign++;
     return;
   }
+  // Before a peer is chosen, only a hello is worth hearing: the protocol's
+  // first word is always one, and anything else is a stray from somebody
+  // else's fight (a squad from it would even be stored as ours). Our own
+  // peer's frames that arrive ahead of its hello are resent with it anyway.
+  // A hello of ANOTHER version is still let through, so Link can refuse it
+  // loudly -- but it does not lock (below).
+  if (!gLocked && !linkIsHello(data, (uint16_t)len)) {
+    gStats.foreign++;
+    return;
+  }
   uint8_t h = gHead, next = (uint8_t)((h + 1) % RING_SLOTS);
   if (next == gTail) { gStats.overflow++; return; }   // full: drop, never block
   gRing[h].len = (uint8_t)len;
   memcpy(gRing[h].buf, data, len);
   // The peer is remembered here rather than in the poll, because the source
-  // address only exists inside this callback.
-  if (!gLocked && info && info->src_addr) {
+  // address only exists inside this callback. Only a hello this build would
+  // actually pair with locks: locking on the first frame from anyone let a
+  // stray or an incompatible device take the slot and deafen us to the real
+  // peer for the rest of the session.
+  if (!gLocked && info && info->src_addr &&
+      linkHelloCompatible(data, (uint16_t)len)) {
     memcpy(gPeer, info->src_addr, 6);
     gLocked = true;
   }
@@ -70,7 +85,13 @@ static void onRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len
 
 static void nowSend(void *, const uint8_t *buf, uint8_t len) {
   if (!gUp) return;
-  esp_now_send(gLocked ? gPeer : BROADCAST, buf, len);
+  // Unicast only once the peer is actually REGISTERED. esp_now_send() to an
+  // address that was never added fails outright, and gLocked is set on the
+  // WiFi task before lockPeer() has run on this one -- or forever, if the add
+  // failed. Broadcast still reaches the peer (it filters by our MAC, not by
+  // how we addressed it), so falling back costs only the delivery report.
+  esp_err_t e = esp_now_send(gPeerAdded ? gPeer : BROADCAST, buf, len);
+  if (e != ESP_OK) gStats.txFail++;   // never queued, so onSent will not count it
 }
 
 // Adding the locked peer is deferred to the main loop for the same reason the

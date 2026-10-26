@@ -3,7 +3,7 @@
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://dylanpdao.github.io/TamaPoke/web/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
 ![Board](https://img.shields.io/badge/board-ESP32--S3%20round%20AMOLED-E7352C?logo=espressif&logoColor=white)
-![Firmware](https://img.shields.io/badge/firmware-v3.11-8A2BE2)
+![Firmware](https://img.shields.io/badge/firmware-v3.13-8A2BE2)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-6-FFCB05)
 [![Stars](https://img.shields.io/github/stars/DylanPDao/TamaPoke?style=flat&logo=github&color=yellow)](https://github.com/DylanPDao/TamaPoke/stargazers)
@@ -41,7 +41,14 @@ hardware draws.
 |---|---|---|
 | <img src="docs/screens/region.png" width="240"> | <img src="docs/screens/starter.png" width="240"> | <img src="docs/screens/starterj.png" width="240"> |
 
-A new game asks which region you are playing before it asks which creature you
+A brand-new board -- a fresh install, or after `WIPE` -- first asks which
+**language** to use: six rows, each named in its own language (ESPANOL, ENGLISH,
+FRANCAIS, DEUTSCH, ITALIANO, PORTUGUES), so nobody has to read English to find
+theirs. It comes before everything else, the SD card question included, and
+the settings screen still changes it later. A save that already has a creature
+is never stopped to be asked.
+
+A new game then asks which region you are playing before it asks which creature you
 want. The choice sets both: you pick from that region's three starters, and it
 becomes where your eggs come from afterwards (changeable later on the egg's
 region pill). Existing saves never see this screen -- it only appears when the
@@ -64,7 +71,8 @@ region's answer, so it cannot be flipped to farm a legendary.
 | <img src="docs/screens/btlmenu.png" width="240"> | <img src="docs/screens/pick.png" width="240"> | <img src="docs/screens/win.png" width="240"> |
 
 Turn- and move-based, with the real type chart, ailments and STAB. Real Game Boy
-battle music plays throughout.
+battle music plays throughout. A fight costs your **live** creature 10 energy, so
+a tired or sleeping one stays home -- your banked party fights for free.
 
 ### Five regions
 
@@ -122,7 +130,8 @@ A quick reference to how the game really works (values straight from the code).
   but neglect *delays evolution*.
 - **Level caps at 100**, reached at 4 days 3 hours. Farewell is only *offered* at
   3 days (level 73) — **not a deadline**: your Pokémon is still growing, and
-  declining it to reach 100 is a real choice. Declining re-offers a day later.
+  declining it to reach 100 is a real choice. Declining re-offers a day later;
+  *Keep forever* stops asking for good (RETIRE in the menu still says goodbye).
 - It keeps **aging while powered off** (the RTC runs), catching up to **2 weeks** max.
 
 ### The four stats (0–100)
@@ -138,7 +147,8 @@ While **awake**, per minute:
 
 - ~**15 %/min** chance to poop (only if FOOD > 40). Poops tank hygiene fast.
 - **Care slip-up** = letting any stat hit **≤ 10** (60-min cooldown so it counts once).
-  Each slip-up **delays evolution by 1 level** and cools the bond by 1.
+  Each slip-up **delays evolution by 1 level** and cools the bond by 1. A battle
+  on its own can never cause one: see [What a battle costs](#what-a-battle-costs).
 
 ### Actions
 - 🍎 **Berry** (3 flavors): +25 FOOD. Each species has a **hidden favorite flavor**
@@ -229,7 +239,10 @@ brings ELECTIVIRE, MAGMORTAR and RHYPERIOR waiting on exactly the same thing.
 ### The three endings (you choose & witness each — none auto-fire)
 - 💛 **Farewell** — when it's a **final form** that has lived **3 days**. A button
   appears; triggering it **blesses your next egg**. You can **postpone** ("stay
-  together", re-offered in a day). The good ending.
+  together", re-offered in a day — closing the question without answering counts
+  as this too) or **keep it forever** (never asked again for this creature; RETIRE
+  in the menu still ends it as a farewell). Every answer is saved, so a restart
+  does not ask again. The good ending.
 - 💔 **Run-away** — if you let **all four stats sit at 0 for a full hour**. A single
   act of care cancels it. It **curses the next egg** (forces Common). The sad ending.
 - 👋 **Release** — long-press the creature to let it go on your terms (neutral).
@@ -357,8 +370,29 @@ lead — a Kanto run still reaches Crobat and Blissey.
 A random stat that landed on a maxed one would silently evaporate, so it never
 picks one; and the IV-bound ceiling above still applies, so a win can never push a
 stat past what its IV allows. Banked members are frozen at what they were banked
-with, and battling already costs the live pet energy — that, not a cooldown, is
+with, and every fight costs the live pet **10 energy** — that, not a cooldown, is
 what rate-limits rematching. A fully trained creature is told so.
+
+### What a battle costs
+
+| | |
+|---|---|
+| Cost | **10 ENE** (`BATTLE_ENERGY_COST`), charged **once** when the fight starts — not per foe, not per turn |
+| Who pays | the **live pet**, and only if it is in the squad. **Banked members fight for free** |
+| Who may join | the live pet only while **awake** and with **ENE − 10 > 10**, i.e. **ENE ≥ 21** |
+| LAN | charged when the linked fight **starts**, not when you host or join — a pairing that never completes costs nothing. A rematch costs again |
+| Console `BATTLE` | free (a debug entry) |
+
+The threshold is the care slip-up line plus the price: a fight starting at 21 ends
+at 11, so a battle alone can never be what counts a slip-up. (The ordinary
+−1/min awake drain still applies afterwards — feed it or put it to bed.)
+
+A live pet that cannot come is shown greyed on the team picker with the reason,
+**TIRED** or **ASLEEP**, and cannot be tapped in. If it is your **only** creature,
+the FIGHT button itself says why and refuses, rather than doing nothing. The same
+goes for the LAN screen's FIGHT and AGAIN once the live pet has been offered: the
+squad is already promised to the rival, so the fight is refused rather than
+started without it.
 
 ## Hardware
 
@@ -483,8 +517,10 @@ witness it), each opening a two-option dialog:
 - **Evolution** (red button): *Evolve* (epic animation: halo, rays, sparkles and
   a **flicker between the old and new form**) or *Keep form* (re-offered next level).
 - **Farewell** (gold button, final form + 3 days): *Say goodbye* (warm farewell,
-  rising hearts → new egg) or *Stay together* (keep your companion; re-offered in
-  a day). Tension: a maxed-out friend vs. completing the Pokédex.
+  rising hearts → new egg), *Stay together* (keep your companion; re-offered in
+  a day — also what a miss or the timeout means) or *Keep forever* (never offered
+  again for this creature; MENU → RETIRE still says goodbye, free once earned).
+  Tension: a maxed-out friend vs. completing the Pokédex.
 - **Runaway** (dark button, total neglect for 1 h): a somber "feels abandoned"
   ending in the rain — caring for the creature cancels it.
 
@@ -631,7 +667,14 @@ a farewell and punished by a runaway. Legendaries only with 25+ registered.
 **Shiny** 1/48 (better with streak/bond/farewell).
 
 **Languages:** the UI ships in 6 languages — English (default), Spanish, French,
-German, Italian, Portuguese — switchable from the settings screen (swipe down).
+German, Italian, Portuguese — chosen on the very first screen of a new board,
+and switchable from the settings screen (swipe down). German shows real umlauts
+(ä ö ü ß, from the font's own glyphs); the other languages are written unaccented.
+Pokémon names follow the language where the games use their own: German
+(GLUMANDA, GLURAK) and French (SALAMECHE, DRACAUFEU). Spanish, Italian and
+Portuguese games use the English names, and so does TamaPoke. The tables are
+generated from PokeAPI by `tools/gen_names.py`; the serial console always uses
+the English names.
 
 ## Backgrounds: biome + real time
 

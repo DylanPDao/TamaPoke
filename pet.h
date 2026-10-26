@@ -34,6 +34,18 @@
 #define NIGHT_END 6
 enum : uint8_t { SLEEP_NONE = 0, SLEEP_AUTO, SLEEP_PLAYER };
 #define DEF_TRAIN_TICKS 60                 // minutos de bienestar por +1 de DEF
+// A stat at or below this counts a care mistake (see tick()). Named because
+// canBattle() has to stay clear of exactly the same line.
+#define CARE_MISTAKE_STAT 10
+// What a battle costs the LIVE pet, charged once when the fight actually starts
+// and only if the live pet is in the squad -- banked members fight for free.
+// This, not a cooldown timer, is what rate-limits rematching a leader for the
+// training reward. The live pet may join only while
+// energy - BATTLE_ENERGY_COST > CARE_MISTAKE_STAT, so a battle on its own can
+// never be the thing that counts a care mistake.
+#define BATTLE_ENERGY_COST 10
+// Why the live pet cannot join a fight right now; FIGHT_OK means it can.
+enum : uint8_t { FIGHT_OK = 0, FIGHT_EGG, FIGHT_ASLEEP, FIGHT_TIRED };
 
 // ceremonias de fin de ciclo
 enum : uint8_t { CER_NONE = 0, CER_FAREWELL, CER_RUNAWAY, CER_RELEASE };
@@ -49,6 +61,21 @@ enum : uint16_t {
 #define MED_COUNT 8
 
 uint8_t moveUnlockLevel(int16_t dex, uint8_t idx);
+
+// Is a deadline taken from millis() still in the future? 0 means "not set".
+//
+// NEVER `millis() < until` or `now > until`. millis() wraps after 49.7 days of
+// uptime, and a device left on USB reaches that. Past the wrap millis() is
+// small again while every deadline set in the days before it is still a huge
+// number -- so `millis() < eatUntil` read TRUE again, for weeks: the creature
+// "eating" forever (which also kept the panel from ever dimming), the feed
+// menu and the evolve flash stuck on screen, the pet frozen mid-behaviour. The
+// signed difference is right across the wrap. It is only right for 24.8 days
+// either side of the deadline, so expired timers are also cleared back to 0
+// (Pet::update() does its own; the sketch's are zeroed where they expire).
+inline bool timerActive(uint32_t until, uint32_t now) {
+  return until && (int32_t)(until - now) > 0;
+}
 
 // ---------------------------------------------------------------------------
 // Which regions have their sprite pack on the microSD.
@@ -154,6 +181,14 @@ public:
   // gained; 0 means every stat is at its ceiling. Costs nothing: the fight
   // already spent the energy, and that is what rate-limits rematching.
   uint8_t rewardTraining(uint8_t amount, uint8_t &which);
+  // May the live pet join a battle? THE single answer: the team picker's
+  // default, its taps, its cells, buildSquad() and the LAN start all ask it,
+  // because a rule with a second copy is how this project's worst bugs shipped.
+  uint8_t battleBlock() const;
+  bool canBattle() const { return battleBlock() == FIGHT_OK; }
+  // Charges BATTLE_ENERGY_COST and persists it. Refuses (and charges nothing)
+  // if the pet may not fight, so a caller cannot charge past the rule.
+  bool payBattleEnergy();
   uint16_t spdHi = 0;    // best reaction-test score
 
   // stats de combate: base real de gen 1 + nivel + IV + entrenamiento
@@ -314,12 +349,12 @@ public:
 
   bool isEgg() const { return speciesId < 0; }
   uint8_t eggCracks() const { return eggTaps; }
-  bool eating() const { return millis() < eatUntil; }
-  bool showHeart() const { return millis() < heartUntil; }
-  bool evolving() const { return millis() < evolveUntil; }
+  bool eating() const { return timerActive(eatUntil, millis()); }
+  bool showHeart() const { return timerActive(heartUntil, millis()); }
+  bool evolving() const { return timerActive(evolveUntil, millis()); }
   float evolveT() const {     // progreso de la animacion de evolucion 0..1
     uint32_t n = millis();
-    uint32_t left = evolveUntil > n ? evolveUntil - n : 0;
+    uint32_t left = timerActive(evolveUntil, n) ? evolveUntil - n : 0;
     return 1.0f - (float)left / (float)EVOLVE_ANIM_MS;
   }
   bool canEvolveNow() const;  // condiciones de evolucion cumplidas (lista)
@@ -333,13 +368,22 @@ public:
   bool canRunawayNow() const;   // abandono total 1h: lista para escaparse (boton triste)
   // el usuario decide en un dialogo; "mantener/quedaros" pospone y re-ofrece luego
   bool wantEvolveButton() const { return canEvolveNow() && level() > evoDeclinedLv; }
-  bool wantFarewellButton() const { return canFarewellNow() && ageMinutes >= farDeclinedAge; }
-  void declineEvolve() { evoDeclinedLv = level(); }              // re-ofrece al subir de nivel
-  void declineFarewell() { farDeclinedAge = ageMinutes + 1440; } // re-ofrece dentro de 1 dia
+  bool wantFarewellButton() const {
+    return canFarewellNow() && !farKeep && ageMinutes >= farDeclinedAge;
+  }
+  // Each answer is SAVED at once. They used to live in RAM only, so every
+  // reboot -- or any crash -- asked again straight away, and a "stay together"
+  // lasted until the next restart rather than a day.
+  void declineEvolve() { evoDeclinedLv = level(); save(); }              // re-offered next level
+  void declineFarewell() { farDeclinedAge = ageMinutes + 1440; save(); } // re-offered in a day
+  // "Keep forever": this creature is never offered the farewell again. RETIRE
+  // in the menu still says goodbye, and is still free once it was earned.
+  void keepForever() { farKeep = true; save(); }
+  bool keptForever() const { return farKeep; }
   // primera partida: el jugador elige inicial (Bulbasaur/Charmander/Squirtle)
   bool awaitingStarter() const { return starterPick; }
   void chooseStarter(int16_t dex) { eggTarget = dex; starterPick = false; save(); }
-  void factoryReset() { prefs.clear(); }  // borra la NVS (test: comando serie WIPE)
+  void factoryReset() { prefs.clear(); dexChanged(); }  // borra la NVS (test: comando serie WIPE)
   void dbgRunawayReady() { fullness = joy = energy = hygiene = 0; neglectTicks = RUNAWAY_TICKS; }  // test
   // test: force what the egg holds and hatch it now (serial command EGG).
   // The legendary/shiny IV guarantees only fire inside hatch(), so without
@@ -369,7 +413,11 @@ public:
   bool isShinyRegistered(int16_t dex) const {
     return dex >= 1 && dex <= DEX_COUNT && (dexShinyReg[(dex - 1) >> 3] & (1 << ((dex - 1) & 7)));
   }
+  // Cached: it walks all DEX_COUNT bits and several screens ask every frame.
+  // registerSpecies(), begin()/load() and factoryReset() drop the cache; code
+  // that writes dexReg[] directly must call dexChanged() itself.
   uint16_t registeredCount() const;
+  void dexChanged() { regCountCache = -1; }
   bool lineHasUnregistered(int16_t base) const;
   uint8_t eggRarity() const;       // rareza del huevo actual (sin revelar especie)
   int16_t pickEggSpecies();        // publica para poder simular tiradas (EGGS)
@@ -394,15 +442,15 @@ public:
   float ceremonyT() const {
     if (ceremony == CER_NONE) return 0.0f;
     uint32_t n = millis();
-    uint32_t left = ceremonyUntil > n ? ceremonyUntil - n : 0;
+    uint32_t left = timerActive(ceremonyUntil, n) ? ceremonyUntil - n : 0;
     return 1.0f - (float)left / (float)CEREMONY_MS;
   }
 
   // racha / vinculo / medallas / nombre
   void rename(const char *name);
   bool hasMedal(uint16_t m) const { return medals & m; }
-  bool showMedal() const { return millis() < medalUntil; }
-  bool showMilestone() const { return millis() < milestoneUntil; }
+  bool showMedal() const { return timerActive(medalUntil, millis()); }
+  bool showMilestone() const { return timerActive(milestoneUntil, millis()); }
   int careBonus() const;  // mejora del huevo por racha + vinculo
 
   // guardado periodico diferido: tick() marca pendiente y el loop lo vuelca
@@ -416,9 +464,37 @@ public:
   // autosave to notice. Defined out of line: save() is private and declared
   // further down.
   void saveNow();
+  // How many times save() really wrote, and how long the last one took. A save
+  // is ~52 NVS keys and stalls both cores while flash is written, so this is
+  // what HEALTH reports for the board to show whether the deferral is working.
+  uint32_t saveCount = 0;
+  uint32_t lastSaveMs = 0;
 
 private:
-  Preferences prefs;
+  // The NVS handle belongs to the Pet that OPENED it, never to a copy of it.
+  //
+  // Arduino's Preferences is a bare { _handle, _started } pair with the
+  // implicit copy constructor and a destructor that nvs_close()s. So
+  //
+  //     Pet tmp = pet;      // buildSquad(): the live pet, level-capped
+  //
+  // gave `tmp` the live pet's handle, and when `tmp` went out of scope it
+  // CLOSED it. Every save after that -- the badge just won, the training reward,
+  // everything until the next reboot -- failed silently against a dead handle.
+  // On a board: win a gym, reset or run the battery flat, and come back to the
+  // state from before the fight. The emulator's Preferences ignored begin()/
+  // end() and could not see it; it models handles now, and btlsave_test pins it.
+  //
+  // A copy is a scratch Pet: it gets a fresh, UNOPENED Preferences and
+  // `opened = false`, so it can neither close the original's handle nor write
+  // through the guard below. Assignment leaves the target's own handle alone.
+  struct Store : Preferences {
+    bool opened = false;
+    Store() {}
+    Store(const Store &) : Preferences() {}
+    Store &operator=(const Store &) { return *this; }
+  };
+  Store prefs;
   // A Pet that was never begin()'d MUST NOT WRITE. Nothing enforced that, and
   // the battle code builds its opponent as a throwaway Pet:
   //
@@ -432,8 +508,8 @@ private:
   // That is the "flashed and my mon got replaced with an older one" report.
   //
   // The rule belongs here rather than at the call sites: every future throwaway
-  // Pet is covered without anyone having to remember.
-  bool opened = false;
+  // Pet is covered without anyone having to remember. The flag lives on
+  // `prefs` (as prefs.opened) so that a COPY of an opened Pet starts closed.
   uint32_t lastTick = 0;
   uint32_t eatUntil = 0;
   uint32_t heartUntil = 0;
@@ -443,9 +519,14 @@ private:
   uint8_t eggTaps = 0;
   uint8_t mistakeCooldown = 0;
   uint8_t ticksSinceSave = 0;
+  mutable int16_t regCountCache = -1;   // registeredCount(), -1 = recount
   bool pendingSave = false;     // guardado periodico pendiente de volcar
-  uint8_t evoDeclinedLv = 0;    // "mantener forma": no ofrecer evolucion hasta subir de nivel
-  uint32_t farDeclinedAge = 0;  // "quedaros juntos": no ofrecer despedida hasta esta edad
+  // The three answers to the evolve/farewell offers. Per CREATURE: newEgg()
+  // clears them, or one creature's "keep form" at level 30 would hide the next
+  // one's evolution until it passed level 30.
+  uint8_t evoDeclinedLv = 0;    // "keep form": no evolve offer until a level above this
+  uint32_t farDeclinedAge = 0;  // "stay together": no farewell offer until this age
+  bool farKeep = false;         // "keep forever": no farewell offer at all
   bool starterPick = false;     // primera partida: esperando que el jugador elija inicial
   uint8_t evoPen = 0;           // levels added to this creature's evolution gate
   bool retirePending = false;   // an early retire is under way; newEgg() spends it
@@ -465,6 +546,10 @@ private:
   void defTick(bool resting);       // la calma forja la defensa (ver pet.cpp)
   void snapshotForParty();          // copy into endedMon before newEgg() wipes it
   void checkMedals();
+  bool beginFarewell();             // startFarewell() without the save
+  // Not worth a flash write on its own: the change rides on the next save, or
+  // on the deferred flush loop() does once the panel is dimmed, off or asleep.
+  void saveLater() { pendingSave = true; }
   void tick();
   void applyAutoSleep();
   void hatch();

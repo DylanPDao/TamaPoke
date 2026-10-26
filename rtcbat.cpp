@@ -87,9 +87,24 @@ void pwrSetup() {
   pmu.clearIrqStatus();
 }
 
+// A failed read is NOT a press. XPowersLib's getIrqStatus() stores
+// readRegister()'s int straight into a uint8_t array, and readRegister()
+// returns -1 when the I2C transaction fails -- so a failed read lands as 0xFF,
+// every IRQ bit set, the PWR short press included. One glitch on the bus the
+// touch controller shares turned the screen off (and, at night, put the
+// creature to sleep). No real register holds 0xFF -- every IRQ in it latched at
+// once -- so 0xFF in any of the three is taken as a failed read: nothing is
+// acknowledged, and the next poll simply reads again.
+static uint32_t pmuErrs = 0;
+uint32_t pmuReadErrors() { return pmuErrs; }
+
 bool pwrShortPressed() {
   if (!pmuOk) return false;
-  pmu.getIrqStatus();
+  uint32_t st = (uint32_t)pmu.getIrqStatus();
+  if ((st & 0xFF) == 0xFF || ((st >> 8) & 0xFF) == 0xFF || ((st >> 16) & 0xFF) == 0xFF) {
+    pmuErrs++;
+    return false;
+  }
   bool hit = pmu.isPekeyShortPressIrq();
   if (hit) pmu.clearIrqStatus();
   return hit;

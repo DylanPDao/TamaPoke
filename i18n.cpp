@@ -1,11 +1,17 @@
 #include "i18n.h"
 #include "pet.h"        // MED_COUNT
+#include "names.h"      // species names in DE/FR (generated)
 #include <Preferences.h>
+#include <stdlib.h>
+#include <string.h>
 
 Lang gLang = LANG_DEFAULT;
 
 // Tabla de cadenas [idioma][id]. Sin acentos ni enes: la fuente bitmap del
 // firmware no los tiene (por eso el espanol ya iba "Esta", "bano", etc.).
+// German is the exception: its umlauts and ss are written as real UTF-8 here
+// and mapped onto the font's own glyphs when the language becomes active --
+// see glcdEncode() below. Only characters in GLCD_MAP may appear.
 static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
   // ---------------- ES ----------------
   {
@@ -45,7 +51,11 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s: %s", "PARALISIS", "QUEMADURA", "VENENO", "DORMIDO", "CONGELADO", "CONFUSION",
     "Has ganado!", "Has perdido...",
     "%s saca a %s", "Adelante, %s!", "GIMNASIOS", "MEDALLAS %u/8", "ENTRENADOR", "VELOCIDAD +%u", "toca: cambiar avatar", "%u en total", "NORMAL", "DIFICIL",
- "ELEGIDOS %u/%u", "LUCHAR", "BLOQUEADO", "POKEMON", "%s derrotado!", "MEDALLA NUEVA!", "VOL %u", "CAJA %u/%u", "cambiar con %s: elige hueco", "CAJA", "TRAER", "solo con un huevo", "COMBATE LAN", "CREAR", "UNIRSE", "buscando...", "listo!", "version distinta", "crear o unirse", "rival: %u mons", "el rival se fue", "esperando al rival...", "OTRA VEZ", "HUIR", "de que region viene el huevo", "%s +%u", "ya no puede entrenar mas", "ELIGE TU REGION", "RETIRAR", "Retirarla ya?", "la siguiente evoluciona un dia mas tarde", "evoluciona un dia mas tarde",   "FALTA PACK", "SOLTAR", "se va para siempre", "AL EQUIPO", "no se unira a tu equipo", },
+ "ELEGIDOS %u/%u", "LUCHAR", "BLOQUEADO", "POKEMON", "%s derrotado!", "MEDALLA NUEVA!", "VOL %u", "CAJA %u/%u", "cambiar con %s: elige hueco", "CAJA", "TRAER", "solo con un huevo", "COMBATE LAN", "CREAR", "UNIRSE", "buscando...", "listo!", "version distinta", "crear o unirse", "rival: %u mons", "el rival se fue", "esperando al rival...", "OTRA VEZ", "HUIR", "de que region viene el huevo", "%s +%u", "ya no puede entrenar mas", "ELIGE TU REGION", "RETIRAR", "Retirarla ya?", "la siguiente evoluciona un dia mas tarde", "evoluciona un dia mas tarde",   "FALTA PACK", "SOLTAR", "se va para siempre", "AL EQUIPO", "no se unira a tu equipo",
+   "TARJETA SD ILEGIBLE", "Hay que formatearla para usarla", "SE BORRARAN TODOS SUS DATOS", "FORMATEAR", "CANCELAR", "Formateando...", "No saques la tarjeta", "Tarjeta SD lista", "copia ahora los packs de sprites", "Error al formatear", "se sigue sin sprites",
+   "%s ocupa su lugar",
+   "AGOTADO", "DORMIDO",
+   "Para siempre", "despues: %s en el menu", },
   // ---------------- EN ----------------
   {
     "Evolving!", "Yum yum!", "It likes it!", "It's hungry!", "Needs a bath!",
@@ -85,7 +95,11 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "You win!", "You lost...",
     "%s sends out %s", "Go, %s!", "GYMS", "BADGES %u/8", "TRAINER",
  "SPEED +%u", "tap: change avatar", "%u earned in all", "EASY", "HARD", "CHOSEN %u/%u", "FIGHT", "LOCKED", "POKEMON", "%s defeated!", "NEW BADGE!", "VOL %u", "BOX %u/%u", "swap with %s: pick a slot", "BOX", "BRING BACK", "only while an egg waits", "LAN BATTLE", "HOST", "JOIN", "searching...", "ready!", "different version", "host or join", "rival: %u mons", "the rival left", "waiting for the rival...", "AGAIN", "RUN", "where this egg comes from", "%s +%u", "trained as far as it can go", "CHOOSE A REGION", "RETIRE", "Retire it early?", "the next one evolves a day later", "evolves a day later",
-   "NEEDS PACK", "RELEASE", "gone for good", "TO PARTY", "it will not join your party", },
+   "NEEDS PACK", "RELEASE", "gone for good", "TO PARTY", "it will not join your party",
+   "SD CARD UNREADABLE", "It must be formatted to be used", "ALL DATA ON IT WILL BE LOST", "FORMAT", "CANCEL", "Formatting...", "Do not remove the card", "SD card ready", "now copy the sprite packs to it", "Format failed", "carrying on without sprites",
+   "%s takes its place",
+   "TIRED", "ASLEEP",
+   "Keep forever", "later: %s in the menu", },
   // ---------------- FR ----------------
   {
     "Il evolue!", "Miam miam!", "Il aime ca!", "Il a faim!", "Besoin d'un bain!",
@@ -124,46 +138,54 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s: %s", "PARALYSIE", "BRULURE", "POISON", "ENDORMI", "GELE", "CONFUSION",
     "Gagne!", "Perdu...",
     "%s envoie %s", "Vas-y, %s!", "ARENES", "BADGES %u/8", "DRESSEUR", "VITESSE +%u", "touche: changer d'avatar", "%u au total", "NORMAL", "DIFFICILE", "CHOISIS %u/%u", "COMBATTRE", "VERROUILLE", "POKEMON", "%s vaincu!", "NOUVEAU BADGE!", "VOL %u", "BOITE %u/%u", "echanger avec %s: choisis", "BOITE", "RAMENER", "seulement avec un oeuf", "COMBAT LAN", "CREER", "REJOINDRE", "recherche...", "pret!", "version differente", "creer ou rejoindre", "rival: %u mons", "le rival est parti", "en attente du rival...", "ENCORE", "FUIR", "d ou vient cet oeuf", "%s +%u", "ne peut plus progresser", "CHOISIS TA REGION", "RETIRER", "Retirer maintenant?", "le suivant evolue un jour plus tard", "evolue un jour plus tard",
-   "PACK REQUIS", "RELACHER", "parti pour de bon", "A L EQUIPE", "ne rejoindra pas l equipe", },
+   "PACK REQUIS", "RELACHER", "parti pour de bon", "A L EQUIPE", "ne rejoindra pas l equipe",
+   "CARTE SD ILLISIBLE", "Elle doit etre formatee", "TOUTES SES DONNEES SERONT PERDUES", "FORMATER", "ANNULER", "Formatage...", "Ne retirez pas la carte", "Carte SD prete", "copiez-y les packs de sprites", "Echec du formatage", "on continue sans sprites",
+   "%s prend sa place",
+   "EPUISE", "ENDORMI",
+   "Pour toujours", "plus tard: %s dans le menu", },
   // ---------------- DE ----------------
   {
-    "Entwickelt sich!", "Mampf mampf!", "Gefaellt ihm!", "Hat Hunger!", "Braucht ein Bad!",
-    "Erschoepft...", "Traurig...", "Etwas rundlich...", "Es ist SHINY!!", "Es ist froh",
-    "DANKE! Lebwohl", "Es ist weg...", "Tschuess! Winkt",
-    "EI", "Legendaeres Ei!?", "Seltenes Ei!", "Beruehre das Ei...", "Es bewegt sich!", "Fast soweit!",
+    "Entwickelt sich!", "Mampf mampf!", "Gefällt ihm!", "Hat Hunger!", "Braucht ein Bad!",
+    "Erschöpft...", "Traurig...", "Etwas rundlich...", "Es ist SHINY!!", "Es ist froh",
+    "DANKE! Lebwohl", "Es ist weg...", "Tschüss! Winkt",
+    "EI", "Legendäres Ei!?", "Seltenes Ei!", "Berühre das Ei...", "Es bewegt sich!", "Fast soweit!",
     "POKEDEX %u/%u",
     "%s%s Lv.%u",
     "%s freilassen?", "JA", "NEIN",
     "%u TREFFER", "KRAFT +%u", "NEUER REKORD!", "REKORD: %u", "SCHNELL HAUEN!",
-    "PUNKTE: %u", "Wie schoen!", "+Freude",
+    "PUNKTE: %u", "Wie schön!", "+Freude",
     "ZEIT STELLEN", "STD", "MIN", "hoch wischen: abbruch", "Sprache",
     "MEDAILLE!", "TOLL!", "%u TAGE SERIE!",
-    "SERIE %u  rek %u", "BND", "BEERE ???", "ROTE BEERE", "BLAUE BEERE", "GRUENE BEERE",
+    "SERIE %u  rek %u", "BND", "BEERE ???", "ROTE BEERE", "BLAUE BEERE", "GRÜNE BEERE",
     "%s   ALTER %lud", "Name tippen: umbenennen",
     "KAMPF", "ANG", "VER", "INI", "GEW", "KRAFT TRAINIEREN",
-    "MEDAILLEN %d/%d", "tippen: zurueck",
-    "NAME:", "tippen zum zurueck",
+    "MEDAILLEN %d/%d", "tippen: zurück",
+    "NAME:", "tippen zum zurück",
     "ESS", "FRO", "ENE", "HYG",
     "REK %u",
     "FORTSCHRITT", "Lv.%u", "%u min bis Lv.%u", "ENTWICKLUNG", "Endform",
     "Bereit zur Entwicklung!", "Alles >=40 zur Entwicklung",
     "Entwickelt in %u Lv.", "Patzer: %u",
     "TON AN", "TON AUS",
-    "ENTWICKELN", "%s will dir etwas sagen...", "%s fuehlt sich verlassen...",
+    "ENTWICKELN", "%s will dir etwas sagen...", "%s fühlt sich verlassen...",
     "Entwickeln?", "Form behalten", "Abschied?", "Lebwohl", "Zusammen bleiben",
-    "Waehle dein Starter",
+    "Wähle dein Starter",
     "Keine Sprites", "Auf die SD laden",
     "KP", "IV %u",
     "MENU", "EINSTELLUNGEN", "SCHLIESSEN", "TEAM %u/6", "- leer -", "%s kommt ins Team!", "Team voll: wen ersetzen?", "Ziehen lassen",
-    "WERTE", "TRAINING", "STAERKE", "TEMPO", "ABWEHR", "Steigt von selbst bei guter Laune",
-    "ATTACKEN", "- leer -", "Attacke waehlen", "Tippen zum Aendern", "STK %u", "STATUS",
+    "WERTE", "TRAINING", "STÄRKE", "TEMPO", "ABWEHR", "Steigt von selbst bei guter Laune",
+    "ATTACKEN", "- leer -", "Attacke wählen", "Tippen zum Ändern", "STK %u", "STATUS",
     "%s will lernen", "Nicht lernen",
     "%s setzt %s ein", "Sehr effektiv!", "Nicht sehr effektiv...", "Keine Wirkung...",
     "%s hat verfehlt!", "Volltreffer!", "%s wurde besiegt!", "Es verletzt sich!",
-    "%s: %s", "PARALYSE", "VERBRANNT", "VERGIFTET", "SCHLAEFT", "GEFROREN", "VERWIRRT",
+    "%s: %s", "PARALYSE", "VERBRANNT", "VERGIFTET", "SCHLÄFT", "GEFROREN", "VERWIRRT",
     "Gewonnen!", "Verloren...",
-    "%s schickt %s", "Los, %s!", "ARENEN", "ORDEN %u/8", "TRAINER", "TEMPO +%u", "tippen: Avatar wechseln", "%u insgesamt", "NORMAL", "SCHWER", "GEWAEHLT %u/%u", "KAEMPFEN", "GESPERRT", "POKEMON", "%s besiegt!", "NEUER ORDEN!", "LAUT %u", "BOX %u/%u", "mit %s tauschen: waehle", "BOX", "ZURUECK", "nur mit einem Ei", "LAN KAMPF", "HOSTEN", "BEITRETEN", "suche...", "bereit!", "andere Version", "hosten oder beitreten", "Gegner: %u", "der Gegner ist weg", "warte auf den Gegner...", "NOCHMAL", "FLUCHT", "woher dieses Ei kommt", "%s +%u", "kann nicht weiter trainieren", "WAEHLE DEINE REGION", "VERABSCHIEDEN", "Jetzt verabschieden?", "das naechste entwickelt sich einen Tag spaeter", "entwickelt sich einen Tag spaeter",
-   "PACK FEHLT", "FREILASSEN", "fuer immer weg", "INS TEAM", "kommt nicht ins team", },
+    "%s schickt %s", "Los, %s!", "ARENEN", "ORDEN %u/8", "TRAINER", "TEMPO +%u", "tippen: Avatar wechseln", "%u insgesamt", "NORMAL", "SCHWER", "GEWÄHLT %u/%u", "KÄMPFEN", "GESPERRT", "POKEMON", "%s besiegt!", "NEUER ORDEN!", "LAUT %u", "BOX %u/%u", "mit %s tauschen: wähle", "BOX", "ZURÜCK", "nur mit einem Ei", "LAN KAMPF", "HOSTEN", "BEITRETEN", "suche...", "bereit!", "andere Version", "hosten oder beitreten", "Gegner: %u", "der Gegner ist weg", "warte auf den Gegner...", "NOCHMAL", "FLUCHT", "woher dieses Ei kommt", "%s +%u", "kann nicht weiter trainieren", "WÄHLE DEINE REGION", "VERABSCHIEDEN", "Jetzt verabschieden?", "das nächste entwickelt sich einen Tag später", "entwickelt sich einen Tag später",
+   "PACK FEHLT", "FREILASSEN", "für immer weg", "INS TEAM", "kommt nicht ins team",
+   "SD-KARTE NICHT LESBAR", "Sie muss formatiert werden", "ALLE DATEN GEHEN VERLOREN", "FORMATIEREN", "ABBRECHEN", "Formatiere...", "Karte nicht entfernen", "SD-Karte bereit", "jetzt die Sprite-Packs kopieren", "Formatieren fehlgeschlagen", "weiter ohne Sprites",
+   "%s nimmt den Platz ein",
+   "MÜDE", "SCHLÄFT",
+   "Für immer", "später: %s im Menü", },
   // ---------------- IT ----------------
   {
     "Si evolve!", "Gnam gnam!", "Gli piace!", "Ha fame!", "Vuole un bagno!",
@@ -202,7 +224,11 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s: %s", "PARALISI", "SCOTTATURA", "VELENO", "ADDORMENTATO", "CONGELATO", "CONFUSIONE",
     "Hai vinto!", "Hai perso...",
     "%s manda %s", "Vai, %s!", "PALESTRE", "MEDAGLIE %u/8", "ALLENATORE", "VELOCITA +%u", "tocca: cambia avatar", "%u in totale", "NORMALE", "DIFFICILE", "SCELTI %u/%u", "LOTTA", "BLOCCATO", "POKEMON", "%s sconfitto!", "NUOVA MEDAGLIA!", "VOL %u", "BOX %u/%u", "scambia con %s: scegli", "BOX", "RIPORTA", "solo con un uovo", "LOTTA LAN", "CREA", "ENTRA", "ricerca...", "pronto!", "versione diversa", "crea o entra", "rivale: %u mons", "il rivale se n' e andato", "in attesa del rivale...", "ANCORA", "FUGGI", "da quale regione viene l uovo", "%s +%u", "non puo allenarsi oltre", "SCEGLI LA REGIONE", "RITIRARE", "Ritirarla adesso?", "il prossimo evolve un giorno dopo", "evolve un giorno dopo",
-   "MANCA PACK", "LIBERA", "via per sempre", "AL GRUPPO", "non entrera nel gruppo", },
+   "MANCA PACK", "LIBERA", "via per sempre", "AL GRUPPO", "non entrera nel gruppo",
+   "SCHEDA SD ILLEGGIBILE", "Va formattata per usarla", "TUTTI I DATI ANDRANNO PERSI", "FORMATTA", "ANNULLA", "Formattazione...", "Non togliere la scheda", "Scheda SD pronta", "ora copia i pack di sprite", "Formattazione fallita", "si continua senza sprite",
+   "%s prende il suo posto",
+   "STANCO", "DORME",
+   "Per sempre", "dopo: %s nel menu", },
   // ---------------- PT ----------------
   {
     "Evoluindo!", "Nham nham!", "Ele gosta!", "Esta com fome!", "Precisa de banho!",
@@ -241,7 +267,11 @@ static const char *const STRINGS[LANG_COUNT][STR_COUNT] = {
     "%s: %s", "PARALISIA", "QUEIMADURA", "VENENO", "A DORMIR", "CONGELADO", "CONFUSAO",
     "Ganhaste!", "Perdeste...",
     "%s envia %s", "Vai, %s!", "GINASIOS", "MEDALHAS %u/8", "TREINADOR", "VELOCIDADE +%u", "toca: mudar avatar", "%u no total", "NORMAL", "DIFICIL", "ESCOLHIDOS %u/%u", "LUTAR", "BLOQUEADO", "POKEMON", "%s derrotado!", "NOVA MEDALHA!", "VOL %u", "CAIXA %u/%u", "trocar com %s: escolhe", "CAIXA", "TRAZER", "so com um ovo", "COMBATE LAN", "CRIAR", "ENTRAR", "a procurar...", "pronto!", "versao diferente", "criar ou entrar", "rival: %u mons", "o rival saiu", "a esperar pelo rival...", "OUTRA VEZ", "FUGIR", "de que regiao vem o ovo", "%s +%u", "ja nao pode treinar mais", "ESCOLHE A REGIAO", "REFORMAR", "Reformar agora?", "o proximo evolui um dia depois", "evolui um dia depois",
-   "FALTA PACK", "SOLTAR", "vai para sempre", "A EQUIPA", "nao entrara na equipa", },
+   "FALTA PACK", "SOLTAR", "vai para sempre", "A EQUIPA", "nao entrara na equipa",
+   "CARTAO SD ILEGIVEL", "Tem de ser formatado para o usar", "TODOS OS DADOS SERAO PERDIDOS", "FORMATAR", "CANCELAR", "A formatar...", "Nao retires o cartao", "Cartao SD pronto", "copia agora os packs de sprites", "Falha ao formatar", "continua sem sprites",
+   "%s fica no lugar",
+   "CANSADO", "DORMINDO",
+   "Para sempre", "depois: %s no menu", },
 };
 
 // Nombres de medalla en sus tres longitudes [idioma][medalla].
@@ -276,15 +306,167 @@ static const char *const MED_DSC[LANG_COUNT][MED_COUNT] = {
     "SEQ 7 DIAS", "LACO MAX", "FORMA FINAL", "EM FORMA" },
 };
 
-const char *T(StrId id) { return STRINGS[gLang][id]; }
-const char *medalName(int i)  { return MED_NAME[gLang][i]; }
-const char *medalLabel(int i) { return MED_LBL[gLang][i]; }
-const char *medalDesc(int i)  { return MED_DSC[gLang][i]; }
+// ---------- what the panel font can draw beyond ASCII ----------
+// The panel font is the classic 5x7 GLCD set, laid out as code page 437, so it
+// carries the German umlauts and ss at single-byte codes. Strings are written
+// in UTF-8 for whoever edits them and converted ONCE, when a language becomes
+// active: afterwards one byte is one glyph again, which every strlen()-based
+// centring on the panel depends on. German only for now; the other languages
+// stay unaccented, and CP437 lacks most of their capitals anyway.
+struct GlcdMap { uint16_t cp; char glyph; };
+static const GlcdMap GLCD_MAP[] = {
+  { 0x00E4, (char)0x84 }, { 0x00F6, (char)0x94 }, { 0x00FC, (char)0x81 },   // ae oe ue
+  { 0x00C4, (char)0x8E }, { 0x00D6, (char)0x99 }, { 0x00DC, (char)0x9A },   // AE OE UE
+  { 0x00DF, (char)0xE1 },                                                   // ss
+};
+
+int glcdEncode(const char *in, char *out, size_t cap) {
+  int unmapped = 0;
+  size_t w = 0;
+  const unsigned char *p = (const unsigned char *)in;
+  while (*p && w + 1 < cap) {
+    uint32_t cp = *p;
+    int extra = 0;
+    if (cp >= 0xF0) { cp &= 0x07; extra = 3; }
+    else if (cp >= 0xE0) { cp &= 0x0F; extra = 2; }
+    else if (cp >= 0xC0) { cp &= 0x1F; extra = 1; }
+    else if (cp >= 0x80) extra = -1;              // a stray continuation byte
+    p++;
+    for (int k = 0; k < extra; k++) {
+      if ((*p & 0xC0) != 0x80) { extra = -1; break; }
+      cp = (cp << 6) | (*p++ & 0x3F);
+    }
+    char g = '?';
+    if (extra == 0) g = (char)cp;
+    else if (extra > 0)
+      for (const GlcdMap &m : GLCD_MAP)
+        if (m.cp == cp) { g = m.glyph; break; }
+    if (g == '?' && extra != 0) unmapped++;   // drawn as '?', never as garbage
+    out[w++] = g;
+  }
+  out[w] = 0;
+  return unmapped;
+}
+
+static bool hasHighBytes(const char *s) {
+  for (; *s; s++) if ((unsigned char)*s > 0x7F) return true;
+  return false;
+}
+
+// The active language's strings, encoded for the panel. A language with no
+// non-ASCII text points straight at the flash table and allocates nothing.
+static Lang gActive = LANG_COUNT;           // nothing activated yet
+static const char *gStr[STR_COUNT];
+static const char *gMed[3][MED_COUNT];
+static char *gStrBuf = nullptr;
+
+// The species-name table of a language that has its own (names.h), or nullptr
+// for the languages whose games use the English names.
+static const char *const *speciesTable(Lang l) {
+  switch (l) {
+    case LANG_DE: return SPECIES_NAME_DE;
+    case LANG_FR: return SPECIES_NAME_FR;
+    default: return nullptr;
+  }
+}
+
+// The few species names with umlauts, encoded for the panel when the language
+// becomes active. Every other name is plain ASCII and comes straight from flash.
+#define NAME_ENC_MAX 16
+static int16_t gNameEncDex[NAME_ENC_MAX];
+static const char *gNameEncStr[NAME_ENC_MAX];
+static uint8_t gNameEncN = 0;
+
+static void activate(Lang l) {
+  const char *const *med[3] = { MED_NAME[l], MED_LBL[l], MED_DSC[l] };
+  const char *const *names = speciesTable(l);
+  size_t need = 0;
+  bool high = false;
+  for (int i = 0; i < STR_COUNT; i++) { need += strlen(STRINGS[l][i]) + 1; high |= hasHighBytes(STRINGS[l][i]); }
+  for (int t = 0; t < 3; t++)
+    for (int i = 0; i < MED_COUNT; i++) { need += strlen(med[t][i]) + 1; high |= hasHighBytes(med[t][i]); }
+  if (names)
+    for (int d = 1; d <= DEX_COUNT; d++)
+      if (names[d] && hasHighBytes(names[d])) { need += strlen(names[d]) + 1; high = true; }
+  free(gStrBuf);
+  gStrBuf = high ? (char *)malloc(need) : nullptr;
+  // Encoding only ever shortens a string, so `need` bytes always suffice. If
+  // the allocation fails the raw text is shown: wrong glyphs beat no text.
+  char *w = gStrBuf;
+  auto place = [&](const char *src) -> const char * {
+    if (!w) return src;
+    const char *at = w;
+    glcdEncode(src, w, strlen(src) + 1);
+    w += strlen(w) + 1;
+    return at;
+  };
+  for (int i = 0; i < STR_COUNT; i++) gStr[i] = place(STRINGS[l][i]);
+  for (int t = 0; t < 3; t++)
+    for (int i = 0; i < MED_COUNT; i++) gMed[t][i] = place(med[t][i]);
+  gNameEncN = 0;
+  if (names && w)
+    for (int d = 1; d <= DEX_COUNT && gNameEncN < NAME_ENC_MAX; d++)
+      if (names[d] && hasHighBytes(names[d])) {
+        gNameEncDex[gNameEncN] = (int16_t)d;
+        gNameEncStr[gNameEncN++] = place(names[d]);
+      }
+  gActive = l;
+}
+
+// gLang is a public variable and the tests set it directly, so the encoded
+// table follows it rather than trusting every writer to call setLang().
+static inline void follow() { if (gActive != gLang) activate(gLang); }
+
+const char *T(StrId id) { follow(); return gStr[id]; }
+const char *TL(Lang l, StrId id) {
+  if (l >= LANG_COUNT) l = LANG_DEFAULT;
+  if (l == gLang) return T(id);
+  // another language's string, encoded into a small rotating buffer (the
+  // first-boot picker cycles its heading through all six)
+  static char buf[2][96];
+  static uint8_t k = 0;
+  k ^= 1;
+  glcdEncode(STRINGS[l][id], buf[k], sizeof(buf[k]));
+  return buf[k];
+}
+// A species' name in the active language, encoded for the panel. Falls back to
+// the English DEX_TBL name where the language has no name of its own -- and if
+// an umlaut name could not be encoded, since English beats garbage. The serial
+// console keeps DEX_TBL's English names on purpose: they are what its commands
+// and every bug report use.
+const char *speciesName(int16_t dex) {
+  if (dex < 0 || dex > DEX_COUNT) dex = 0;
+  follow();
+  const char *const *names = speciesTable(gLang);
+  const char *s = names ? names[dex] : nullptr;
+  if (!s) return DEX_TBL[dex].name;
+  if (!hasHighBytes(s)) return s;
+  for (uint8_t k = 0; k < gNameEncN; k++)
+    if (gNameEncDex[k] == dex) return gNameEncStr[k];
+  return DEX_TBL[dex].name;
+}
+
+const char *i18nSource(Lang l, StrId id) { return STRINGS[l < LANG_COUNT ? l : LANG_DEFAULT][id]; }
+
+// In enum order. Not in STRINGS: a language's own name is the same whichever
+// language is active, so it is one column, not six copies of it.
+static const char *const LANG_NATIVE[LANG_COUNT] = {
+  "ESPANOL", "ENGLISH", "FRANCAIS", "DEUTSCH", "ITALIANO", "PORTUGUES"
+};
+const char *langNativeName(Lang l) { return LANG_NATIVE[l < LANG_COUNT ? l : LANG_DEFAULT]; }
+
+static bool gLangChosen = false;
+bool langChosen() { return gLangChosen; }
+const char *medalName(int i)  { follow(); return gMed[0][i]; }
+const char *medalLabel(int i) { follow(); return gMed[1][i]; }
+const char *medalDesc(int i)  { follow(); return gMed[2][i]; }
 
 void loadLang() {
   Preferences p;
   p.begin("tamapoke", true);  // solo lectura
   uint8_t v = p.getUChar("lang", LANG_DEFAULT);
+  // The key, not the value: a player who picked English stored LANG_DEFAULT.
+  gLangChosen = p.isKey("lang");
   p.end();
   gLang = (v < LANG_COUNT) ? (Lang)v : LANG_DEFAULT;
 }
@@ -292,6 +474,7 @@ void loadLang() {
 void setLang(Lang l) {
   if (l >= LANG_COUNT) return;
   gLang = l;
+  gLangChosen = true;
   Preferences p;
   p.begin("tamapoke", false);
   p.putUChar("lang", (uint8_t)l);

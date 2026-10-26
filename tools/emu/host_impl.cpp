@@ -16,12 +16,37 @@ static std::string g_spriteDir = SPRITE_DIR;
 void emuSetSpriteDir(const char *d) { g_spriteDir = d; }
 
 bool sdReady = true;
+bool sdNeedsFormat = false;
 bool sdDirty = false;
+
+// Which card is "in the slot". A test picks it before setup(), so the boot path
+// the firmware takes on a board -- no card, an unreadable card, a format that
+// works or fails -- can be driven here without one.
+//   0 = a readable card (the default, and what every other test gets)
+//   1 = no card at all
+//   2 = a card that answers but whose filesystem will not mount
+static int g_emuSdCard = 0;
+static bool g_emuFormatOk = true;
+static int g_emuFormatCalls = 0;
+static void (*g_emuFormatHook)() = nullptr;   // runs at the moment sdFormat() blocks
+void emuSetSdCard(int mode) { g_emuSdCard = mode; }
+void emuSetSdFormatResult(bool ok) { g_emuFormatOk = ok; }
+int emuSdFormatCalls() { return g_emuFormatCalls; }
+void emuSetSdFormatHook(void (*f)()) { g_emuFormatHook = f; }
 // The firmware rescans region art when a pack lands over PUT. There is no card
 // here and no PUT path, so the flag never sets and the scan is a no-op -- but both
 // symbols are referenced from loop(), so they have to exist to link.
 bool sdArtDirty = false;
-void sdScanRegionArt(bool) {}
+// Counted, so a test can see WHEN loop() rescans. g_emuCardArt stands in for
+// the packs on a card: 0 (the default) keeps the scan a no-op, as with no card;
+// a test that sets it gets gRegionArt narrowed to it, as the real scan would.
+extern uint16_t gRegionArt;   // pet.cpp
+int g_emuArtScans = 0;
+uint16_t g_emuCardArt = 0;
+void sdScanRegionArt(bool) {
+  g_emuArtScans++;
+  if (g_emuCardArt) gRegionArt = g_emuCardArt;
+}
 SdThumbs thumbs;
 
 static uint8_t *slurp(const std::string &path, uint32_t *size) {
@@ -41,6 +66,7 @@ static uint8_t *slurp(const std::string &path, uint32_t *size) {
 bool PmdMon::load(int16_t dexNum, bool shiny) {
   if (dexNum < 1 || dexNum > 999) return false;
   unload();
+  if (!sdReady) return false;    // as on the board: no mounted card, no sprite
   char p[64];
   snprintf(p, sizeof(p), "%s/p%s%03u.bin", g_spriteDir.c_str(), shiny ? "s" : "", (unsigned)dexNum);
   uint32_t size = 0;
@@ -67,6 +93,7 @@ bool PmdMon::load(int16_t dexNum, bool shiny) {
     PmdAct &a = acts[id];
     a.w = w; a.h = h; a.frames = nf;
     for (uint8_t k = 0; k < nf; k++) { a.ms[k] = q[0] | (q[1] << 8); q += 2; }
+    if (!pmdActTimed(a)) { unload(); return false; }   // the firmware refuses it too
     a.data = q;
     q += (uint32_t)w * h * nf;
     uint8_t base = 1;
@@ -91,28 +118,47 @@ void PmdMon::unload() {
   loaded = false;
 }
 
+// The header and offset checks are sdmon.h's, shared with the firmware, so a
+// test of a cut-short thumbs.bin here is a test of what the board does.
 bool SdThumbs::load() {
-  uint32_t size = 0;
+  if (data) { free(data); data = nullptr; }
+  loaded = false;
+  count = 0;
+  size = 0;
+  if (!sdReady) return false;
   data = slurp(g_spriteDir + "/thumbs.bin", &size);
-  if (!data) { Serial.println("emu: no thumbs.bin"); return false; }
-  if (memcmp(data, "TPTH", 4) != 0) { free(data); data = nullptr; return false; }
-  memcpy(&count, data + 4, 2);
+  if (!data) { Serial.println("emu: no thumbs.bin"); size = 0; return false; }
+  if (!sdThumbsHeader(data, size, &count)) {
+    free(data); data = nullptr; size = 0; count = 0;
+    return false;
+  }
   loaded = true;
   Serial.printf("emu: thumbnails loaded: %u\n", count);
   return true;
 }
 
 const uint8_t *SdThumbs::get(int16_t dex) const {
-  if (!loaded || dex < 1 || dex > count) return nullptr;
-  uint32_t off;
-  memcpy(&off, data + 6 + 4 * (dex - 1), 4);
-  return data + off;
+  if (!loaded) return nullptr;
+  return sdThumbAt(data, size, count, dex);
 }
 
 bool SdMon::load(int16_t, bool) { return false; }   // legacy TPK1 path unused
 void SdMon::unload() { if (data) { free(data); data = nullptr; } loaded = false; }
 bool sdBegin() {
-  Serial.printf("emu: sprites from %s\n", g_spriteDir.c_str());
+  sdReady = (g_emuSdCard == 0);
+  sdNeedsFormat = (g_emuSdCard == 2);
+  if (sdReady) Serial.printf("emu: sprites from %s\n", g_spriteDir.c_str());
+  else Serial.printf("emu: %s\n", sdNeedsFormat ? "unreadable SD card" : "no SD card");
+  return sdReady;
+}
+bool sdFormat() {
+  g_emuFormatCalls++;
+  if (g_emuFormatHook) g_emuFormatHook();
+  if (!g_emuFormatOk) return false;
+  g_emuSdCard = 0;
+  sdReady = true;
+  sdNeedsFormat = false;
+  sdScanRegionArt();
   return true;
 }
 bool sdSerialCommand(const String &) { return false; }
@@ -129,6 +175,7 @@ bool batCharging() { return false; }
 bool usbPresent() { return true; }
 void pwrSetup() {}
 bool pwrShortPressed() { return false; }
+uint32_t pmuReadErrors() { return 0; }
 
 // --- audio (silent) ---
 void audioBegin() {}

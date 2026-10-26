@@ -148,6 +148,54 @@ int main(){
     ck(C.state==LINK_REFUSED, "two devices with the same id refuse rather than guess");
   }
 
+  // --- each side is told the OTHER's name, even after hellos are resent ----
+  // The hello used to carry peerName, which the first hello received
+  // overwrites, so every resend echoed the peer's name back at it and one
+  // device showed itself as the rival. Dropping the first squad packet keeps
+  // C in SQUADS, which is the state that resends hellos.
+  {
+    Link C,D; static Link *pC=&C,*pD=&D;
+    static int k=0, hellos=0;
+    C.send=[](void*,const uint8_t*b,uint8_t n){
+      if (b[0]==LM_HELLO) hellos++;
+      if (b[0]==LM_SQUAD && ++k==1) return;      // lose C's first squad packet
+      pD->onPacket(b,n); };
+    D.send=[](void*,const uint8_t*b,uint8_t n){
+      if (b[0]==LM_HELLO) hellos++;
+      pC->onPacket(b,n); };
+    C.begin(true,"ASH"); D.begin(false,"MISTY");
+    C.id=10; D.id=99;
+    C.addMon(mon(6,50,"C1")); C.addMon(mon(9,50,"C2")); D.addMon(mon(25,50,"D1"));
+    uint32_t t=0; C.tick(t); D.tick(t);
+    C.start();
+    int before=hellos;
+    for (int i=0;i<20 && !(C.ready()&&D.ready());i++){ t+=700; C.tick(t); D.tick(t); }
+    ck(C.ready() && D.ready() && hellos>before, "paired, with hellos resent");
+    ck(!strcmp(C.peerName,"MISTY"), "the host sees the guest's name");
+    ck(!strcmp(D.peerName,"ASH"), "and the guest sees the host's, not its own");
+  }
+
+  // --- what the radio layer may lock onto ----------------------------------
+  {
+    uint8_t buf[64]; uint8_t n=0;
+    Link C; C.begin(true,"C"); C.id=7; C.addMon(mon(6,50,"C1"));
+    static uint8_t cap[64]; static uint8_t capN=0;
+    C.send=[](void*,const uint8_t*b,uint8_t len){
+      if (b[0]==LM_HELLO && len<=sizeof(cap)){ memcpy(cap,b,len); capN=len; } };
+    C.start();
+    memcpy(buf,cap,capN); n=capN;
+    ck(n>0 && linkIsHello(buf,n) && linkHelloCompatible(buf,n),
+       "our own hello is a compatible hello");
+    ck(!linkIsHello(buf,(uint16_t)(n-1)), "a truncated one is not a hello at all");
+    uint8_t sq[4]={LM_SQUAD,2,0,0};
+    ck(!linkIsHello(sq,4) && !linkHelloCompatible(sq,4), "nor is any other frame");
+    buf[2]=LINK_PROTO+1;
+    ck(linkIsHello(buf,n) && !linkHelloCompatible(buf,n),
+       "another version is a hello (so it can be refused) but not one to lock onto");
+    buf[2]=LINK_PROTO; buf[2+5]^=0x5A;
+    ck(!linkHelloCompatible(buf,n), "and neither is another build's");
+  }
+
   // --- compatibility
   {
     Link C; C.send=[](void*,const uint8_t*,uint8_t){};

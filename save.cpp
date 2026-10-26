@@ -18,10 +18,11 @@ const SaveField SAVE_FIELDS[] = {
   { "ivhp", SK_U8 },    { "tatk", SK_U8 },    { "tdef", SK_U8 },
   { "tspe", SK_U8 },
   // moves
-  { "mvs", SK_BYTES },  { "mvlv", SK_U8 },
+  { "mvs", SK_BYTES },  { "mvlv", SK_U8 },   { "mvq", SK_BYTES },
   // flags
   { "bk", SK_BOOL },    { "shy", SK_BOOL },   { "eshy", SK_BOOL },
   { "stpk", SK_BOOL },  { "evop", SK_U8 },    { "slpa", SK_U8 },    { "rtpn", SK_BOOL },
+  { "evoD", SK_U8 },    { "farD", SK_U32 },   { "farK", SK_BOOL },
   // the player: outlives every creature, which is exactly why it must be here
   { "tnam", SK_STR },   { "avtr", SK_U8 },    { "badg", SK_U16 },
   { "reg", SK_U8 },     { "eggR", SK_BYTES },

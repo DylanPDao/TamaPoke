@@ -1,4 +1,5 @@
 #include "battle.h"
+#include "i18n.h"   // speciesName(): a combatant carries its display name
 #include "dex.h"
 #include "types.h"
 
@@ -20,16 +21,19 @@ void combatantFromPet(Combatant &c, const Pet &p) {
        p.spaStat(), p.spdStat(), p.speStat());
   for (int i = 0; i < MOVE_SLOTS; i++) c.moves[i] = p.moves[i];
   c.shiny = p.shiny;
-  const char *nm = p.nick[0] ? p.nick : DEX_TBL[p.speciesId].name;
+  const char *nm = p.nick[0] ? p.nick : speciesName(p.speciesId);
   snprintf(c.name, sizeof(c.name), "%s", nm);
 }
 
 void combatantFromParty(Combatant &c, const PartyMon &m) {
-  fill(c, m.dex, (uint8_t)m.level, party.vitOf(m), party.atkOf(m), party.defOf(m),
+  // Party::begin() already clamps what it loads; this is the cast's own guard,
+  // so a record built any other way cannot wrap 256 to level 0 here.
+  uint8_t lvl = m.level < 1 ? 1 : (m.level > MAX_LEVEL ? MAX_LEVEL : (uint8_t)m.level);
+  fill(c, m.dex, lvl, party.vitOf(m), party.atkOf(m), party.defOf(m),
        party.spaOf(m), party.spdOf(m), party.speOf(m));
   for (int i = 0; i < MOVE_SLOTS; i++) c.moves[i] = m.moves[i];
   c.shiny = m.shiny != 0;
-  const char *nm = m.nick[0] ? m.nick : DEX_TBL[m.dex].name;
+  const char *nm = m.nick[0] ? m.nick : speciesName(m.dex);
   snprintf(c.name, sizeof(c.name), "%s", nm);
 }
 
@@ -64,6 +68,13 @@ uint16_t battleDamage(const Combatant &atk, const Combatant &def, uint8_t mv,
   const MoveEntry &m = MOVE_TBL[mv];
   if (m.cat == MC_STATUS) return 0;
 
+  // Immunity first, fixed damage included. battleAct() checks the type chart
+  // before it ever asks for damage, so SEISMIC TOSS into a GHOST does nothing
+  // in a real turn -- and this used to report the full fixed amount for it,
+  // which made the hard AI score an immune target as a hit (even as a KO).
+  uint16_t eff = typeEffVsDex(m.type, def.dex);
+  if (eff == 0) return 0;               // immune: no chip, no minimum
+
   if (m.effect == EF_FIXED_LVL) return atk.level ? atk.level : 1;
   if (m.effect == EF_FIXED) return m.param > 0 ? (uint16_t)m.param : 1;
 
@@ -80,9 +91,7 @@ uint16_t battleDamage(const Combatant &atk, const Combatant &def, uint8_t mv,
   uint32_t dmg = (2UL * atk.level / 5 + 2) * m.power * A / D / 50 + 2;
   if (crit) dmg *= 2;
   if (hasStab(atk.dex, m.type)) dmg = dmg * 3 / 2;
-  uint16_t eff = typeEffVsDex(m.type, def.dex);
   dmg = dmg * eff / 100;
-  if (eff == 0) return 0;               // immune: no chip, no minimum
   dmg = dmg * roll / 255;
   return dmg < 1 ? 1 : (dmg > 65535 ? 65535 : (uint16_t)dmg);
 }
@@ -250,7 +259,9 @@ uint8_t aiChooseMove(const Combatant &self, const Combatant &foe, bool smart) {
   if (!n) return 0;
   if (!smart) return legal[random(n)];
 
-  int16_t bestScore = -32768;
+  // int32_t like the scores themselves: a KO bonus on a strong hit used to
+  // wrap the int16_t and lose to a move that did nothing.
+  int32_t bestScore = INT32_MIN;
   uint8_t best = legal[0];
   for (uint8_t i = 0; i < n; i++) {
     uint8_t mv = legal[i];
@@ -289,7 +300,20 @@ uint8_t aiChooseMove(const Combatant &self, const Combatant &foe, bool smart) {
       if (m.ailment != AIL_NONE && foe.ailment == AIL_NONE)
         sc += m.ailChance / 4;
     }
-    if (sc > bestScore) { bestScore = (int16_t)sc; best = mv; }
+    if (sc > bestScore) { bestScore = sc; best = mv; }
   }
   return best;
+}
+
+// ---------- replacements ----------
+
+int8_t battleNextAlive(const Combatant *squad, uint8_t n, uint8_t at) {
+  // Every slot but `at`, starting just after it and wrapping round, so a squad
+  // fought in order still sends out the next one -- but a creature switched in
+  // from further down no longer strands the healthy ones before it.
+  for (uint8_t k = 1; k < n; k++) {
+    uint8_t i = (uint8_t)((at + k) % n);
+    if (i != at && !squad[i].fainted()) return (int8_t)i;
+  }
+  return -1;
 }

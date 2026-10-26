@@ -39,8 +39,17 @@ public:
       : _w(w), _h(h), _panel(p), fb(w * h, 0) {}
 
   bool begin(uint32_t = 0) { return true; }
-  void flush() { frameReady = true; }
+  // virtual, as it is in the real library (Arduino_GFX::flush): the sketch
+  // subclasses the canvas to decide whether a frame is worth pushing at all.
+  virtual void flush(bool = false) {
+    frameReady = true;
+    pushes++;
+    if (_panel) pushBrightness = _panel->brightness;   // was the panel lit for it?
+  }
+  uint32_t pushes = 0;           // frames that really went out to the panel
+  uint8_t pushBrightness = 255;  // the panel's brightness at the latest one
   const uint16_t *buffer() const { return fb.data(); }
+  uint16_t *getFramebuffer() { return fb.data(); }   // the real API's name
 
   inline void px(int x, int y, uint16_t c) {
     if (x < 0 || y < 0 || x >= _w || y >= _h) return;
@@ -49,11 +58,18 @@ public:
 
   void fillScreen(uint16_t c) { std::fill(fb.begin(), fb.end(), c); }
 
+  uint32_t fillCalls = 0;   // how many fillRect calls reached the canvas
   void fillRect(int x, int y, int w, int h, uint16_t c) {
+    fillCalls++;
     if (w < 0) { x += w; w = -w; }
     if (h < 0) { y += h; h = -h; }
     for (int j = 0; j < h; j++)
       for (int i = 0; i < w; i++) px(x + i, y + j, c);
+  }
+  // the real canvas copies rows straight into its framebuffer, clipped
+  void draw16bitRGBBitmap(int x, int y, uint16_t *bmp, int w, int h) {
+    for (int j = 0; j < h; j++)
+      for (int i = 0; i < w; i++) px(x + i, y + j, bmp[(size_t)j * w + i]);
   }
   void drawFastHLine(int x, int y, int w, uint16_t c) { fillRect(x, y, w, 1, c); }
   void drawFastVLine(int x, int y, int h, uint16_t c) { fillRect(x, y, 1, h, c); }

@@ -27,6 +27,9 @@ int main(){
   // both ladders, a Pokedex with holes in it, a named trainer
   Pet pet;
   pet.begin();
+  // setup() opens the party too. The Preferences stub models NVS handles now,
+  // so a never-opened Party writes nothing here -- exactly as on the board.
+  party.begin();
   pet.dbgHatchAs(6,true);
   pet.ageMinutes = 72UL*MINUTES_PER_LEVEL;
   pet.ivAtk=31; pet.ivDef=7; pet.ivSpe=22; pet.ivHp=19;

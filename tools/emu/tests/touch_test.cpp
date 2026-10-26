@@ -7,6 +7,7 @@
 #include "Arduino_GFX_Library.h"
 #include "Preferences.h"
 #include "pet.h"
+#include "i18n.h"
 #include "party.h"
 #include "moves.h"
 #include "battle.h"
@@ -88,6 +89,7 @@ void uiButtonAt(int i, int *cx, int *cy, int *half);
 int main(int argc, char **argv) {
   if (argc > 1) emuSetTimeScale((uint32_t)atoi(argv[1]));
   printf("--- time scale x%u ---\n", emuTimeScale());
+  setLang(LANG_EN);   // past the first-boot language question, which comes first
   setup();
   pump(4);
 

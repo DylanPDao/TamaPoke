@@ -97,14 +97,20 @@ int main(){
     ck(p.rewardTraining(5, which)==0, "an egg trains nothing");
   }
 
-  // --- it survives a reload, which is the point of saving it
+  // --- it survives a reload, which is the point of saving it. rewardTraining()
+  // only MARKS the save: the gym win writes it once, together with the badge
+  // (btlsave_test drives that real path and reboots), so here it must be
+  // pending and must land on the flush.
   {
     Pet p; p.begin(); p.dbgHatchAs(25,false);
     p.ivAtk=p.ivDef=p.ivSpe=p.ivHp=31;
     p.trAtk=p.trDef=p.trSpe=0;
+    p.flushSave();
     uint8_t which=0;
     p.rewardTraining(6, which);
     uint8_t a=p.trAtk, d=p.trDef, s=p.trSpe;
+    ck(p.savePending(), "the training marks the save pending");
+    p.flushSave();
     Pet q; q.begin();
     ck(q.trAtk==a && q.trDef==d && q.trSpe==s, "the training is persisted");
   }

@@ -17,3 +17,4 @@ bool usbPresent();
 // la pulsacion corta la captura el firmware (pantalla on/off)
 void pwrSetup();
 bool pwrShortPressed();  // sondear en el loop
+uint32_t pmuReadErrors();  // IRQ status reads that failed on I2C (HEALTH pmu_err=)

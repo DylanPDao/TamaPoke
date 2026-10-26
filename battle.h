@@ -74,3 +74,11 @@ void battleEndTurn(Combatant &c, TurnLog &log);
 // a move kills this turn, and whether a status or a stat boost is worth the
 // turn it costs.
 uint8_t aiChooseMove(const Combatant &self, const Combatant &foe, bool smart);
+
+// Which squad slot comes on when the creature in slot `at` cannot go on: the
+// first one still standing after it, wrapping round to those before it, or -1
+// if nobody is left. Slot `at` is never read -- the creature in play lives in
+// its own Combatant (btlYou/btlFoe) and its array slot is stale until it is
+// switched out. The ONE rule for a fainted creature's replacement and for
+// whether a side is beaten; the sketch must not keep a copy of it.
+int8_t battleNextAlive(const Combatant *squad, uint8_t n, uint8_t at);

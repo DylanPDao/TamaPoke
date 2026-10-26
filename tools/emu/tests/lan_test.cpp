@@ -19,7 +19,10 @@ void FakeESP::restart(){exit(0);}
 int FakeSerial::available(){return 0;}
 String FakeSerial::readStringUntil(char){return String("");}
 
-void setup(); void render(); void battleTap(int16_t,int16_t);
+// The link's turn engine (btlLinkPoll) runs from loop(), before the frame --
+// not from render(), where it could stream a sprite from SD mid-draw. So the
+// battle half of this test drives loop(), one pass at a time.
+void setup(); void render(); void loop(); void battleTap(int16_t,int16_t);
 extern Pet pet;
 extern Link lan;
 extern bool battleOpen, btlLink, btlLinkHost, btlOver, btlWon, lanOpen;
@@ -120,14 +123,14 @@ int main(){
   ck(btlMyAct != 0, "the host latches its move while the rival is still choosing");
   ck(btlFoe.hp == hpWas, "and nothing is resolved yet");
   lan.pendingAct = LINK_ACT_MOVE(0);
-  render();                          // btlLinkPoll spots that both are in
+  loop();                            // btlLinkPoll spots that both are in
   ck(btlMyAct == 0 && !lan.pendingAct,
      "and the turn goes as soon as the rival's action lands");
 
   // --- a peer that goes quiet ends the fight rather than hanging on it
   btlOver = false; btlMsgCount = 0;
   lan.state = LINK_LOST;
-  render();
+  loop();
   ck(btlOver, "a lost peer ends the battle instead of waiting forever");
   lan.state = LINK_READY;
   btlOver = false; btlMsgCount = 0;
@@ -141,31 +144,54 @@ int main(){
   r.hostIdx = 0; r.guestIdx = 0;
   r.guestAil = AIL_BURN;
   memcpy(lan.result,&r,sizeof(r)); lan.resultN=sizeof(r); lan.resultNew=true;
-  render();
+  loop();
   ck(btlYou.hp==r.guestHp && btlFoe.hp==r.hostHp, "the guest takes the host's numbers");
   ck(btlYou.ailment==AIL_BURN, "and the ailment it was handed");
   ck(!lan.resultNew, "a result is consumed once");
   uint16_t hpNow = btlYou.hp;
-  render();
+  loop();
   ck(btlYou.hp==hpNow, "so a second frame does not replay the turn");
 
   // --- the rival's next creature arrives when the host says so
   r.hostIdx = 1; r.hostHp = 60;
   memcpy(lan.result,&r,sizeof(r)); lan.resultNew=true;
-  render();
+  loop();
   ck(btlFoeAt==1 && btlFoe.dex==65, "the rival's next creature comes off the wire");
 
   // --- and the guest never decides the ending
   lan.youWon = true; lan.state = LINK_DONE;
-  render();
+  loop();
   ck(btlOver && btlWon, "the guest takes the ending from the host");
 
   // a short or empty result must be dropped, not read past the end
   btlOver=false; lan.state=LINK_READY;
   uint16_t before = btlYou.hp;
   lan.resultN = 3; lan.resultNew = true;
-  render();
+  loop();
   ck(!lan.resultNew && btlYou.hp==before, "a runt result is dropped, not half-applied");
+
+  // --- WHERE the turn engine runs: in loop(), not in render(). A result can
+  // stream a ~135 KB sprite from SD (btlApplyResult -> btlSyncSprite), and
+  // render() is the middle of drawing a frame. It must also keep running with
+  // the screen off, when render() is not called at all.
+  {
+    extern bool screenOff;
+    btlOver = false; lan.state = LINK_READY; btlMsgCount = 0;
+    r.hostIdx = btlFoeAt; r.guestIdx = btlSquadAt; r.flags = 0;
+    r.hostHp = btlFoe.maxHp / 3; r.guestHp = btlYou.maxHp / 3;
+    memcpy(lan.result,&r,sizeof(r)); lan.resultN=sizeof(r); lan.resultNew=true;
+    render();
+    ck(lan.resultNew, "drawing a frame no longer applies a result");
+    loop();
+    ck(!lan.resultNew && btlYou.hp == r.guestHp, "the loop pass does");
+    screenOff = true;
+    r.guestHp = btlYou.maxHp / 5;
+    memcpy(lan.result,&r,sizeof(r)); lan.resultNew=true;
+    loop();
+    ck(!lan.resultNew && btlYou.hp == r.guestHp, "and keeps doing it with the screen off");
+    screenOff = false;
+    loop();
+  }
 
   // --- the team you pick is the team that gets offered
   {

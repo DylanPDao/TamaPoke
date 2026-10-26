@@ -2,8 +2,25 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dex.h"
+#include "moves.h"   // MOVE_COUNT
+#include "pet.h"     // MAX_LEVEL
 
 Party party;
+
+// One rule for every record read off NVS, party and box alike. A blob written
+// by an older or newer build, or restored by IMPORT, can hold anything that
+// passed its CRC: a dex that is not in this build (dropped rather than indexing
+// DEX_TBL with it), a move index past MOVE_TBL (MOVE_TBL[0] is the "-" filler,
+// so 0 is the safe value), or a level the stat formula and the battle's uint8_t
+// were never meant to see. The nick is terminated whatever was stored.
+static void sanitize(PartyMon &s) {
+  if (s.dex < 1 || s.dex > DEX_COUNT) s.dex = 0;
+  if (s.level < 1) s.level = 1;
+  if (s.level > MAX_LEVEL) s.level = MAX_LEVEL;
+  for (int i = 0; i < MOVE_SLOTS; i++)
+    if (s.moves[i] >= MOVE_COUNT) s.moves[i] = 0;
+  s.nick[sizeof(s.nick) - 1] = 0;
+}
 
 // Same NVS namespace as the pet on purpose: WIPE (Pet::factoryReset) calls
 // clear() on it, and a factory reset that left the party behind would be a lie.
@@ -47,12 +64,8 @@ void Party::begin() {
       memcpy(&slots[i], old + i * oldStride, oldStride);
     save();   // rewrite in the current layout so this only happens once
   }
-  // a blob written by an older/newer build could hold nonsense; drop anything
-  // that is not a real Pokedex number rather than indexing DEX_TBL with it
-  for (auto &s : slots) {
-    if (s.dex < 1 || s.dex > DEX_COUNT) s.dex = 0;
-    s.nick[sizeof(s.nick) - 1] = 0;
-  }
+  // a blob written by an older/newer build could hold nonsense
+  for (auto &s : slots) sanitize(s);
   // The box is a separate key and simply absent on an older save, which leaves
   // it zeroed -- exactly what an empty box is.
   for (auto &s : box) s = PartyMon();
@@ -70,10 +83,7 @@ void Party::begin() {
       free(tmp);
     }
   }
-  for (auto &s : box) {
-    if (s.dex < 1 || s.dex > DEX_COUNT) s.dex = 0;
-    s.nick[sizeof(s.nick) - 1] = 0;
-  }
+  for (auto &s : box) sanitize(s);
 }
 
 void Party::save() {

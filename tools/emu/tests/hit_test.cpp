@@ -16,6 +16,7 @@
 #include "party.h"
 #include "battle.h"
 #include <cstdio>
+#include <cstring>
 uint32_t g_seed=4; FakeSerial Serial; FakeESP ESP; FakeWire Wire;
 volatile int g_touchX=0,g_touchY=0; volatile bool g_touchDown=false;
 void FakeESP::restart(){exit(0);}
@@ -30,7 +31,12 @@ extern uint8_t btlMenu;
 extern Combatant btlYou;
 void startBattle(int16_t dex, uint8_t lvl);
 int btlCellIndexAt(int16_t x, int16_t y);
+int btlSwitchCellAt(int16_t x, int16_t y);
 void partyButtonRects(int *boxTop, int *boxBot, int *closeTop, int *closeBot);
+void gymLanRect(int *x, int *y, int *w, int *h);
+uint8_t uiCurrentScreen();
+extern const char *const SCREEN_NAME[];
+extern bool partyOpen, gymOpen, gymPick, lanOpen;
 void uiButtonHeights(int *out, int max, int *n);
 void gymHeaderRects(int *pillTop, int *pillBot, int *rowTop);
 int uiSleepButton(int *cx, int *cy);
@@ -106,6 +112,50 @@ int main(){
   ck(btlCellIndexAt(200, 321) == 0 && btlCellIndexAt(200, 322) == 2,
      "and so does the row seam");
 
+  // The SWITCH grid holds a full squad of six (three columns over the same two
+  // rows). Same rules as the move grid: every cell reachable and finger-sized,
+  // no dead seams, the bottom row no smaller than the top, nothing reaching the
+  // BACK bar below it, and all of it inside the round panel.
+  {
+    int sarea[6] = {0,0,0,0,0,0};
+    int minX[6], maxX[6], minY[6], maxY[6];
+    for (int i = 0; i < 6; i++) { minX[i] = minY[i] = 9999; maxX[i] = maxY[i] = -1; }
+    int offPanel = 0;
+    for (int y = 0; y < 466; y++)
+      for (int x = 0; x < 466; x++) {
+        int c = btlSwitchCellAt(x, y);
+        if (c < 0) continue;
+        if (c > 5) { offPanel++; continue; }
+        sarea[c]++;
+        if (x < minX[c]) minX[c] = x;
+        if (x > maxX[c]) maxX[c] = x;
+        if (y < minY[c]) minY[c] = y;
+        if (y > maxY[c]) maxY[c] = y;
+        int dx = x - 233, dy = y - 233;
+        if (dx * dx + dy * dy > 233 * 233) offPanel++;
+      }
+    bool all = true, big = true;
+    for (int i = 0; i < 6; i++) {
+      if (!sarea[i]) all = false;
+      if (maxX[i] - minX[i] + 1 < 44 || maxY[i] - minY[i] + 1 < 44) big = false;
+    }
+    printf("      switch cells:");
+    for (int i = 0; i < 6; i++) printf(" %dx%d", maxX[i] - minX[i] + 1, maxY[i] - minY[i] + 1);
+    printf(" px\n");
+    ck(all, "all six switch cells are reachable");
+    ck(big, "and every one is at least a fingertip (44 px) each way");
+    ck(sarea[3] >= sarea[0] && sarea[4] >= sarea[1] && sarea[5] >= sarea[2],
+       "the switch grid's bottom row is not smaller than its top row");
+    ck(offPanel == 0, "the switch grid stays inside the round panel");
+    int dead = 0;
+    for (int y = 316; y <= 328; y++) if (btlSwitchCellAt(200, y) < 0) dead++;
+    for (int x = minX[0]; x <= maxX[2]; x++) if (btlSwitchCellAt(x, 300) < 0) dead++;
+    ck(dead == 0, "no dead seam between its rows or its columns");
+    int intoBack = 0;
+    for (int x = 0; x < 466; x++) if (btlSwitchCellAt(x, 384) >= 0) intoBack++;
+    ck(intoBack == 0, "and its bottom row stops short of BACK");
+  }
+
   // finally, drive a real tap low in the bottom-left cell through battleTap
   startBattle(9, 50);
   btlMenu = 1;
@@ -125,6 +175,46 @@ int main(){
     ck(clBot < 466 && boxTop > 0, "both stay on the panel");
     printf("      BOX %d..%d, CLOSE %d..%d, gap %d px\n",
            boxTop, boxBot, clTop, clBot, clTop - boxBot);
+
+    // ...and the TAP answers those rectangles, not a copy of them. partyTap()
+    // once tested literal numbers 4 px above the drawing: the bottom of CLOSE
+    // was dead and the gap above it closed the screen. Both ends are driven
+    // through the router, so a drifted copy fails one or the other.
+    battleOpen = false;
+    partyOpen = true;
+    ck(!strcmp(SCREEN_NAME[uiCurrentScreen()], "party"), "the party screen is up");
+    onTap(233, (int16_t)(clBot - 1));
+    ck(!partyOpen, "a tap on the bottom edge of the drawn CLOSE closes the party");
+    partyOpen = true;
+    onTap(233, (int16_t)(clTop - 2));
+    ck(partyOpen, "a tap in the gap above CLOSE does not");
+    partyOpen = false;
+  }
+
+  // The gym list's LAN button: 32 px tall once, and literal numbers in both the
+  // draw and the tap. One set of constants now, held to UI_TAP_MIN by the
+  // height sweep below and to the round panel here.
+  {
+    int lx, ly, lw, lh;
+    gymLanRect(&lx, &ly, &lw, &lh);
+    printf("      gym LAN button %d,%d %dx%d\n", lx, ly, lw, lh);
+    int worst = 0;
+    const int cx[2] = { lx, lx + lw }, cy[2] = { ly, ly + lh };
+    for (int a = 0; a < 2; a++) for (int b = 0; b < 2; b++) {
+      int dx = cx[a] - 233, dy = cy[b] - 233, r2 = dx * dx + dy * dy;
+      if (r2 > worst) worst = r2;
+    }
+    ck(worst < 231 * 231, "the gym LAN button's corners are on the round panel");
+    battleOpen = false; partyOpen = false; lanOpen = false;
+    gymOpen = true; gymPick = false;
+    ck(!strcmp(SCREEN_NAME[uiCurrentScreen()], "gym"), "the gym list is up");
+    onTap(233, (int16_t)(ly + lh - 1));
+    ck(lanOpen && !gymOpen, "a tap low on the gym LAN button opens the LAN screen");
+    lanOpen = false;
+    gymOpen = true; gymPick = false;
+    onTap(233, (int16_t)(ly + 1));
+    ck(lanOpen, "and so does one high on it");
+    lanOpen = false; gymOpen = false;
   }
 
   // Three separate "hard to hit" reports came in from the board, all the same
