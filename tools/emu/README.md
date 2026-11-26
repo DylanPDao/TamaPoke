@@ -62,6 +62,27 @@ sips -s format png shot.ppm --out shot.png     # macOS; or use ImageMagick
 `clock`, `menu`, `party`, `partyfull`, `egg`, `starter`. `--lvl`, `--iv` and
 `--dex` set up the pet first.
 
+## How it works
+
+| File | Stands in for |
+|---|---|
+| `Arduino.h` | `random`, `String`, a `Serial` wired to stdin, and `attachInterrupt` (the SDL layer raises the touch INT by hand — the sketch gates `handleTouch` on it) |
+| `clock.cpp` | `millis`, including `--fast` scaling; its own file so the headless tests link the same clock the window runs |
+| `Preferences.h` | NVS, backed by a file so your pet survives restarts |
+| `Arduino_GFX_Library.h` | the canvas — every primitive the sketch uses, into an RGB565 buffer |
+| `TouchDrvCSTXXX.hpp` | the CST9217, fed by the mouse |
+| `host_impl.cpp` | SD (reads sprites from disk), RTC, battery, audio |
+| `font.cpp` | the classic 5×7 GFX glyphs, so text metrics match exactly |
+| `genproto.py` | the prototypes the Arduino build normally generates for you |
+
+Everything except `font.cpp` and `genproto.py` is a stub; the game itself is the
+real thing.
+
+`sprites` are read straight from `tools/sdcard/mons/`, so animation, shinies and
+Pokédex thumbnails all work if you have generated them (`tools/pack_pmd.py`).
+Without them you get the `S_NO_SPRITES` path, exactly as a board with no SD card
+would.
+
 ## Tests
 
 ```bash
@@ -87,27 +108,6 @@ pack.
 `--shot` freezes the clock, so the same build writes the same file every time
 and two screenshots can be compared; `shot_repeat`, at the end of `run.sh`,
 fails if that stops being true.
-
-## How it works
-
-| File | Stands in for |
-|---|---|
-| `Arduino.h` | `random`, `String`, a `Serial` wired to stdin, and `attachInterrupt` (the SDL layer raises the touch INT by hand — the sketch gates `handleTouch` on it) |
-| `clock.cpp` | `millis`, including `--fast` scaling; its own file so the headless tests link the same clock the window runs |
-| `Preferences.h` | NVS, backed by a file so your pet survives restarts |
-| `Arduino_GFX_Library.h` | the canvas — every primitive the sketch uses, into an RGB565 buffer |
-| `TouchDrvCSTXXX.hpp` | the CST9217, fed by the mouse |
-| `host_impl.cpp` | SD (reads sprites from disk), RTC, battery, audio |
-| `font.cpp` | the classic 5×7 GFX glyphs, so text metrics match exactly |
-| `genproto.py` | the prototypes the Arduino build normally generates for you |
-
-Everything except `font.cpp` and `genproto.py` is a stub; the game itself is the
-real thing.
-
-`sprites` are read straight from `tools/sdcard/mons/`, so animation, shinies and
-Pokédex thumbnails all work if you have generated them (`tools/pack_pmd.py`).
-Without them you get the `S_NO_SPRITES` path, exactly as a board with no SD card
-would.
 
 ## Credits
 
