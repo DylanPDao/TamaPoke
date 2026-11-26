@@ -198,6 +198,9 @@ static void writePPM(const char *path) {
 }
 
 static int shotMode(const char *screen, const char *out, int lvl, int iv, int dex) {
+  // Every --shot is taken at the same instant, whatever --fast says and however
+  // long the run takes, so the same build always writes the same file.
+  emuFreezeClock(1);
   setup();
   for (int i = 0; i < 4; i++) loop();          // let the sketch settle
   bool firstBoot = !strcmp(screen, "starter") || !strcmp(screen, "starterj") ||

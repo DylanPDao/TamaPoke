@@ -49,6 +49,10 @@ public:
 
   void fillScreen(uint16_t c) { std::fill(fb.begin(), fb.end(), c); }
 
+  // Arduino_GFX has it and the firmware build accepts it, so the emulator must
+  // too: a sketch that draws one pixel has to compile here before it is flashed.
+  void drawPixel(int x, int y, uint16_t c) { px(x, y, c); }
+
   void fillRect(int x, int y, int w, int h, uint16_t c) {
     if (w < 0) { x += w; w = -w; }
     if (h < 0) { y += h; h = -h; }

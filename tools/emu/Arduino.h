@@ -24,6 +24,7 @@ inline void *ps_malloc(size_t n) { return malloc(n); }
 uint32_t millis();          // clock.cpp
 void emuSetTimeScale(uint32_t s);
 uint32_t emuTimeScale();
+void emuFreezeClock(uint32_t ms);   // millis() answers ms from now on (--shot)
 inline void delay(uint32_t ms) {
   // the emulator must keep pumping SDL events, so delay is a no-op; nothing in
   // the sketch relies on it for correctness, only for boot-time settling
@@ -57,6 +58,10 @@ inline long random(long n) {
 inline long random(long lo, long hi) { return lo + random(hi - lo); }
 inline void randomSeed(unsigned long s) { g_seed = (uint32_t)s; }
 
+// A macro, as on the board, so mixed argument types behave the same here.
+#ifndef constrain
+#define constrain(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
+#endif
 template <typename T> T min(T a, T b) { return a < b ? a : b; }
 template <typename T> T max(T a, T b) { return a > b ? a : b; }
 

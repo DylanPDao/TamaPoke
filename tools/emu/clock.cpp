@@ -11,7 +11,14 @@ static std::chrono::steady_clock::time_point g_tLast = std::chrono::steady_clock
 static uint64_t g_virtUs = 0;      // accumulated in us so the scaling cannot drift
 static uint32_t g_timeScale = 1;   // >1 makes in-game minutes pass faster
 
+static bool g_frozen = false;      // --shot: the clock stands still
+static uint32_t g_frozenMs = 0;
+
 void emuSetTimeScale(uint32_t s) { g_timeScale = s ? s : 1; }
+// A screenshot must not depend on how long the machine took to get there: the
+// pet's animation frame is picked off millis(), so two runs a few milliseconds
+// apart photographed different frames and could not be compared.
+void emuFreezeClock(uint32_t ms) { g_frozen = true; g_frozenMs = ms; }
 uint32_t emuTimeScale() { return g_timeScale; }
 
 // The sketch times gestures off this same clock -- a tap needs dt < 1500 and a
@@ -22,6 +29,7 @@ uint32_t emuTimeScale() { return g_timeScale; }
 // moment you are. Accumulating (rather than scaling total elapsed time) keeps
 // it monotonic across a change of rate.
 uint32_t millis() {
+  if (g_frozen) return g_frozenMs;
   auto now = std::chrono::steady_clock::now();
   uint64_t dus = std::chrono::duration_cast<std::chrono::microseconds>(now - g_tLast).count();
   g_tLast = now;
