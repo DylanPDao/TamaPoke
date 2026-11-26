@@ -59,7 +59,12 @@ standalone() { case "$1" in synth_test) return 0;; *) return 1;; esac; }
 
 # sprite_test drives PmdMon straight off the sprite directory, so it needs the
 # host's SD stubs but none of the sketch
-needs_host() { case "$1" in sprite_test) return 0;; *) return 1;; esac; }
+needs_host() { case "$1" in sprite_test|spritepath_test) return 0;; *) return 1;; esac; }
+
+# sprite_test walks the whole dex and names a Hoenn species, so a pack that
+# holds one region only (what a Kanto-only install has) cannot satisfy it.
+needs_full_pack() { case "$1" in sprite_test) return 0;; *) return 1;; esac; }
+have_full_pack() { [ -f "$ROOT/tools/sdcard/mons/p258.bin" ]; }
 
 # The sprite pack is generated (tools/pack_pmd.py) and not in the repository, so
 # a clean clone has none. A suite that reads it is then SKIPPED and counted as
@@ -73,6 +78,10 @@ for src in "$HERE"/*_test.cpp; do
   [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
   if needs_host "$name" && ! have_sprites; then
     echo "=== $name: SKIPPED (no sprite pack in tools/sdcard/mons; build it with: python3 tools/pack_pmd.py)"
+    skip=$((skip+1)); continue
+  fi
+  if needs_full_pack "$name" && ! have_full_pack; then
+    echo "=== $name: SKIPPED (the sprite pack in tools/sdcard/mons has no Hoenn species; this suite needs every region: python3 tools/pack_pmd.py)"
     skip=$((skip+1)); continue
   fi
   extra=()
