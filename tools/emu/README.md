@@ -103,7 +103,9 @@ suites passed: 36, failed: 0, skipped: 3
 A suite that reads the sprite pack is **skipped**, and says why, when
 `tools/sdcard/mons` is missing (a clean clone) or holds one region only
 (`sprite_test` walks the whole dex). `python3 tools/pack_pmd.py` builds the
-pack.
+pack. GitHub runs the same script on every push
+(`.github/workflows/emulator-tests.yml`), without the firmware compile and
+without the pack.
 
 `--shot` freezes the clock, so the same build writes the same file every time
 and two screenshots can be compared; `shot_repeat`, at the end of `run.sh`,

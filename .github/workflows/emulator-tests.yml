@@ -1,0 +1,24 @@
+# Builds the desktop emulator and runs its headless tests on every push and
+# pull request, so a change that breaks them is seen before it is flashed.
+#
+# What this does NOT cover, and tools/emu/tests/run.sh says so in its output:
+#   - the firmware build: arduino-cli and the ESP32 core are not installed
+#     here, so run.sh skips its compile step. A green run is not proof the
+#     firmware builds.
+#   - the suites that read the sprite pack: the pack is generated
+#     (tools/pack_pmd.py) and not in the repository, so they are reported as
+#     skipped.
+name: emulator tests
+on:
+  push:
+  pull_request:
+jobs:
+  emulator-tests:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL2
+        run: brew install sdl2
+      - name: Build the emulator and run its tests
+        run: bash tools/emu/tests/run.sh
