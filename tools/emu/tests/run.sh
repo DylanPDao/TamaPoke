@@ -61,10 +61,20 @@ standalone() { case "$1" in synth_test) return 0;; *) return 1;; esac; }
 # host's SD stubs but none of the sketch
 needs_host() { case "$1" in sprite_test) return 0;; *) return 1;; esac; }
 
-pass=0; fail=0
+# The sprite pack is generated (tools/pack_pmd.py) and not in the repository, so
+# a clean clone has none. A suite that reads it is then SKIPPED and counted as
+# skipped -- not failed, which sent people looking for a bug that was not there,
+# and not passed, which would claim something nobody checked.
+have_sprites() { ls "$ROOT/tools/sdcard/mons"/p*.bin >/dev/null 2>&1; }
+
+pass=0; fail=0; skip=0
 for src in "$HERE"/*_test.cpp; do
   name="$(basename "$src" .cpp)"
   [ -n "$FILTER" ] && [[ "$name" != *"$FILTER"* ]] && continue
+  if needs_host "$name" && ! have_sprites; then
+    echo "=== $name: SKIPPED (no sprite pack in tools/sdcard/mons; build it with: python3 tools/pack_pmd.py)"
+    skip=$((skip+1)); continue
+  fi
   extra=()
   needs_sketch "$name" && extra=("$EMU/sketch.cpp" "$EMU/host_impl.cpp" "$EMU/font.cpp" "$EMU/clock.cpp")
   needs_host "$name" && extra=("$EMU/host_impl.cpp" "$EMU/font.cpp")
@@ -86,6 +96,39 @@ for src in "$HERE"/*_test.cpp; do
   fi
 done
 
+# --shot must give the same file every time, or two screenshots cannot be
+# compared: a difference between two builds has to come from the change, not
+# from which animation frame the clock happened to land on.
+# It needs the sprite pack: without one the main screen has no animated pet,
+# every run is trivially identical, and the check would pass with the bug in.
+if [ -z "$FILTER" ] || [[ "shot_repeat" == *"$FILTER"* ]]; then
+  if ! have_sprites; then
+    echo "=== shot_repeat: SKIPPED (no sprite pack in tools/sdcard/mons; build it with: python3 tools/pack_pmd.py)"
+    skip=$((skip+1))
+  else
+    echo "=== shot_repeat"
+    ok=1
+    # On a warm machine every run takes the same few milliseconds and lands on
+    # the same frame by luck; the first run after a build, or a busy machine,
+    # does not. --fast stretches the clock the way a slow run does, so the
+    # check fails every time the picture depends on how long the run took.
+    i=0
+    for fast in 1 1 400 9000 60000; do
+      i=$((i+1))
+      (cd "$OUT" && "$EMU/tamapoke-emu" --fast "$fast" --save "$OUT/shot.nvs" --wipe --shot main --lvl 12 --dex 4 --out "$OUT/shot$i.ppm" >/dev/null 2>&1) || ok=0
+      [ "$i" = 1 ] || cmp -s "$OUT/shot1.ppm" "$OUT/shot$i.ppm" || ok=0
+    done
+    if [ "$ok" = 1 ]; then
+      echo "PASS  --shot main wrote the same file however fast the clock ran"
+      pass=$((pass+1))
+    else
+      echo "FAIL  --shot main wrote a different file when the clock ran faster"
+      echo "    ^ shot_repeat FAILED"
+      fail=$((fail+1))
+    fi
+  fi
+fi
+
 echo
-echo "suites passed: $pass, failed: $fail"
+echo "suites passed: $pass, failed: $fail, skipped: $skip"
 [ "$fail" -eq 0 ]
