@@ -62,6 +62,32 @@ sips -s format png shot.ppm --out shot.png     # macOS; or use ImageMagick
 `clock`, `menu`, `party`, `partyfull`, `egg`, `starter`. `--lvl`, `--iv` and
 `--dex` set up the pet first.
 
+## Tests
+
+```bash
+bash tools/emu/tests/run.sh            # everything
+bash tools/emu/tests/run.sh battle     # only the suites whose name contains "battle"
+```
+
+`run.sh` builds the emulator, compiles the firmware with `arduino-cli` when it
+is installed, then builds each `*_test.cpp` with the files it needs and runs
+it. **It is the link recipe**: which suites need the sketch, the host stubs or
+nothing but `gbsynth.cpp` is written there and nowhere else, so build a test
+through it rather than by hand. It ends with one line:
+
+```
+suites passed: 36, failed: 0, skipped: 3
+```
+
+A suite that reads the sprite pack is **skipped**, and says why, when
+`tools/sdcard/mons` is missing (a clean clone) or holds one region only
+(`sprite_test` walks the whole dex). `python3 tools/pack_pmd.py` builds the
+pack.
+
+`--shot` freezes the clock, so the same build writes the same file every time
+and two screenshots can be compared; `shot_repeat`, at the end of `run.sh`,
+fails if that stops being true.
+
 ## How it works
 
 | File | Stands in for |
