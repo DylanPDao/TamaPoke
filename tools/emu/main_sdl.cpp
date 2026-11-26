@@ -199,8 +199,12 @@ static void writePPM(const char *path) {
 
 static int shotMode(const char *screen, const char *out, int lvl, int iv, int dex) {
   // Every --shot is taken at the same instant, whatever --fast says and however
-  // long the run takes, so the same build always writes the same file.
+  // long the run takes, so the same build always writes the same file. Not in
+  // the browser build: a page may link its own clock in place of clock.cpp, and
+  // nothing there takes a --shot.
+#ifndef __EMSCRIPTEN__
   emuFreezeClock(1);
+#endif
   setup();
   for (int i = 0; i < 4; i++) loop();          // let the sketch settle
   bool firstBoot = !strcmp(screen, "starter") || !strcmp(screen, "starterj") ||
